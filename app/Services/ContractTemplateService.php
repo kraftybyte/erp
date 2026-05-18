@@ -73,7 +73,7 @@ class ContractTemplateService
         // Additional clauses
         $additionalClauses = '';
         if ($contract->content) {
-            $additionalClauses = <<<HTML
+            $additionalClauses = <<<CLAUSE
 
     <div class="section">
       <div class="pasal-title">CATATAN TAMBAHAN</div>
@@ -81,10 +81,10 @@ class ContractTemplateService
         {$contract->content}
       </div>
     </div>
-HTML;
+CLAUSE;
         }
 
-        return str_replace('{additionalClauses}', $additionalClauses, <<<HTML
+        $html = <<<MAIN
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -111,7 +111,7 @@ HTML;
       text-align: center;
       margin-bottom: 35px;
       padding-bottom: 20px;
-      border-bottom: 1.5px solid #000;
+      border-bottom: 0.5px solid #000;
     }
     h1 {
       font-family: Arial, sans-serif;
@@ -168,12 +168,14 @@ HTML;
       font-size: 10pt;
     }
     .sow-table th {
-      background: var(--primary);
+      background-color: {$primaryColor} !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
       padding: 8px 12px;
       text-align: left;
       font-weight: bold;
-      color: #fff;
-      border: 1px solid #000;
+      color: #fff !important;
+      border: 1px solid #ddd;
     }
     .sow-table td {
       padding: 10px 12px;
@@ -196,12 +198,14 @@ HTML;
     .value-box {
       margin: 15px 0;
       padding: 14px;
-      background: var(--primary);
-      color: #fff;
+      background-color: {$primaryColor} !important;
+      color: #fff !important;
       font-family: Arial, sans-serif;
       font-size: 14pt;
       font-weight: bold;
       text-align: center;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .note {
       font-style: italic;
@@ -216,9 +220,8 @@ HTML;
     .sig-cell {
       display: table-cell;
       width: 50%;
+      text-align: center;
     }
-    .sig-cell:first-child { text-align: left; }
-    .sig-cell:last-child { text-align: right; }
     .sig-title {
       font-family: Arial, sans-serif;
       font-size: 11pt;
@@ -230,10 +233,21 @@ HTML;
       margin-bottom: 5px;
     }
     .sig-line {
-      margin-top: 70px;
-      padding-top: 5px;
-      border-top: 1px solid #333;
+      margin-top: 5px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #333;
+      display: inline-block;
+    }
+    .sig-name {
+      margin-top: 30px;
+      margin-bottom: 5px;
       font-size: 9pt;
+    }
+    .sig-sub {
+      font-size: 9pt;
+      color: #666;
+      margin-bottom: 5px;
+      margin-top: 5px;
     }
     .footer {
       margin-top: 40px;
@@ -341,18 +355,20 @@ HTML;
       <p>Perubahan terhadap perjanjian ini hanya berlaku jika disepakati kedua belah pihak dan dituangkan dalam bentuk addendum tertulis yang ditandatangani.</p>
     </div>
 
-    {additionalClauses}
+    {$additionalClauses}
 
     <div class="signature">
       <div class="sig-cell">
         <div class="sig-title">PIHAK PERTAMA</div>
+        <div class="sig-name">{$clientSignName}</div>
+        <div class="sig-line" style="width: 200px; display: inline-block;"></div>
         <div class="sig-sub">({$clientSignTitle})</div>
-        <div class="sig-line">{$clientSignName}</div>
       </div>
       <div class="sig-cell">
         <div class="sig-title">PIHAK KEDUA</div>
+        <div class="sig-name">{$agencySignName}</div>
+        <div class="sig-line" style="width: 200px; display: inline-block;"></div>
         <div class="sig-sub">({$agencySignTitle})</div>
-        <div class="sig-line">{$agencySignName}</div>
       </div>
     </div>
 
@@ -363,7 +379,9 @@ HTML;
   </div>
 </body>
 </html>
-HTML;
+MAIN;
+
+        return $html;
     }
 
     private function buildSowTable($products, ?string $scopeOfWork = null): string
