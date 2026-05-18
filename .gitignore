@@ -1,0 +1,42 @@
+# Environment files (contain API keys and secrets)
+.env
+.env.local
+.env.*.local
+
+# Composer
+/vendor/
+
+# Node dependencies
+/node_modules/
+/npm-debug.log
+/yarn-error.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Laravel
+/storage/*.key
+/storage/logs/*
+!/storage/logs/.gitkeep
+/bootstrap/cache/*
+!/bootstrap/cache/.gitkeep
+
+# Storage (user uploads)
+/storage/app/public/*
+!/storage/app/public/.gitignore
+
+# Testing
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+auth.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

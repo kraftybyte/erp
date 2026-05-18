@@ -1,0 +1,43 @@
+/* =========================
+   Custom Filament Theme
+   ========================= */
+
+/* Base overrides */
+:root {
+    --brand-primary: theme('colors.brand.500');
+}
+
+
+/* Card styling */
+.fi-card {
+    @apply rounded-xl shadow-sm border border-gray-200;
+}
+
+/* Kanban card (Flowforge) */
+.ff-card {
+    @apply rounded-lg shadow-sm border border-gray-200 hover:shadow-md;
+}
+
+/* Status badge tweaks */
+.fi-badge {
+    @apply font-medium;
+}
+
+/* =========================
+   Scrollbar styling
+   ========================= */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-gray-400 rounded-full;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-transparent;
+}
+
+

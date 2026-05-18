@@ -1,0 +1,127 @@
+{
+    "name": "angga/erp",
+    "description": "ERP",
+    "type": "project",
+    "keywords": [
+        "filament",
+        "filamentphp",
+        "laravel",
+        "website"
+    ],
+    "authors": [
+        {
+            "name": "Angga",
+            "email": "anggarksa123@gmail.com"
+        }
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "amidesfahani/filament-tinyeditor": "^2.1",
+        "aymanalhattami/filament-slim-scrollbar": "^2.0",
+        "barryvdh/laravel-dompdf": "^3.1",
+        "bezhansalleh/filament-exceptions": "^2.1",
+        "bezhansalleh/filament-shield": "^3.3",
+        "codeat3/blade-fluentui-system-icons": "^1.32",
+        "datlechin/filament-menu-builder": "^0.5.2",
+        "doctrine/dbal": "^4.2",
+        "dompdf/dompdf": "^3.1",
+        "eightynine/filament-excel-import": "^3.1",
+        "facebook/php-business-sdk": "^24.0",
+        "filament/filament": "^3.3",
+        "filament/infolists": "^3.2",
+        "filament/notifications": "^3.3",
+        "filament/spatie-laravel-media-library-plugin": "^3.2",
+        "filament/spatie-laravel-settings-plugin": "^3.2",
+        "filament/spatie-laravel-tags-plugin": "^3.2",
+        "genealabs/laravel-model-caching": "^11.0",
+        "guava/calendar": "^1.14",
+        "guzzlehttp/guzzle": "^7.9",
+        "jeffgreco13/filament-breezy": "^2.5",
+        "josespinal/filament-record-navigation": "^2.0",
+        "laravel/framework": "^11.8",
+        "laravel/sanctum": "^4.0",
+        "laravel/socialite": "^5.15",
+        "laravel/tinker": "^2.9",
+        "league/commonmark": "^2.6",
+        "livewire/livewire": "^3.5",
+        "mokhosh/filament-kanban": "^2.11",
+        "opcodesio/log-viewer": "^3.11",
+        "openai-php/laravel": "^0.18.0",
+        "riodwanto/filament-ace-editor": "^1.1",
+        "saade/filament-fullcalendar": "^3.2",
+        "spatie/laravel-permission": "^6.10",
+        "stichoza/google-translate-php": "^5.2",
+        "tomatophp/filament-invoices": "^1.0",
+        "z3d0x/filament-logger": "^0.7.2",
+        "symfony/clock": "^7.0",
+        "symfony/css-selector": "^7.0",
+        "symfony/dom-crawler": "^7.0",
+        "symfony/event-dispatcher": "^7.0",
+        "symfony/string": "^7.0",
+        "symfony/translation": "^7.0",
+        "symfony/stopwatch": "^7.0",
+        "symfony/http-foundation": "^7.0",
+        "symfony/http-kernel": "^7.0",
+        "symfony/routing": "^7.0",
+        "symfony/mime": "^7.0",
+        "symfony/error-handler": "^7.0",
+        "symfony/console": "^7.0",
+        "symfony/process": "^7.0"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.23",
+        "filament/upgrade": "^3.3",
+        "laravel/pint": "^1.18",
+        "laravel/sail": "^1.26",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.5",
+        "phpunit/phpunit": "^11.0",
+        "spatie/laravel-ignition": "^2.8",
+        "spatie/ray": "^1.47"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi",
+            "@php artisan filament:upgrade"
+        ],
+        "post-update-cmd": [
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
+        ],
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate --ansi"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

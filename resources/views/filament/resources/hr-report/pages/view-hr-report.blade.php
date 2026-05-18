@@ -1,0 +1,889 @@
+<x-filament-panels::page>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    /* ── TOKENS ── */
+    :root {
+        --c-primary:   #07a0cf;
+        --c-primary-dk:#0589b0;
+        --c-accent:    #ff5915;
+        --c-warn:      #f59e0b;
+        --c-success:   #10b981;
+        --c-muted:     #94a3b8;
+        --c-text:      #0f172a;
+        --c-surface:   #ffffff;
+        --c-bg:        #f4f7fb;
+        --c-border:    rgba(0,0,0,.06);
+        --c-glass:     rgba(255,255,255,.72);
+        --shadow-xs:   0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
+        --shadow-sm:   0 2px 8px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.05);
+        --shadow-md:   0 8px 24px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.05);
+        --shadow-lg:   0 20px 48px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.06);
+        --radius-sm:   10px;
+        --radius-md:   16px;
+        --radius-lg:   22px;
+        --font-sans:   'Sora', sans-serif;
+        --font-mono:   'JetBrains Mono', monospace;
+    }
+
+    .hr-page * { font-family: var(--font-sans); box-sizing: border-box; }
+
+    /* ── LAYOUT ── */
+    .hr-page { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── CARD BASE ── */
+    .card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        padding: 20px;
+        transition: box-shadow .2s;
+    }
+    .card:hover { box-shadow: var(--shadow-md); }
+    .card-title {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--c-muted);
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .card-title::before {
+        content: '';
+        display: inline-block;
+        width: 3px; height: 12px;
+        background: var(--c-primary);
+        border-radius: 2px;
+    }
+
+    /* ── PERIOD TABS ── */
+    .period-bar {
+        display: flex;
+        justify-content: flex-end;
+    }
+    .period-group {
+        display: flex;
+        gap: 2px;
+        background: #f0f4f8;
+        border-radius: 12px;
+        padding: 3px;
+        border: 1px solid var(--c-border);
+    }
+    .period-btn {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 6px 14px;
+        border-radius: 9px;
+        border: none;
+        cursor: pointer;
+        transition: all .18s;
+        letter-spacing: .2px;
+    }
+    .period-btn-active {
+        background: white;
+        color: var(--c-primary);
+        box-shadow: var(--shadow-xs);
+    }
+    .period-btn-inactive {
+        background: transparent;
+        color: var(--c-muted);
+    }
+    .period-btn-inactive:hover { color: #475569; background: rgba(255,255,255,.5); }
+
+    /* ── PROFILE CARD ── */
+    .profile-card {
+        flex: 1;
+        min-width: 280px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        position: relative;
+        overflow: hidden;
+    }
+    .profile-card::before {
+        content: '';
+        position: absolute;
+        top: -40px; right: -40px;
+        width: 160px; height: 160px;
+        background: radial-gradient(circle, rgba(7,160,207,.08) 0%, transparent 70%);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+    .avatar-ring {
+        position: relative;
+        flex-shrink: 0;
+    }
+    .avatar-ring::after {
+        content: '';
+        position: absolute;
+        inset: -3px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--c-primary), #3bbeff, #07a0cf);
+        z-index: -1;
+    }
+    .avatar-img {
+        width: 68px; height: 68px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid white;
+        display: block;
+    }
+    .avatar-initials {
+        width: 68px; height: 68px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #07a0cf 0%, #3bbeff 100%);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 900; font-size: 22px;
+        border: 3px solid white;
+        letter-spacing: -1px;
+    }
+    .profile-name { font-weight: 900; font-size: 19px; color: var(--c-text); line-height: 1.2; }
+    .profile-email { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
+    .role-chip {
+        background: rgba(7,160,207,.1);
+        color: var(--c-primary);
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        border: 1px solid rgba(7,160,207,.2);
+    }
+
+    /* ── KPI CARD ── */
+    .kpi-card {
+        min-width: 168px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 6px;
+    }
+    .kpi-badge {
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        opacity: .6;
+    }
+    .kpi-number {
+        font-size: 62px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: -3px;
+        font-family: var(--font-mono);
+        width: 100%;
+        text-align: center;
+    }
+    .kpi-label-tag {
+        font-size: 11px;
+        font-weight: 800;
+        padding: 3px 14px;
+        border-radius: 999px;
+        color: white;
+        letter-spacing: .3px;
+    }
+    .kpi-sub { font-size: 10px; opacity: .65; font-weight: 600; }
+
+    /* ── STAT GRID ── */
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 10px;
+    }
+    .stat-card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        padding: 16px 14px;
+        text-align: center;
+        box-shadow: var(--shadow-xs);
+        transition: transform .15s, box-shadow .15s;
+        position: relative;
+        overflow: hidden;
+    }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 2px;
+        border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    }
+    .stat-val {
+        font-size: 30px;
+        font-weight: 900;
+        line-height: 1;
+        font-family: var(--font-mono);
+        letter-spacing: -1px;
+    }
+    .stat-lbl { font-size: 10px; color: var(--c-muted); font-weight: 600; margin-top: 5px; text-transform: uppercase; letter-spacing: .4px; }
+
+    /* ── CHART CARDS ── */
+    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    /* ── ATTENDANCE ── */
+    .attend-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+    .attend-item { text-align: center; }
+    .attend-val { font-size: 26px; font-weight: 900; line-height: 1; font-family: var(--font-mono); letter-spacing: -1px; }
+    .attend-lbl { font-size: 10px; color: var(--c-muted); font-weight: 600; margin-top: 4px; text-transform: uppercase; letter-spacing: .3px; }
+    .prog-bar-bg { height: 6px; background: #f0f4f8; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .prog-bar-fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
+    .prog-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--c-muted); margin-bottom: 5px; font-weight: 600; }
+
+    /* ── TASK TABLE ── */
+    .task-header {
+        display: grid;
+        grid-template-columns: 1.4fr 85px 95px 95px 70px 1fr;
+        gap: 10px;
+        padding: 8px 14px;
+        background: #f7f9fc;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        font-size: 9px;
+        font-weight: 800;
+        color: var(--c-muted);
+        text-transform: uppercase;
+        letter-spacing: .7px;
+    }
+    .task-row {
+        display: grid;
+        grid-template-columns: 1.4fr 85px 95px 95px 70px 1fr;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 14px;
+        border-radius: 9px;
+        font-size: 12px;
+        margin-bottom: 3px;
+        transition: background .12s;
+        border: 1px solid transparent;
+    }
+    .task-row:hover { background: #f8fafc; border-color: var(--c-border); }
+    .task-row-late { background: #fff8f6; border-color: rgba(239,68,68,.1); }
+    .task-row-late:hover { background: #fff2ef; }
+    .task-name { font-weight: 700; color: var(--c-text); font-size: 12px; line-height: 1.3; }
+    .task-client { font-size: 10px; color: var(--c-muted); margin-top: 1px; }
+    .task-note { font-size: 10px; color: #64748b; margin-top: 2px; font-style: italic; }
+    .status-chip {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 9px;
+        border-radius: 999px;
+        display: inline-block;
+        white-space: nowrap;
+    }
+    .late-flag { font-size: 9px; color: #ef4444; margin-top: 3px; font-weight: 700; }
+    .task-date { font-size: 11px; color: #64748b; font-family: var(--font-mono); }
+    .task-dur { font-size: 12px; font-weight: 800; font-family: var(--font-mono); }
+
+    /* ── BREAKDOWN ── */
+    .breakdown-item { margin-bottom: 15px; }
+    .breakdown-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+    .breakdown-name { font-size: 12px; font-weight: 700; color: #374151; }
+    .breakdown-meta { display: flex; gap: 8px; align-items: center; }
+    .breakdown-count { font-size: 14px; font-weight: 900; font-family: var(--font-mono); }
+    .breakdown-pct { font-size: 10px; color: var(--c-muted); font-weight: 600; }
+    .avg-box {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid #f1f5f9;
+        text-align: center;
+    }
+    .avg-box-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .8px; color: var(--c-muted); margin-bottom: 4px; }
+    .avg-box-num { font-size: 42px; font-weight: 900; color: var(--c-primary); line-height: 1; font-family: var(--font-mono); letter-spacing: -2px; }
+    .avg-box-sub { font-size: 11px; color: var(--c-muted); margin-top: 2px; font-weight: 600; }
+
+    /* ── DONE NOTES ── */
+    .note-card {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 13px 15px;
+        border-left: 3px solid var(--c-primary);
+        transition: box-shadow .15s;
+    }
+    .note-card:hover { box-shadow: var(--shadow-xs); }
+    .note-task { font-size: 13px; font-weight: 800; color: var(--c-text); margin: 0 0 2px; }
+    .note-meta { font-size: 10px; color: var(--c-muted); display: block; margin-bottom: 6px; }
+    .note-body { font-size: 12px; color: #475569; line-height: 1.65; margin: 0; white-space: pre-line; }
+
+    /* ── ATTENDANCE DETAIL TABLE ── */
+    .abs-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .abs-table thead tr { background:#f7f9fc; }
+    .abs-table thead th { padding:8px 12px; text-align:left; font-size:9px; font-weight:800; color:var(--c-muted); text-transform:uppercase; letter-spacing:.7px; border-bottom:1px solid #f1f5f9; }
+    .abs-table tbody tr { border-bottom:1px solid #f8fafc; transition:background .1s; }
+    .abs-table tbody tr:hover { background:#f8fafc; }
+    .abs-table tbody tr:last-child { border-bottom:none; }
+    .abs-table tbody td { padding:9px 12px; color:#374151; vertical-align:top; }
+    .abs-type-chip { font-size:10px; font-weight:700; padding:2px 9px; border-radius:999px; display:inline-block; }
+
+    /* ── SCROLLBAR ── */
+    .thin-scroll::-webkit-scrollbar { width: 4px; }
+    .thin-scroll::-webkit-scrollbar-track { background: transparent; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+    .thin-scroll { scrollbar-width: thin; scrollbar-color: #e2e8f0 transparent; }
+
+    /* ── SECTION DIVIDER ── */
+    .section-row { display: grid; gap: 14px; }
+</style>
+
+@php
+    $employee  = $record;
+    $avatar    = $employee->getFirstMediaUrl('avatars') ?? null;
+    $initials  = strtoupper(substr($employee->firstname ?? 'U',0,1).substr($employee->lastname ?? 'U',0,1));
+    $avgLabel  = ($stats['avgDays'] !== null) ? $stats['avgDays'].' hari' : '-';
+    $rateLabel = $stats['doneRate'].'%';
+    $statusColors  = ['Done'=>'#07a0cf','Process'=>'#ff5915','Review'=>'#f59e0b','Hold'=>'#94a3b8'];
+    $statusBgAlpha = ['Done'=>'rgba(7,160,207,.12)','Process'=>'rgba(255,89,21,.12)','Review'=>'rgba(245,158,11,.12)','Hold'=>'rgba(148,163,184,.12)'];
+    $chartJson = json_encode($chartData ?? ['labels'=>[],'taskDone'=>[],'taskTotal'=>[],'attendance'=>[]]);
+
+    $periodLabels = ['all_time'=>'Semua','this_year'=>'Tahun Ini','last_year'=>'Tahun Lalu','this_quarter'=>'Kuartal Ini','this_month'=>'Bulan Ini'];
+
+    /* stat card bottom accent colors */
+    $statAccents = [
+        'total'   => '#0f172a',
+        'done'    => '#07a0cf',
+        'process' => '#ff5915',
+        'review'  => '#f59e0b',
+        'late'    => '#ef4444',
+        'avg'     => '#f59e0b',
+        'rate'    => '#3bbeff',
+    ];
+@endphp
+
+<div class="hr-page">
+
+    {{-- ── PERIOD ── --}}
+    <div class="period-bar">
+        <div class="period-group">
+            @foreach([['all_time','Semua'],['this_year','Tahun Ini'],['last_year','Tahun Lalu'],['this_quarter','Kuartal Ini'],['this_month','Bulan Ini']] as [$val,$lbl])
+            <button wire:click="$set('period','{{ $val }}')" class="period-btn {{ $period===$val ? 'period-btn-active' : 'period-btn-inactive' }}">
+                {{ $lbl }}
+            </button>
+            @endforeach
+        </div>
+    </div>
+
+    {{-- ── PROFILE + KPI ── --}}
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+
+        <div class="card profile-card">
+            <div class="avatar-ring">
+                @if($avatar)
+                    <img src="{{ $avatar }}" class="avatar-img" alt="{{ $employee->firstname }}">
+                @else
+                    <div class="avatar-initials">{{ $initials }}</div>
+                @endif
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div class="profile-name">{{ $employee->firstname }} {{ $employee->lastname }}</div>
+                <div class="profile-email">{{ $employee->email }}</div>
+                <div style="margin-top:10px;display:flex;gap:5px;flex-wrap:wrap;">
+                    @foreach($employee->roles as $role)
+                    <span class="role-chip">{{ \Illuminate\Support\Str::headline($role->name) }}</span>
+                    @endforeach
+                </div>
+                <div style="margin-top:12px;font-size:11px;color:#94a3b8;font-weight:600;">
+                    Periode: <span style="color:#07a0cf;">{{ $periodLabels[$period] ?? 'Semua' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card kpi-card" style="background:{{ $kpi['bg'] }};">
+            <div class="kpi-badge" style="color:{{ $kpi['color'] }};">KPI Score</div>
+            <div class="kpi-number" style="color:{{ $kpi['color'] }};">{{ $kpi['score'] }}</div>
+            <span class="kpi-label-tag" style="background:{{ $kpi['color'] }};">{{ $kpi['label'] }}</span>
+            <div class="kpi-sub" style="color:{{ $kpi['color'] }};">dari 100 poin</div>
+        </div>
+
+    </div>
+
+    {{-- ── TASK STATS ── --}}
+    <div class="stat-grid">
+        @php
+        $statItems = [
+            ['val'=>$stats['total'],      'lbl'=>'Total Task',      'color'=>$statAccents['total']],
+            ['val'=>$stats['done'],       'lbl'=>'Selesai',         'color'=>$statAccents['done']],
+            ['val'=>$stats['process'],    'lbl'=>'Process',         'color'=>$statAccents['process']],
+            ['val'=>$stats['review'],     'lbl'=>'Review',          'color'=>$statAccents['review']],
+            ['val'=>$stats['late'],       'lbl'=>'Terlambat',       'color'=>$statAccents['late']],
+            ['val'=>$avgLabel,            'lbl'=>'Avg Selesai',     'color'=>$statAccents['avg']],
+            ['val'=>$rateLabel,           'lbl'=>'Completion Rate', 'color'=>$statAccents['rate']],
+        ];
+        @endphp
+        @foreach($statItems as $s)
+        <div class="stat-card" style="border-bottom:3px solid {{ $s['color'] }}20;">
+            <div class="stat-val" style="color:{{ $s['color'] }};">{{ $s['val'] }}</div>
+            <div class="stat-lbl">{{ $s['lbl'] }}</div>
+        </div>
+        @endforeach
+    </div>
+
+    {{-- ── CHARTS ── --}}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <div class="chart-grid">
+        <div class="card">
+            <div class="card-title">Trend Task</div>
+            <div wire:ignore style="position:relative;height:210px;">
+                <canvas id="taskTrendChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title">Attendance Rate</div>
+            <div wire:ignore style="position:relative;height:250px;">
+                <canvas id="attendTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    {{-- ── ATTENDANCE ── --}}
+    <div class="card">
+        <div class="card-title">Kehadiran Periode Ini</div>
+        <div class="attend-grid">
+            <div class="attend-item">
+                <div class="attend-val" style="color:#07a0cf;">{{ $absenceStat['hadir'] }}</div>
+                <div class="attend-lbl">Hadir</div>
+            </div>
+            <div class="attend-item">
+                <div class="attend-val" style="color:#3bbeff;">{{ $absenceStat['wfa'] }}</div>
+                <div class="attend-lbl">WFA</div>
+            </div>
+            <div class="attend-item">
+                <div class="attend-val" style="color:#f59e0b;">{{ $absenceStat['cuti'] }}</div>
+                <div class="attend-lbl">Cuti / Izin</div>
+            </div>
+            <div class="attend-item">
+                <div class="attend-val" style="color:#9333ea;">{{ $absenceStat['tukar'] }}</div>
+                <div class="attend-lbl">Tukar Hari</div>
+            </div>
+            <div class="attend-item">
+                <div class="attend-val" style="color:#64748b;">{{ $absenceStat['workDays'] }}</div>
+                <div class="attend-lbl">Hari Kerja</div>
+            </div>
+        </div>
+        @php
+            $ar = $absenceStat['attendRate'];
+            $arColor = $ar >= 80 ? '#07a0cf' : ($ar >= 60 ? '#f59e0b' : '#ef4444');
+        @endphp
+        <div class="prog-label">
+            <span>Attendance Rate</span>
+            <span style="font-weight:800;color:{{ $arColor }};font-family:var(--font-mono);">{{ $ar }}%</span>
+        </div>
+        <div class="prog-bar-bg">
+            <div class="prog-bar-fill" style="width:{{ $ar }}%;background:{{ $arColor }};"></div>
+        </div>
+    </div>
+
+    {{-- ── ATTENDANCE DETAIL TABLES ── --}}
+    @php
+        $now = \Carbon\Carbon::now();
+
+        // $employee->id adalah users.id (Filament record = User model di konteks ini)
+        // Jika Employee punya kolom user_id, ganti dengan $employee->user_id
+        $absUserId = isset($employee->user_id) ? $employee->user_id : $employee->id;
+
+        $absBase = \App\Models\Absence::where('user_id', $absUserId)
+            ->where('approval_status', 'Approved');
+
+        $absScoped = match($period) {
+            'this_month'   => (clone $absBase)->whereMonth('start_time', $now->month)->whereYear('start_time', $now->year),
+            'this_quarter' => (clone $absBase)->whereBetween('start_time', [
+                                $now->copy()->firstOfQuarter()->startOfDay(),
+                                $now->copy()->lastOfQuarter()->endOfDay(),
+                             ]),
+            'this_year'    => (clone $absBase)->whereYear('start_time', $now->year),
+            'last_year'    => (clone $absBase)->whereYear('start_time', $now->year - 1),
+            default        => (clone $absBase),
+        };
+
+        $allAbsences = $absScoped->orderBy('start_time')->get();
+
+        $dayName = ['Sunday'=>'Minggu','Monday'=>'Senin','Tuesday'=>'Selasa',
+                    'Wednesday'=>'Rabu','Thursday'=>'Kamis','Friday'=>'Jumat','Saturday'=>'Sabtu'];
+
+        // WFA / WFH
+        $wfaRows = $allAbsences->whereIn('category', ['wfa','wfh'])->map(function($a) use ($dayName) {
+            $start  = \Carbon\Carbon::parse($a->start_time);
+            $end    = $a->end_time ? \Carbon\Carbon::parse($a->end_time) : null;
+            $durasi = ($end && !$start->isSameDay($end)) ? ($start->diffInDays($end) + 1).' hari' : '1 hari';
+            $tgl    = $start->format('d M Y');
+            if ($end && !$start->isSameDay($end)) $tgl .= ' – '.$end->format('d M Y');
+            return [
+                'tanggal'     => $tgl,
+                'kategori'    => strtoupper($a->category),
+                'durasi'      => $durasi,
+                'keterangan'  => $a->description ?: '—',
+                'work_report' => $a->work_report ?: null,
+            ];
+        })->values();
+
+        // Cuti & Izin
+        $cutiRows = $allAbsences->whereIn('category', ['cuti','izin'])->map(function($a) {
+            $start  = \Carbon\Carbon::parse($a->start_time);
+            $end    = $a->end_time ? \Carbon\Carbon::parse($a->end_time) : null;
+            $days   = $end ? (int) $start->startOfDay()->diffInDays($end->startOfDay()) : 1;
+            $days   = max(1, $days);
+            $durasi = $days . ' hari';
+            $tgl    = $start->format('d M Y');
+            if ($end && !$start->isSameDay($end)) $tgl .= ' – '.$end->format('d M Y');
+            return [
+                'tanggal'    => $tgl,
+                'jenis'      => ucfirst($a->category),
+                'durasi'     => $durasi,
+                'keterangan' => $a->description ?: '—',
+            ];
+        })->values();
+
+        // Tukar Hari
+        // Dari contoh data: start_time = hari pengganti masuk (hari kerja),
+        // end_time = juga hari pengganti (bisa sama). Hari libur ada di description.
+        $tukarRows = $allAbsences->where('category', 'tukar_hari')->map(function($a) use ($dayName) {
+            $masuk = \Carbon\Carbon::parse($a->start_time);
+            $namaHariMasuk = $dayName[$masuk->format('l')] ?? $masuk->format('l');
+            return [
+                'tgl_masuk'  => $masuk->format('d M Y').' ('.$namaHariMasuk.')',
+                'keterangan' => $a->description ?: '—',
+            ];
+        })->values();
+
+        $absTableDefs = [
+            [
+                'title'   => 'Detail WFA / WFH',
+                'color'   => '#3bbeff',
+                'bgColor' => 'rgba(59,190,255,.08)',
+                'rows'    => $wfaRows,
+                'type'    => 'wfa',
+                'cols'    => ['Tanggal', 'Tipe', 'Durasi', 'Keterangan'],
+                'keys'    => ['tanggal', 'kategori', 'durasi', 'keterangan'],
+            ],
+            [
+                'title'   => 'Detail Cuti / Izin',
+                'color'   => '#f59e0b',
+                'bgColor' => 'rgba(245,158,11,.08)',
+                'rows'    => $cutiRows,
+                'type'    => '',
+                'cols'    => ['Tanggal', 'Jenis', 'Durasi', 'Keterangan'],
+                'keys'    => ['tanggal', 'jenis', 'durasi', 'keterangan'],
+            ],
+            [
+                'title'   => 'Detail Tukar Hari',
+                'color'   => '#9333ea',
+                'bgColor' => 'rgba(147,51,234,.08)',
+                'rows'    => $tukarRows,
+                'type'    => '',
+                'cols'    => ['Tgl Masuk Pengganti', 'Keterangan'],
+                'keys'    => ['tgl_masuk', 'keterangan'],
+            ],
+        ];
+    @endphp
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+        @foreach($absTableDefs as $tbl)
+        <div class="card" style="border-top:3px solid {{ $tbl['color'] }};">
+            <div class="card-title" style="margin-bottom:12px;">
+                {{ $tbl['title'] }}
+                <span style="margin-left:auto;background:{{ $tbl['bgColor'] }};color:{{ $tbl['color'] }};font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.3px;text-transform:none;">{{ count($tbl['rows']) }}</span>
+            </div>
+            @if(count($tbl['rows']) > 0)
+            <div class="thin-scroll" style="max-height:260px;overflow-y:auto;">
+                <table class="abs-table">
+                    <thead>
+                        <tr>
+                            @foreach($tbl['cols'] as $col)
+                            <th>{{ $col }}</th>
+                            @endforeach
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($tbl['rows'] as $row)
+                        <tr>
+                            @foreach($tbl['keys'] as $key)
+                            <td>{{ $row[$key] ?? '—' }}</td>
+                            @endforeach
+                        </tr>
+                        @if(($tbl['type'] ?? '') === 'wfa' && !empty($row['work_report']))
+                        <tr style="background:rgba(59,190,255,.04);border-bottom:1px solid rgba(59,190,255,.12)!important;">
+                            <td colspan="{{ count($tbl['cols']) }}" style="padding:8px 12px 10px;">
+                                <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#3bbeff;margin-bottom:4px;">Work Report</div>
+                                <div style="font-size:11px;color:#475569;line-height:1.65;white-space:pre-line;">{{ $row['work_report'] }}</div>
+                            </td>
+                        </tr>
+                        @endif
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @else
+            <div style="text-align:center;padding:28px 0;color:var(--c-muted);font-size:11px;">
+                <div style="font-size:24px;opacity:.25;margin-bottom:6px;">📅</div>
+                Tidak ada data
+            </div>
+            @endif
+        </div>
+        @endforeach
+    </div>
+
+    {{-- ── TASK LIST + BREAKDOWN ── --}}
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;">
+
+        <div class="card">
+            <div class="card-title">Detail Task
+                <span style="margin-left:auto;background:#f0f4f8;color:#64748b;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.3px;text-transform:none;">{{ count($taskDetail) }} items</span>
+            </div>
+            @if(count($taskDetail) > 0)
+            <div class="task-header">
+                <span>Nama Task</span>
+                <span>Status</span>
+                <span>Mulai</span>
+                <span>Deadline</span>
+                <span>Durasi</span>
+                <span>Catatan Selesai</span>
+            </div>
+            <div class="thin-scroll" style="max-height:380px;overflow-y:auto;">
+                @foreach($taskDetail as $t)
+                @php $sc = $statusColors[$t['status']] ?? '#94a3b8'; $sbg = $statusBgAlpha[$t['status']] ?? 'rgba(148,163,184,.12)'; @endphp
+                <div class="task-row {{ $t['is_late'] ? 'task-row-late' : '' }}">
+                    <div>
+                        <div class="task-name">{{ $t['nama_task'] }}</div>
+                        <div class="task-client">{{ $t['client'] }}</div>
+                    </div>
+                    <div>
+                        <span class="status-chip" style="background:{{ $sbg }};color:{{ $sc }};">{{ $t['status'] }}</span>
+                        @if($t['is_late'])<div class="late-flag">⚠ Terlambat</div>@endif
+                    </div>
+                    <div class="task-date">{{ $t['mulai'] }}</div>
+                    <div class="task-date" style="color:{{ $t['is_late'] ? '#ef4444' : '#64748b' }};">{{ $t['deadline'] }}</div>
+                    <div class="task-dur" style="color:{{ $t['status']==='Done' ? '#07a0cf' : '#f59e0b' }};">{{ $t['durasi'] }}</div>
+                    <div style="font-size:11px;color:#64748b;line-height:1.5;">
+                        @if($t['done_note'])
+                            <span style="font-style:italic;">{{ Str::limit($t['done_note'], 80) }}</span>
+                        @else
+                            <span style="color:#cbd5e1;">—</span>
+                        @endif
+                    </div>
+                </div>
+                @endforeach
+            </div>
+            @else
+            <div style="text-align:center;padding:40px 0;color:var(--c-muted);font-size:12px;">
+                <div style="font-size:32px;margin-bottom:8px;opacity:.3;">📋</div>
+                Tidak ada task di periode ini
+            </div>
+            @endif
+        </div>
+
+        <div class="card">
+            <div class="card-title">Task Breakdown</div>
+            @foreach($taskSummary as $item)
+            @php $pct = $stats['total'] > 0 ? round($item['count']/$stats['total']*100) : 0; @endphp
+            <div class="breakdown-item">
+                <div class="breakdown-header">
+                    <span class="breakdown-name">{{ $item['label'] }}</span>
+                    <div class="breakdown-meta">
+                        <span class="breakdown-count" style="color:{{ $item['color'] }};">{{ $item['count'] }}</span>
+                        <span class="breakdown-pct">{{ $pct }}%</span>
+                    </div>
+                </div>
+                <div class="prog-bar-bg">
+                    <div class="prog-bar-fill" style="width:{{ $pct }}%;background:{{ $item['color'] }};"></div>
+                </div>
+            </div>
+            @endforeach
+
+            @if($stats['avgDays'] !== null)
+            <div class="avg-box">
+                <div class="avg-box-label">Avg per Task</div>
+                <div class="avg-box-num">{{ $stats['avgDays'] }}</div>
+                <div class="avg-box-sub">hari per task</div>
+            </div>
+            @endif
+        </div>
+
+    </div>
+
+    {{-- ── DONE NOTES ── --}}
+    @if(count($doneNotes) > 0)
+    <div class="card">
+        <div class="card-title">Catatan Penyelesaian
+            <span style="margin-left:auto;background:#f0f4f8;color:#64748b;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.3px;text-transform:none;">{{ count($doneNotes) }} catatan</span>
+        </div>
+        <div class="thin-scroll" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;max-height:330px;overflow-y:auto;">
+            @foreach($doneNotes as $note)
+            <div class="note-card">
+                <h4 class="note-task">{{ $note['nama_task'] }}</h4>
+                <small class="note-meta">{{ $note['client'] }} · Selesai {{ $note['selesai'] }} · {{ $note['duration'] }}</small>
+                <p class="note-body">{{ $note['done_note'] }}</p>
+            </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
+
+</div>{{-- end .hr-page --}}
+
+<script>
+(function () {
+    var chartData = {!! $chartJson !!};
+
+    var BRAND  = '#07a0cf';
+    var BRAND2 = '#3bbeff';
+    var GRID   = '#f1f5f9';
+    var FONT   = "'Sora', sans-serif";
+
+    function destroyChart(id) {
+        var ex = Chart.getChart(id);
+        if (ex) ex.destroy();
+    }
+
+    function buildCharts() {
+        destroyChart('taskTrendChart');
+        destroyChart('attendTrendChart');
+
+        var t = document.getElementById('taskTrendChart');
+        var a = document.getElementById('attendTrendChart');
+        if (!t || !a) return;
+
+        Chart.defaults.font.family = FONT;
+
+        new Chart(t, {
+            type: 'bar',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'Total',
+                        data: chartData.taskTotal,
+                        backgroundColor: 'rgba(59,190,255,0.18)',
+                        borderColor: 'rgba(59,190,255,0.4)',
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        order: 2
+                    },
+                    {
+                        label: 'Selesai',
+                        data: chartData.taskDone,
+                        backgroundColor: BRAND,
+                        borderRadius: 6,
+                        order: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { font: { size: 10, weight: '700' }, boxWidth: 10, padding: 10, color: '#64748b' }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 10 }, color: '#94a3b8' },
+                        border: { display: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: GRID },
+                        ticks: { font: { size: 10 }, color: '#94a3b8', stepSize: 1 },
+                        border: { display: false, dash: [4,4] }
+                    }
+                }
+            }
+        });
+
+        new Chart(a, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Attendance %',
+                    data: chartData.attendance,
+                    borderColor: BRAND,
+                    clip: false,
+                    backgroundColor: function(ctx) {
+                        var h = ctx.chart.height || 180;
+                        var g = ctx.chart.ctx.createLinearGradient(0, 0, 0, h);
+                        g.addColorStop(0, 'rgba(7,160,207,0.22)');
+                        g.addColorStop(1, 'rgba(7,160,207,0.02)');
+                        return g;
+                    },
+                    borderWidth: 2.5,
+                    pointBackgroundColor: BRAND,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 20, right: 12, bottom: 0, left: 4 } },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { font: { size: 10, weight: '600', family: FONT }, boxWidth: 8, boxHeight: 8, padding: 12, color: '#64748b' }
+                    },
+                    tooltip: {
+                        callbacks: { label: function(c) { return '  ' + c.raw + '%'; } },
+                        backgroundColor: '#0f172a',
+                        titleFont: { size: 10, family: FONT },
+                        bodyFont: { size: 12, weight: '700', family: FONT },
+                        padding: 10,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 10, family: FONT }, color: '#94a3b8', maxRotation: 0 },
+                        border: { display: false }
+                    },
+                    y: {
+                        min: function() {
+                            var vals = (chartData.attendance || []).filter(function(v){ return v !== null && v !== undefined; });
+                            if (!vals.length) return 60;
+                            var minVal = Math.min.apply(null, vals);
+                            // snap ke bawah kelipatan 5, kasih ruang 5 poin
+                            return Math.max(0, Math.floor((minVal - 5) / 5) * 5);
+                        }(),
+                        max: 103,
+                        grid: { color: '#f0f4f8' },
+                        ticks: {
+                            font: { size: 10, family: FONT },
+                            color: '#94a3b8',
+                            stepSize: 5,
+                            callback: function(v) {
+                                if (v > 100) return '';
+                                return v + '%';
+                            }
+                        },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    buildCharts();
+
+    document.addEventListener('livewire:updated', function () {
+        chartData = {!! $chartJson !!};
+        buildCharts();
+    });
+})();
+</script>
+</x-filament-panels::page>
