@@ -20,6 +20,7 @@ class Asset extends Model
         'penanggung_jawab_id',
         'bon_invoice',
         'harga_barang',
+        'foto',
     ];
 
     // Definisi relasi ke User (Penanggung Jawab)

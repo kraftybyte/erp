@@ -92,6 +92,12 @@ class AssetResource extends Resource
                 ->directory('asset/invoice/' . now()->format('Y/m/d'))
                 ->nullable(),
 
+            Forms\Components\FileUpload::make('foto')
+                ->label('Foto Barang')
+                ->image()
+                ->directory('assets')
+                ->nullable(),
+
             Forms\Components\TextInput::make('harga_barang')
                 ->label('Harga Barang')
                 ->numeric()
@@ -111,6 +117,9 @@ class AssetResource extends Resource
             return $query->where('penanggung_jawab_id', $user->id)->with(['user']);
         })
             ->columns([
+                Tables\Columns\ImageColumn::make('foto')
+                    ->label('Foto')
+                    ->circular(),
                 Tables\Columns\TextColumn::make('uuid')->label('ID Barang')->searchable(),
                 Tables\Columns\TextColumn::make('nama_barang')->label('Nama Barang')->searchable(),
                 Tables\Columns\TextColumn::make('tanggal_pembelian')->label('Tanggal Pembelian')->date(),
