@@ -1,39 +1,18 @@
 {
   "resources/css/app.css": {
-    "file": "assets/app-DujdZP4B.css",
+    "file": "assets/app-Uh6B9UEU.css",
     "src": "resources/css/app.css",
     "isEntry": true
   },
-  "resources/css/clickup.css": {
-    "file": "assets/clickup-BZ9OM-GE.css",
-    "src": "resources/css/clickup.css",
-    "isEntry": true
-  },
-  "resources/css/filament-clickup.css": {
-    "file": "assets/filament-clickup-Djed6aBb.css",
-    "src": "resources/css/filament-clickup.css",
-    "isEntry": true
-  },
   "resources/css/filament/admin/theme.css": {
-    "file": "assets/theme-CsX4yfMq.css",
+    "file": "assets/theme-CC00-V5n.css",
     "src": "resources/css/filament/admin/theme.css",
-    "isEntry": true
-  },
-  "resources/css/pwa.css": {
-    "file": "assets/pwa-q-QDeLv_.css",
-    "src": "resources/css/pwa.css",
     "isEntry": true
   },
   "resources/js/app.js": {
     "file": "assets/app-l0sNRNKZ.js",
     "name": "app",
     "src": "resources/js/app.js",
-    "isEntry": true
-  },
-  "resources/js/pwa.js": {
-    "file": "assets/pwa-Czjg5b8T.js",
-    "name": "pwa",
-    "src": "resources/js/pwa.js",
     "isEntry": true
   }
 }

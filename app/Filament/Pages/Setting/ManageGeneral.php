@@ -225,6 +225,60 @@ class ManageGeneral extends SettingsPage
                                             ->helperText('Masukkan satu ketentuan per baris'),
                                     ]),
                             ]),
+                        Forms\Components\Tabs\Tab::make('Invoice Template')
+                            ->schema([
+                                Forms\Components\Section::make('Theme Color')
+                                    ->description('Pilih warna utama untuk invoice')
+                                    ->schema([
+                                        Forms\Components\ColorPicker::make('inv_theme_color')
+                                            ->label('Primary Color')
+                                            ->default('#f04f29'),
+                                        FileUpload::make('inv_logo')
+                                            ->label('Logo untuk Header Invoice')
+                                            ->image()
+                                            ->directory('invoice')
+                                            ->visibility('public')
+                                            ->nullable()
+                                            ->helperText('Upload logo khusus invoice (optional)'),
+                                    ]),
+                                Forms\Components\Section::make('Company Information')
+                                    ->description('Informasi perusahaan yang muncul di invoice')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('inv_company_name')
+                                            ->label('Nama Perusahaan'),
+                                        Forms\Components\Textarea::make('inv_company_address')
+                                            ->label('Alamat')
+                                            ->rows(2),
+                                        Forms\Components\TextInput::make('inv_company_phone')
+                                            ->label('Telepon'),
+                                    ]),
+                                Forms\Components\Section::make('Bank Information')
+                                    ->description('Informasi rekening untuk pembayaran')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('inv_bank_name')
+                                                ->label('Nama Bank'),
+                                            Forms\Components\TextInput::make('inv_bank_account')
+                                                ->label('Nomor Rekening'),
+                                            Forms\Components\TextInput::make('inv_bank_account_name')
+                                                ->label('Nama Penerima'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Signature')
+                                    ->description('Informasi tanda tangan di invoice')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('inv_signature_name')
+                                                ->label('Nama Penanda Tangan'),
+                                            FileUpload::make('inv_signature_image')
+                                                ->label('Upload Tanda Tangan')
+                                                ->image()
+                                                ->directory('invoice/signatures')
+                                                ->visibility('public')
+                                                ->nullable(),
+                                        ]),
+                                    ]),
+                            ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')
                             ->schema([
                                 Forms\Components\Grid::make()->schema([

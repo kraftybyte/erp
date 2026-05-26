@@ -2,23 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Settings\GeneralSettings;
 use TomatoPHP\FilamentInvoices\Models\Invoice;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoicePdfController extends Controller
 {
     public function download(Invoice $invoice)
-{
-    // Pastikan relasi invoicesItems sudah di-load
-    $invoice->load('invoicesItems');
+    {
+        // Ensure relationship is loaded
+        $invoice->load('invoicesItems');
 
-    // Generate PDF
-    $pdf = Pdf::loadView('pdf.invoice', [
-        'invoice' => $invoice
-    ]);
+        // Load settings
+        $settings = app(GeneralSettings::class);
 
-    return $pdf->download("Invoice-" . str_replace(['#', '/'], ['','-'], $invoice->uuid) . ".pdf");
-}
+        // Generate PDF with dynamic template
+        $pdf = Pdf::loadView('pdf.invoice-dynamic', [
+            'invoice' => $invoice,
+            'settings' => $settings->getInvoiceSettings(),
+            'themeColor' => $settings->inv_theme_color,
+        ]);
 
-
+        return $pdf->download("Invoice-" . str_replace(['#', '/'], ['','-'], $invoice->uuid) . ".pdf");
+    }
 }

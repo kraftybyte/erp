@@ -31,6 +31,18 @@ class GeneralSettings extends Settings
     public ?string $quot_signature_image = null;
     public string $quot_terms = '';
 
+    // Invoice Template Settings - Individual Properties
+    public string $inv_theme_color = '#f04f29';
+    public ?string $inv_logo = null;
+    public string $inv_company_name = 'PT. Digital Catha Sangkara';
+    public string $inv_company_address = 'Gedung EduCenter Lt.2A Unit VO-24088 Jl. Sekolah Foresta.8 BSD City, Lengkong Kulon, Pagedangan, Tangerang Regency, Banten 15331';
+    public string $inv_company_phone = '085186028747';
+    public string $inv_bank_name = 'BCA';
+    public string $inv_bank_account = '5385141120';
+    public string $inv_bank_account_name = 'PT DIGITAL CATHA';
+    public string $inv_signature_name = 'Madita Heidy';
+    public ?string $inv_signature_image = null;
+
     public static function group(): string
     {
         return 'general';
@@ -59,6 +71,17 @@ class GeneralSettings extends Settings
             'quot_signature_title' => 'Director',
             'quot_signature_image' => null,
             'quot_terms' => "Price above is NET.\nThis quotation is valid for 14 (fourteen) days from the quotation date.\nTerm of Payment: Full payment before project starts, or two terms (50-50) for minimum 30 million.",
+            // Invoice Settings Defaults
+            'inv_theme_color' => '#f04f29',
+            'inv_logo' => null,
+            'inv_company_name' => 'PT. Digital Catha Sangkara',
+            'inv_company_address' => 'Gedung EduCenter Lt.2A Unit VO-24088 Jl. Sekolah Foresta.8 BSD City, Lengkong Kulon, Pagedangan, Tangerang Regency, Banten 15331',
+            'inv_company_phone' => '085186028747',
+            'inv_bank_name' => 'BCA',
+            'inv_bank_account' => '5385141120',
+            'inv_bank_account_name' => 'PT DIGITAL CATHA',
+            'inv_signature_name' => 'Madita Heidy',
+            'inv_signature_image' => null,
         ];
     }
 
@@ -81,6 +104,27 @@ class GeneralSettings extends Settings
             'signature_title' => $this->quot_signature_title,
             'signature_image' => $this->quot_signature_image,
             'terms' => $this->getTermsArray(),
+        ];
+    }
+
+    // Get invoice settings as array for view
+    public function getInvoiceSettings(): array
+    {
+        return [
+            'theme_color' => $this->inv_theme_color,
+            'logo' => $this->inv_logo,
+            'company_info' => [
+                'name' => $this->inv_company_name,
+                'address' => $this->inv_company_address,
+                'phone' => $this->inv_company_phone,
+            ],
+            'bank_info' => [
+                'name' => $this->inv_bank_name,
+                'account' => $this->inv_bank_account,
+                'account_name' => $this->inv_bank_account_name,
+            ],
+            'signature_name' => $this->inv_signature_name,
+            'signature_image' => $this->inv_signature_image,
         ];
     }
 

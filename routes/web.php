@@ -65,7 +65,7 @@ Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
 // PWA Routes
 Route::get('/manifest.json', function () {
     return response()->json([
-        'name' => 'ERP Krafty',
+        'name' => 'ERP Creative',
         'short_name' => 'ERP',
         'start_url' => '/admin',
         'display' => 'standalone',

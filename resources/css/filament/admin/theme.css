@@ -1,11 +1,69 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
 
 /* ========================================
+   FONT SORA - Global Import
+======================================== */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap');
+
+/* ========================================
    GLOBAL
 ======================================== */
 
-body {
-    font-family: 'Sora', sans-serif;
+body,
+body * {
+    font-family: 'Sora', sans-serif !important;
+}
+
+/* Apply Sora to all Filament elements */
+.fi-app,
+.fi-sidebar,
+.fi-topbar,
+.fi-content,
+.fi-breadcrumb,
+.fi-title,
+.fi-header-heading,
+.fi-section-heading,
+.fi-label,
+.fi-text-input,
+.fi-select-input,
+.fi-textarea,
+.fi-input-wrapped,
+.fi-badge,
+.fi-btn,
+.fi-table,
+.fi-th,
+.fi-td,
+.fi-pagination,
+.fi-nav-group,
+.fi-nav-item,
+.fi-dropdown,
+.fi-modal,
+.fi-notification,
+.fi-checkbox-label,
+.fi-radio-label,
+.fi-switch-label,
+.fi-wizard-step,
+.fi-stats-overview-widget-stat-value {
+    font-family: 'Sora', sans-serif !important;
+}
+
+/* Specific element overrides */
+.fi-sidebar-navigation-item-label,
+.fi-sidebar-group-label,
+.fi-topbar-item-label,
+.fi-page-heading,
+.fi-page-description,
+.fi-table-header-cell-text,
+.fi-table-cell-text,
+.fi-form-section-heading,
+.fi-form-field-label,
+.fi-input-label,
+.fi-select-option-label,
+.fi-relation-manager-header,
+.fi-relation-manager-row,
+.fi-infolist-entry-label,
+.fi-infolist-entry-value {
+    font-family: 'Sora', sans-serif !important;
 }
 
 .tabular-nums {
