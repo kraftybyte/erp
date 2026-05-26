@@ -1,0 +1,218 @@
+<?php
+    // Get theme color safely
+    $themeColorSafe = is_string($themeColor ?? '') && strlen($themeColor ?? '') === 7 ? $themeColor : '#f04f29';
+
+    // Settings variables
+    $showCoverPages = ($settings['show_cover_pages'] ?? true) === true;
+    $coverPage1 = $settings['cover_page_1'] ?? null;
+    $coverPage2 = $settings['cover_page_2'] ?? null;
+    $coverPage3 = $settings['cover_page_3'] ?? null;
+    $companyInfo = $settings['company_info'] ?? [];
+    $signatureName = $settings['signature_name'] ?? 'Your Name';
+    $signatureTitle = $settings['signature_title'] ?? 'Director';
+    $signatureImage = $settings['signature_image'] ?? null;
+    $terms = $settings['terms'] ?? [];
+    $logoPath = $settings['logo'] ?? null;
+
+    // Helper function to get image data from path
+    function getImageData($path) {
+        if (empty($path) || !is_string($path)) return null;
+        $fullPath = public_path('storage/' . $path);
+        if (file_exists($fullPath)) {
+            return base64_encode(file_get_contents($fullPath));
+        }
+        return null;
+    }
+
+    // Get image extensions
+    function getImageMimeType($path) {
+        if (empty($path) || !is_string($path)) return 'image/jpeg';
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return match($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            default => 'image/jpeg',
+        };
+    }
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>Quotation {{ $quotation->nama_perusahaan }} - {{ $quotation->uuid }}</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0;">
+
+{{-- Cover Page 1 --}}
+@if($showCoverPages && $coverPage1)
+    @php $cover1Data = getImageData($coverPage1); @endphp
+    @if($cover1Data)
+        <img src="data:{{ getImageMimeType($coverPage1) }};base64,{{ $cover1Data }}" style="width: 100%;">
+        <div style="page-break-after: always;"></div>
+    @endif
+@endif
+
+{{-- Cover Page 2 --}}
+@if($showCoverPages && $coverPage2)
+    @php $cover2Data = getImageData($coverPage2); @endphp
+    @if($cover2Data)
+        <img src="data:{{ getImageMimeType($coverPage2) }};base64,{{ $cover2Data }}" style="width: 100%;">
+        <div style="page-break-after: always;"></div>
+    @endif
+@endif
+
+{{-- Main Content --}}
+<div style="max-width: 700px; margin: 0 auto; background: #fff; padding: 0 20px;">
+
+    {{-- Header --}}
+    <div style="border-top: 5px solid {{ $themeColorSafe }}; padding: 15px 30px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="vertical-align: middle;">
+                    <h1 style="text-transform: uppercase; font-size: 32px; font-weight: bold; color: {{ $themeColorSafe }}; margin: 0;">Quotation</h1>
+                </td>
+                <td style="text-align: right; vertical-align: middle;">
+                    @if($logoPath)
+                        @php $logoData = getImageData($logoPath); @endphp
+                        @if($logoData)
+                            <img src="data:{{ getImageMimeType($logoPath) }};base64,{{ $logoData }}" style="max-width: 150px;">
+                        @endif
+                    @endif
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- Company Info --}}
+    <div style="padding: 20px 30px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="width: 50%; vertical-align: top;">
+                    <strong style="display: block; margin-bottom: 10px;">From:</strong>
+                    <p style="font-size: 12px; margin: 0;">
+                        {{ $companyInfo['name'] ?? 'Company Name' }}<br>
+                        {{ $companyInfo['email'] ?? 'email@company.com' }}<br>
+                        {{ $companyInfo['phone'] ?? '08xxxxxxxxxx' }}
+                    </p>
+                </td>
+                <td style="width: 50%; vertical-align: top; text-align: right;">
+                    <strong style="display: block; margin-bottom: 10px;">To:</strong>
+                    <p style="font-size: 12px; margin: 0; text-align: right;">
+                        {{ $quotation->nama_perusahaan }}<br>
+                        {{ $quotation->nama_pic }}<br>
+                        {{ $quotation->email }}<br>
+                        {{ $quotation->telephone }}
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="padding-top: 15px;">
+                    <p style="font-size: 12px; margin: 0;">
+                        <strong>Number:</strong> {{ $quotation->uuid }}<br>
+                        <strong>Due Date:</strong> {{ \Carbon\Carbon::parse($quotation->due_date)->format('d/m/Y') }}
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- Items Table --}}
+    <div style="padding: 0 25px;">
+        <table style="width: 100%; border-collapse: collapse; border-top: 1px solid {{ $themeColorSafe }};">
+            <thead style="background-color: {{ $themeColorSafe }};">
+                <tr>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Type</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Item</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Unit</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Rate</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Discount</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Price</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($quotation->items as $item)
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="text-align: center; font-size: 11px; padding: 10px;">Service</td>
+                    <td style="text-align: left; font-size: 11px; padding: 10px;">
+                        {{ $item->item }}<br>
+                        <span style="font-size: 9px; color: #666;">{!! $item->description ?? '' !!}</span>
+                    </td>
+                    <td style="text-align: center; font-size: 11px; padding: 10px;">{{ $item->qty }} Month</td>
+                    <td style="text-align: center; font-size: 11px; padding: 10px;">Rp{{ number_format($item->price, 0, ',', '.') }}</td>
+                    <td style="text-align: center; font-size: 11px; padding: 10px;">
+                        @if(($item->discount ?? 0) == 0) - @else Rp{{ number_format($item->discount, 0, ',', '.') }} @endif
+                    </td>
+                    <td style="text-align: center; font-size: 11px; padding: 10px;">Rp{{ number_format($item->price * $item->qty, 0, ',', '.') }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+
+    {{-- Summary --}}
+    <div style="padding: 15px 25px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="width: 50%; vertical-align: top;">
+                    @if(count($terms) > 0)
+                        <div style="font-size: 9px; line-height: 1.5;">
+                            <strong>Terms & Conditions:</strong><br>
+                            @foreach($terms as $i => $termText)
+                                {{ $i + 1 }}. {{ $termText }}<br>
+                            @endforeach
+                        </div>
+                    @endif
+                </td>
+                <td style="width: 50%; text-align: right; font-size: 12px;">
+                    <strong>Sub Total:</strong> Rp{{ number_format($quotation->subtotal ?? 0, 0, ',', '.') }}<br>
+                    @if(($quotation->total_discount ?? 0) > 0)
+                        <strong>Total Discount:</strong> Rp{{ number_format($quotation->total_discount, 0, ',', '.') }}<br>
+                    @endif
+                    @if(($quotation->total_vat ?? 0) > 0)
+                        <strong>Total VAT:</strong> Rp{{ number_format($quotation->total_vat, 0, ',', '.') }}<br>
+                    @endif
+                    <strong style="font-size: 14px;">Grand Total:</strong> Rp{{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- Signature --}}
+    <div style="padding: 40px 25px 30px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                    <p style="margin: 0 0 50px 0;">Sincerely Yours,</p>
+                    @if($signatureImage)
+                        @php $sigData = getImageData($signatureImage); @endphp
+                        @if($sigData)
+                            <img src="data:{{ getImageMimeType($signatureImage) }};base64,{{ $sigData }}" style="max-height: 50px;">
+                        @endif
+                    @endif
+                    <p style="margin: 10px 0 0 0;">{{ $signatureName }}</p>
+                    <p style="margin: 0; font-size: 10px; color: #666;">{{ $signatureTitle }}</p>
+                </td>
+                <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                    <p style="margin: 0 0 50px 0;">Checked & Approve By:</p>
+                    <p style="margin: 50px 0 0 0; border-bottom: 1px solid #333; display: inline-block; width: 150px;">&nbsp;</p>
+                    <p style="margin: 10px 0 0 0;">PIC</p>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+</div>
+
+{{-- Cover Page 3 (Footer) --}}
+@if($showCoverPages && $coverPage3)
+    <div style="page-break-before: always;"></div>
+    @php $cover3Data = getImageData($coverPage3); @endphp
+    @if($cover3Data)
+        <img src="data:{{ getImageMimeType($coverPage3) }};base64,{{ $cover3Data }}" style="width: 100%;">
+    @endif
+@endif
+
+</body>
+</html>

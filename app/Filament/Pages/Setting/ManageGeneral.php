@@ -10,7 +10,6 @@ use Filament\Notifications\Notification;
 use Filament\Pages\SettingsPage;
 use Filament\Support\Facades\FilamentView;
 use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Support\Facades\Storage;
 use Riodwanto\FilamentAceEditor\AceEditor;
 use Filament\Forms\Components\FileUpload;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -46,18 +45,20 @@ class ManageGeneral extends SettingsPage
     protected function fillForm(): void
     {
         $settings = app(static::getSettings());
-
-        $data = $this->mutateFormDataBeforeFill($settings->toArray());
+        $data = $settings->toArray();
 
         $fileService = new FileService;
 
         $data['theme-editor'] = $fileService->readfile($this->themePath);
-
         $data['tw-config-editor'] = $fileService->readfile($this->twConfigPath);
+
+        // Convert terms array back to newlines for textarea
+        $termsArray = $settings->getTermsArray();
+        $data['quot_terms'] = implode("\n", $termsArray);
 
         $this->form->fill($data);
     }
-    
+
     public function form(Form $form): Form
     {
         return $form
@@ -89,19 +90,19 @@ class ManageGeneral extends SettingsPage
                             Forms\Components\Grid::make()->schema([
                                 FileUpload::make('brand_logo')
                                 ->label(fn () => __('page.general_settings.fields.brand_logo'))
-                                ->image()  // Menjamin file yang diupload adalah gambar
-                                ->directory('sites')  // Menyimpan file di storage/app/public/sites
-                                ->visibility('public')  // File akan bisa diakses secara publik
-                                ->moveFiles()  // Memindahkan file setelah diupload
+                                ->image()
+                                ->directory('sites')
+                                ->visibility('public')
+                                ->moveFiles()
                                 ->required(),
 
                             FileUpload::make('site_favicon')
                                 ->label(fn () => __('page.general_settings.fields.site_favicon'))
-                                ->image()  // Menjamin file yang diupload adalah gambar
-                                ->directory('sites')  // Menyimpan file di storage/app/public/sites
-                                ->visibility('public')  // File akan bisa diakses secara publik
-                                ->acceptedFileTypes(['image/x-icon', 'image/vnd.microsoft.icon'])  // Menentukan tipe file yang diterima
-                                ->moveFiles()  // Memindahkan file setelah diupload
+                                ->image()
+                                ->directory('sites')
+                                ->visibility('public')
+                                ->acceptedFileTypes(['image/x-icon', 'image/vnd.microsoft.icon'])
+                                ->moveFiles()
                                 ->required(),
                             ]),
                         ])->columns(4),
@@ -147,6 +148,83 @@ class ManageGeneral extends SettingsPage
                                             ->addActionLabel('Tambah Category'),
                                     ]),
                             ]),
+                        Forms\Components\Tabs\Tab::make('Quotation Template')
+                            ->schema([
+                                Forms\Components\Section::make('Cover Pages')
+                                    ->description('Atur tampilan cover page quotation')
+                                    ->schema([
+                                        Forms\Components\Toggle::make('quot_show_cover_pages')
+                                            ->label('Tampilkan Cover Pages')
+                                            ->default(true),
+                                        Forms\Components\Grid::make(3)
+                                            ->schema([
+                                                FileUpload::make('quot_cover_page_1')
+                                                    ->label('Cover Page 1 (Header)')
+                                                    ->image()
+                                                    ->directory('quotation/covers')
+                                                    ->visibility('public')
+                                                    ->nullable(),
+                                                FileUpload::make('quot_cover_page_2')
+                                                    ->label('Cover Page 2 (Company Profile)')
+                                                    ->image()
+                                                    ->directory('quotation/covers')
+                                                    ->visibility('public')
+                                                    ->nullable(),
+                                                FileUpload::make('quot_cover_page_3')
+                                                    ->label('Cover Page 3 (Footer)')
+                                                    ->image()
+                                                    ->directory('quotation/covers')
+                                                    ->visibility('public')
+                                                    ->nullable(),
+                                            ]),
+                                    ]),
+                                Forms\Components\Section::make('Theme Color')
+                                    ->description('Pilih warna utama untuk quotation')
+                                    ->schema([
+                                        Forms\Components\ColorPicker::make('quot_theme_color')
+                                            ->label('Primary Color')
+                                            ->default('#f04f29'),
+                                        FileUpload::make('quot_logo')
+                                            ->label('Logo untuk Header Quotation')
+                                            ->image()
+                                            ->directory('quotation')
+                                            ->visibility('public')
+                                            ->nullable()
+                                            ->helperText('Upload logo khusus quotation (optional)'),
+                                    ]),
+                                Forms\Components\Section::make('Company Information')
+                                    ->description('Informasi perusahaan yang muncul di quotation')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('quot_company_name')
+                                            ->label('Nama Perusahaan'),
+                                        Forms\Components\TextInput::make('quot_company_email')
+                                            ->label('Email'),
+                                        Forms\Components\TextInput::make('quot_company_phone')
+                                            ->label('Telepon'),
+                                    ]),
+                                Forms\Components\Section::make('Signature')
+                                    ->description('Informasi tanda tangan di quotation')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('quot_signature_name')
+                                            ->label('Nama Penanda Tangan'),
+                                        Forms\Components\TextInput::make('quot_signature_title')
+                                            ->label('Jabatan'),
+                                        FileUpload::make('quot_signature_image')
+                                            ->label('Upload Tanda Tangan')
+                                            ->image()
+                                            ->directory('quotation/signatures')
+                                            ->visibility('public')
+                                            ->nullable(),
+                                    ]),
+                                Forms\Components\Section::make('Terms & Conditions')
+                                    ->description('Syarat dan ketentuan quotation (satu baris per ketentuan)')
+                                    ->schema([
+                                        Forms\Components\Textarea::make('quot_terms')
+                                            ->label('Ketentuan')
+                                            ->rows(5)
+                                            ->helperText('Masukkan satu ketentuan per baris'),
+                                    ]),
+                            ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')
                             ->schema([
                                 Forms\Components\Grid::make()->schema([
@@ -170,16 +248,15 @@ class ManageGeneral extends SettingsPage
     public function save(): void
     {
         try {
-            $data = $this->mutateFormDataBeforeSave($this->form->getState());
+            $data = $this->form->getState();
 
             $settings = app(static::getSettings());
-
             $settings->fill($data);
             $settings->save();
 
             $fileService = new FileService;
-            $fileService->writeFile($this->themePath, $data['theme-editor']);
-            $fileService->writeFile($this->twConfigPath, $data['tw-config-editor']);
+            $fileService->writeFile($this->themePath, $data['theme-editor'] ?? '');
+            $fileService->writeFile($this->twConfigPath, $data['tw-config-editor'] ?? '');
 
             Notification::make()
                 ->title('Settings updated.')
