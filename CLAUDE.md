@@ -5,7 +5,7 @@
 
 ## Quick Start
 
-1. **Read the PRD** at `docs/PRD-ERP-KRAFTY.md` for complete business context
+1. **Read the PRD** at `docs/PRD-ERP-CREATIVE.md` for complete business context
 2. **Read the Summary** at `docs/ERP-CODEBASE-SUMMARY.md` for technical overview
 3. **Key files** are documented in the Summary
 
