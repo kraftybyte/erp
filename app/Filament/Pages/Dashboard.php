@@ -24,12 +24,24 @@ class Dashboard extends BaseDashboard
         ];
     }
 
-    public function getWidgets(): array
+    public function getHeaderWidgets(): array
     {
         return [
             AnnouncementWidget::class,
-            TaskTodayWidget::class,
+        ];
+    }
+
+    public function getFooterWidgets(): array
+    {
+        return [
             Calendar::class,
+        ];
+    }
+
+    public function getWidgets(): array
+    {
+        return [
+            TaskTodayWidget::class,
             TaskWidget::class,
         ];
     }
