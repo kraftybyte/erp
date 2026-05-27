@@ -81,6 +81,14 @@ class MetaAdAccountResource extends Resource
                     ->dateTime('d M Y')
                     ->color(fn ($record) => $record ? ColorHelper::tokenStatus($record->isTokenExpired()) : 'gray'),
             ])
+            ->modifyQueryUsing(function ($query) {
+                return $query->with('client');
+            })
+            ->defaultSort('created_at', 'desc')
+            ->filters([
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Status Aktif'),
+            ])
             ->actions([
                 Tables\Actions\Action::make('sync')
                     ->label('Sync Now')
@@ -96,8 +104,8 @@ class MetaAdAccountResource extends Resource
                             ->send();
                     }),
 
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkAction::make('sync_selected')

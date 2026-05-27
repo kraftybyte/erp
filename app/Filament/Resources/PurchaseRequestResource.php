@@ -142,11 +142,17 @@ class PurchaseRequestResource extends Resource
                 ->label('Tanggal Request')
                 ->dateTime('d M Y, H:i')
                 ->sortable(),
-                
+
             ])
-            
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'Pending' => 'Pending',
+                        'Disetujui' => 'Disetujui',
+                        'Ditolak' => 'Ditolak',
+                    ]),
             ])
             ->actions([
             Tables\Actions\Action::make('approve')

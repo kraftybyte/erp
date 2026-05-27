@@ -60,7 +60,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        
         Gate::policy(Invoice::class, InvoicePolicy::class);
         Gate::policy(Activity::class, ActivityPolicy::class);
         Gate::policy(Contract::class, ContractPolicy::class);
@@ -75,7 +74,20 @@ class AppServiceProvider extends ServiceProvider
         Budget::observe(BudgetObserver::class);
         Task::observe(TaskObserver::class);
         Announcement::observe(AnnouncementObserver::class);
-        
+
+        // Dark Mode Configuration
+        try {
+            $darkModeEnabled = app(\App\Settings\GeneralSettings::class)->dark_mode_enabled ?? false;
+            FilamentView::registerRenderHook('styles.before', function () use ($darkModeEnabled) {
+                return $this->getDarkModeStyles($darkModeEnabled);
+            });
+        } catch (\Exception $e) {
+            // Settings loading failed, skip dark mode
+            FilamentView::registerRenderHook('styles.before', function () {
+                return '';
+            });
+        }
+
         FilamentInvoices::registerFor([
             InvoiceFor::make(Account::class)
                 ->label('Account')
@@ -112,6 +124,70 @@ class AppServiceProvider extends ServiceProvider
             fn (): View => view('filament.components.button-website'),
         );
 
-        
+
+    }
+
+    private function getDarkModeStyles(bool $enabled): string
+    {
+        if (!$enabled) {
+            return '';
+        }
+
+        return <<<CSS
+        <style>
+            html.dark {
+                color-scheme: dark;
+            }
+            html.dark body {
+                background-color: #18181b;
+                color: #fafafa;
+            }
+            html.dark .fi-body {
+                background-color: #18181b;
+            }
+            html.dark .fi-sidebar {
+                background-color: #1f1f23;
+                border-color: #27272a;
+            }
+            html.dark .fi-topbar {
+                background-color: rgba(31, 31, 35, 0.95);
+                border-color: #27272a;
+            }
+            html.dark .fi-card {
+                background-color: #1f1f23;
+                border-color: #27272a;
+            }
+            html.dark .fi-ta {
+                background-color: #1f1f23;
+                border-color: #27272a;
+            }
+            html.dark .fi-ta-header {
+                background-color: #27272a;
+            }
+            html.dark .fi-ta-row {
+                border-color: #27272a;
+            }
+            html.dark .fi-ta-row:hover {
+                background-color: rgba(139, 92, 246, 0.1);
+            }
+            html.dark .fi-input,
+            html.dark .fi-select {
+                background-color: #27272a;
+                border-color: #3f3f46;
+                color: #fafafa;
+            }
+            html.dark .fi-section {
+                background-color: #1f1f23;
+                border-color: #27272a;
+            }
+            html.dark .fi-dropdown {
+                background-color: #27272a;
+                border-color: #3f3f46;
+            }
+            html.dark .fi-dropdown-item:hover {
+                background-color: rgba(139, 92, 246, 0.15);
+            }
+        </style>
+        CSS;
     }
 }

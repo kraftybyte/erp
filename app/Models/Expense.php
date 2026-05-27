@@ -18,8 +18,8 @@ class Expense extends Model
     }
 
     protected $fillable = [
-        'user_id', 'submission_date', 'project_id', 'keterangan_expense', 'status',
-        'approved_by', 'amount', 'attachment', 'paid', 'paid_by', 'reference',
+        'user_id', 'submission_date', 'project_id', 'keterangan_expense',
+        'amount', 'attachment', 'reference',
         'rejection_reason', 'attachment_pay',
     ];
 

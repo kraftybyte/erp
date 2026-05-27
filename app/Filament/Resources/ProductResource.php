@@ -113,27 +113,32 @@ protected function mutateFormDataBeforeCreate(array $data): array
     {
         return $table
             ->columns([
-                //
                 Tables\Columns\TextColumn::make('id')
                     ->searchable()
                     ->sortable()
                     ->label('Product ID'),
                 Tables\Columns\TextColumn::make('nama_layanan')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('detail_layanan')
                     ->searchable()
                     ->limit(30)
                     ->html(),
                 Tables\Columns\TextColumn::make('total_harga')
                     ->searchable()
+                    ->sortable()
                     ->money('IDR'),
                 Tables\Columns\TextColumn::make('pajak')
                     ->searchable()
-                    ->suffix('%')
-                    ,
+                    ->suffix('%'),
             ])
+            ->defaultSort('nama_layanan', 'asc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('pajak')
+                    ->label('Pajak')
+                    ->options([
+                        '12' => 'PPN 12%',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

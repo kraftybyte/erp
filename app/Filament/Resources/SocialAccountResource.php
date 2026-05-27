@@ -157,9 +157,11 @@ class SocialAccountResource extends Resource
                         'facebook'  => 'Facebook',
                         'tiktok'    => 'TikTok',
                     ]),
-
-
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Status Aktif'),
             ])
+
+            ->defaultSort('created_at', 'desc')
 
             /*
             |------------------------------------------------------------------

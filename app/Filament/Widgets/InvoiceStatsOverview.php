@@ -19,40 +19,34 @@ class InvoiceStatsOverview extends BaseWidget
     {
         $now = Carbon::now();
 
-        // =========================
-        // REVENUE
-        // =========================
-        $paidInvoices = Invoice::where('status', 'paid');
+        // Single query for all status-based metrics using conditional aggregation
+        $stats = Invoice::query()
+            ->selectRaw("
+                SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END) as total_revenue,
+                SUM(CASE WHEN status = 'paid' AND MONTH(created_at) = ? AND YEAR(created_at) = ? THEN grand_total ELSE 0 END) as current_month_revenue,
+                SUM(CASE WHEN status = 'paid' AND MONTH(created_at) = ? AND YEAR(created_at) = ? THEN grand_total ELSE 0 END) as last_month_revenue,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN status = 'pending' THEN grand_total ELSE 0 END) as pending_total,
+                SUM(CASE WHEN status = 'pending' AND due_date < ? THEN 1 ELSE 0 END) as overdue_count,
+                SUM(CASE WHEN status = 'pending' AND due_date < ? THEN grand_total ELSE 0 END) as overdue_total
+            ", [
+                $now->month, $now->year,
+                $now->copy()->subMonth()->month, $now->copy()->subMonth()->year,
+                $now->toDateString(), $now->toDateString()
+            ])
+            ->first();
 
-        $totalRevenue = (clone $paidInvoices)->sum('grand_total');
-
-        $currentMonthRevenue = (clone $paidInvoices)
-            ->whereMonth('created_at', $now->month)
-            ->whereYear('created_at', $now->year)
-            ->sum('grand_total');
-
-        $lastMonthRevenue = (clone $paidInvoices)
-            ->whereMonth('created_at', $now->copy()->subMonth()->month)
-            ->whereYear('created_at', $now->copy()->subMonth()->year)
-            ->sum('grand_total');
+        $totalRevenue = $stats->total_revenue ?? 0;
+        $currentMonthRevenue = $stats->current_month_revenue ?? 0;
+        $lastMonthRevenue = $stats->last_month_revenue ?? 0;
+        $pendingCount = $stats->pending_count ?? 0;
+        $pendingTotal = $stats->pending_total ?? 0;
+        $overdueCount = $stats->overdue_count ?? 0;
+        $overdueTotal = $stats->overdue_total ?? 0;
 
         $revenueChange = $lastMonthRevenue > 0
             ? (($currentMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100
             : 0;
-
-        // =========================
-        // PENDING & OVERDUE
-        // =========================
-        $pendingInvoices = Invoice::where('status', 'pending');
-
-        $pendingCount = (clone $pendingInvoices)->count();
-        $pendingTotal = (clone $pendingInvoices)->sum('grand_total');
-
-        $overdueInvoices = (clone $pendingInvoices)
-            ->where('due_date', '<', $now);
-
-        $overdueCount = (clone $overdueInvoices)->count();
-        $overdueTotal = (clone $overdueInvoices)->sum('grand_total');
 
         return [
             Stat::make('Total Revenue', $this->formatCurrency($totalRevenue))
@@ -110,13 +104,21 @@ class InvoiceStatsOverview extends BaseWidget
     private function getRevenueChart(): array
     {
         $data = [];
+        $days = [];
 
         for ($i = 6; $i >= 0; $i--) {
-            $date = Carbon::now()->subDays($i)->toDateString();
+            $days[] = Carbon::now()->subDays($i)->toDateString();
+        }
 
-            $data[] = Invoice::where('status', 'paid')
-                ->whereDate('created_at', $date)
-                ->sum('grand_total');
+        $chartData = Invoice::where('status', 'paid')
+            ->whereDate('created_at', '>=', $days[0])
+            ->whereDate('created_at', '<=', $days[6])
+            ->selectRaw('DATE(created_at) as date, SUM(grand_total) as total')
+            ->groupByRaw('DATE(created_at)')
+            ->pluck('total', 'date');
+
+        foreach ($days as $day) {
+            $data[] = $chartData[$day] ?? 0;
         }
 
         return $data;

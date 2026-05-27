@@ -13,17 +13,25 @@ class InvoiceStatusChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Gunakan grand_total
-        $paid = Invoice::where('status', 'paid')->sum('grand_total');
-        $pending = Invoice::where('status', 'pending')->sum('grand_total');
-        $cancelled = Invoice::where('status', 'cancelled')->sum('grand_total');
-        $draft = Invoice::where('status', 'draft')->sum('grand_total');
-        
+        $data = Invoice::query()
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END), 0) as paid,
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN grand_total ELSE 0 END), 0) as pending,
+                COALESCE(SUM(CASE WHEN status = 'cancelled' THEN grand_total ELSE 0 END), 0) as cancelled,
+                COALESCE(SUM(CASE WHEN status = 'draft' THEN grand_total ELSE 0 END), 0) as draft
+            ")
+            ->first();
+
         return [
             'datasets' => [
                 [
                     'label' => 'Total Amount',
-                    'data' => [$paid, $pending, $cancelled, $draft],
+                    'data' => [
+                        $data->paid ?? 0,
+                        $data->pending ?? 0,
+                        $data->cancelled ?? 0,
+                        $data->draft ?? 0,
+                    ],
                     'backgroundColor' => [
                         'rgb(34, 197, 94)',
                         'rgb(234, 179, 8)',

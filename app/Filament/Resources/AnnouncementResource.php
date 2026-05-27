@@ -7,7 +7,6 @@ use App\Models\Announcement;
 use Filament\Forms;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Select;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
@@ -41,13 +40,14 @@ class AnnouncementResource extends Resource
                     ->required(),
                 Hidden::make('user_id')
                     ->required()
-                    ->default(fn() => auth()->id()),
+                    ->default(fn () => auth()->id()),
             ]);
     }
 
     public static function table(Tables\Table $table): Tables\Table
     {
         return $table
+            ->query(fn () => Announcement::with('user'))
             ->columns([
                 TextColumn::make('content')->limit(50)->label('Isi Pengumuman')->html(),
                 TextColumn::make('start_date')->dateTime()->label('Mulai Pada'),
@@ -55,7 +55,7 @@ class AnnouncementResource extends Resource
                 TextColumn::make('user.firstname')->label('Pembuat'),
                 TextColumn::make('created_at')->dateTime()->label('Tanggal Dibuat'),
             ])
-
+            ->defaultSort('start_date', 'desc')
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
                 Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
@@ -65,8 +65,7 @@ class AnnouncementResource extends Resource
                 Tables\Filters\Filter::make('aktif')
                     ->query(fn (Builder $query) => $query->where('end_date', '>', now()))
                     ->label('Masih Berlaku'),
-            ])
-            ->defaultSort('start_date', 'desc');
+            ]);
     }
 
     public static function getRelations(): array

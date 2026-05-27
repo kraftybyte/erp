@@ -9,7 +9,7 @@
                     <span class="text-sm">{!! $announcement->content !!}</span>
                 </div>
                 <span class="text-xs text-gray-500">
-                        - {{ $announcement->user->firstname }} {{ $announcement->user->lastname }}
+                        - {{ $announcement->user->firstname ?? 'Admin' }} {{ $announcement->user->lastname ?? '' }}
                     </span>
             @empty
                 <p class="text-gray-500 text-sm">Tidak ada pengumuman aktif.</p>

@@ -78,7 +78,7 @@ class TaskTodayWidget extends Widget
     | Base Query
     |--------------------------------------------------------------------------
     */
-    private function baseQuery()
+    private function baseQueryWithoutFilters()
     {
         $user  = Auth::user();
         $today = Carbon::today();
@@ -87,8 +87,6 @@ class TaskTodayWidget extends Widget
             ? Task::query()
             : Task::query()->whereHas('users', fn ($q) => $q->where('users.id', $user->id));
 
-        // Sembunyikan task yang dibuat sendiri,
-        // KECUALI task yang hanya punya 1 assignee (berarti dia satu-satunya)
         $query->where(function ($q) use ($user) {
             $q->where('creator_id', '!=', $user->id)
               ->orWhere(function ($q2) {
@@ -98,8 +96,13 @@ class TaskTodayWidget extends Widget
 
         return $query->with(['project', 'users'])
             ->whereDate('mulai_task', '<=', $today)
-            ->whereDate('selesai_task', '>=', $today)
-            ->orderBy('mulai_task', 'asc');
+            ->whereDate('selesai_task', '>=', $today);
+    }
+
+    private function baseQuery()
+    {
+        $query = $this->baseQueryWithoutFilters();
+        return $query->orderBy('mulai_task', 'asc');
     }
 
     public function getFilteredTasks()
@@ -132,9 +135,27 @@ class TaskTodayWidget extends Widget
         };
     }
 
-    public function countAll(): int     { return $this->baseQuery()->count(); }
-    public function countPending(): int { return $this->baseQuery()->where('status', '!=', 'Done')->count(); }
-    public function countDone(): int    { return $this->baseQuery()->where('status', 'Done')->count(); }
+    public array $counts = [];
+
+    public function mount(): void
+    {
+        $this->loadCounts();
+    }
+
+    private function loadCounts(): void
+    {
+        $baseQuery = $this->baseQueryWithoutFilters();
+
+        $this->counts = [
+            'all' => $baseQuery->count(),
+            'pending' => (clone $baseQuery)->where('status', '!=', 'Done')->count(),
+            'done' => (clone $baseQuery)->where('status', 'Done')->count(),
+        ];
+    }
+
+    public function countAll(): int     { return $this->counts['all']; }
+    public function countPending(): int { return $this->counts['pending']; }
+    public function countDone(): int    { return $this->counts['done']; }
 
     public static function canView(): bool
     {

@@ -24,12 +24,30 @@
     /* Stack tables horizontally */
     .fi-ta-content {
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Table responsive - horizontal scroll with shadow indicator */
+    .fi-ta-table {
+        min-width: 600px;
     }
 
     /* Mobile-friendly cards */
     .fi-card {
         border-radius: 12px;
         margin-bottom: 12px;
+    }
+
+    /* Stats overview - stack horizontally */
+    .fi-stats-overview .fi-stats-overview-stat {
+        flex: 1 1 calc(50% - 8px) !important;
+        min-width: calc(50% - 8px) !important;
+    }
+
+    /* Charts - full width on mobile */
+    .fi-chart {
+        width: 100% !important;
+        max-width: 100% !important;
     }
 
     /* Bottom navigation for mobile */
@@ -83,9 +101,15 @@
         padding: 12px 16px;
     }
 
-    /* Modal improvements */
+    /* Modal improvements - full screen on mobile */
     .fi-modal {
-        padding: 16px;
+        padding: 0;
+    }
+
+    .fi-modal-panel {
+        border-radius: 16px 16px 0 0;
+        max-height: 90vh;
+        overflow-y: auto;
     }
 
     /* Badge/notification mobile */
@@ -97,12 +121,121 @@
         height: 18px;
         font-size: 10px;
     }
+
+    /* Sidebar - slide in from left */
+    .fi-sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .fi-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Page content - adjust for bottom nav */
+    .fi-main {
+        padding-bottom: 80px !important;
+    }
+
+    /* Action buttons - full width on mobile */
+    .fi-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .fi-actions > * {
+        width: 100%;
+    }
+
+    /* Filter pills - horizontal scroll */
+    .fi-filters {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .fi-filter-pill {
+        flex-shrink: 0;
+    }
+
+    /* Kanban - swipeable columns */
+    .fi-kanban-board {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+    }
+
+    .fi-kanban-column {
+        scroll-snap-align: start;
+        min-width: 280px;
+    }
+
+    /* Search bar - full width */
+    .fi-search {
+        width: 100%;
+    }
+
+    /* Widget grid - single column on mobile */
+    .fi-widgets-grid > * {
+        grid-column: span 12 !important;
+    }
+
+    /* Form sections - collapsible */
+    .fi-section {
+        margin-bottom: 16px;
+    }
+
+    .fi-section-header {
+        cursor: pointer;
+    }
+
+    /* File upload - touch friendly */
+    .fi-file-upload {
+        min-height: 120px;
+    }
+
+    /* Toast notifications - bottom positioned */
+    .fi-notification {
+        bottom: 90px;
+        left: 16px;
+        right: 16px;
+    }
+
+    /* Breadcrumb - truncate */
+    .fi-breadcrumb {
+        overflow: hidden;
+    }
+
+    .fi-breadcrumb-item:not(:last-child) {
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 }
 
 /* Tablet adjustments */
 @media (min-width: 769px) and (max-width: 1024px) {
     .fi-sidebar {
         width: 240px !important;
+    }
+
+    /* Stats - 3 columns on tablet */
+    .fi-stats-overview .fi-stats-overview-stat {
+        flex: 1 1 calc(33.333% - 8px) !important;
+    }
+
+    /* Widgets - 2 columns on tablet */
+    .fi-widgets-grid > * {
+        grid-column: span 6 !important;
+    }
+}
+
+/* Large desktop */
+@media (min-width: 1280px) {
+    .fi-sidebar {
+        width: 280px !important;
     }
 }
 

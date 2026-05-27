@@ -187,8 +187,16 @@ class ProjectResource extends Resource
             ->toggleable(isToggledHiddenByDefault: false),
 
              ])
+             ->defaultSort('created_at', 'desc')
              ->filters([
-                //
+                Tables\Filters\SelectFilter::make('deal.status')
+                    ->label('Status')
+                    ->options([
+                        'Negosiasi' => 'Negosiasi',
+                        'Menunggu Pembayaran' => 'Menunggu Pembayaran',
+                        'Dalam Tahap Project' => 'Dalam Tahap Project',
+                        'Pending' => 'Pending',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),

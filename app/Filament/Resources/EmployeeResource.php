@@ -122,14 +122,24 @@ class EmployeeResource extends Resource
                 ->sortable(),
             Tables\Columns\TextColumn::make('created_at')
                 ->label('Tanggal Bergabung')
-                ->date(),
+                ->date()
+                ->sortable(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('division')
+                    ->label('Divisi')
+                    ->options([
+                        'Social Media Specialist' => 'Social Media Specialist',
+                        'Finance' => 'Finance',
+                        'HR' => 'HR',
+                        'Graphic Design' => 'Graphic Design',
+                        'Video Editor' => 'Video Editor',
+                    ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
 
             ])
             ->bulkActions([

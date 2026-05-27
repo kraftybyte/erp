@@ -1,14 +1,10 @@
 /* =====================================================
-   CLICKUP-STYLE OVERRIDES FOR FILAMENT TABLES
+   INTER FONT - Global Override (Standardized)
    ===================================================== */
-
-/* =====================================================
-   FONT SORA - Global Override
-   ===================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * {
-    font-family: 'Sora', sans-serif !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
 /* =====================================================
@@ -252,14 +248,14 @@ html, html.dark {
 }
 
 /* =====================================================
-   FILAMENT TABLE OVERRIDES
+   FILAMENT TABLE OVERRIDES - Standardized
    ===================================================== */
 
 /* Table Container */
 .fi-ta {
     background: var(--cu-bg, #ffffff);
     border-radius: 12px;
-    border: 1px solid var(--cu-border, #e4e4e7);
+    border: 1px solid #e2e8f0;
     overflow: hidden;
 }
 
@@ -270,8 +266,8 @@ html, html.dark {
 
 /* Table Header */
 .fi-ta-header {
-    background: var(--cu-bg-secondary, #fafafa);
-    border-bottom: 1px solid var(--cu-border, #e4e4e7);
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-bottom: 2px solid #e2e8f0;
 }
 
 .dark .fi-ta-header {
@@ -279,16 +275,17 @@ html, html.dark {
 }
 
 .fi-th {
-    font-weight: 600;
-    font-size: 12px;
+    font-weight: 700;
+    font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--cu-text-muted);
+    letter-spacing: 0.6px;
+    color: #64748b;
+    padding: 11px 14px;
 }
 
-/* Table Rows - ClickUp style */
+/* Table Rows */
 .fi-ta-row {
-    border-bottom: 1px solid var(--cu-border, #e4e4e7);
+    border-bottom: 1px solid #f1f5f9;
     transition: all 0.15s ease;
 }
 
@@ -297,7 +294,7 @@ html, html.dark {
 }
 
 .fi-ta-row:hover {
-    background: rgba(139, 92, 246, 0.05);
+    background: #f8fafc;
 }
 
 .dark .fi-ta-row:hover {
@@ -310,21 +307,25 @@ html, html.dark {
 
 /* Table Cells */
 .fi-td {
-    font-size: 14px;
-    color: var(--cu-text);
-    padding: 14px 16px;
+    font-size: 12px;
+    color: #334155;
+    padding: 11px 14px;
+    vertical-align: middle;
+    line-height: 1.4;
 }
 
 .dark .fi-td {
     color: #fafafa;
 }
 
-/* Badge Override */
+/* Badge Override - Standardized */
 .fi-badge {
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: 999px;
+    font-size: 10px;
     font-weight: 600;
     padding: 4px 10px;
+    text-transform: capitalize;
+    letter-spacing: 0.2px;
 }
 
 /* Action Buttons - Show on hover */
@@ -338,20 +339,20 @@ html, html.dark {
 }
 
 /* =====================================================
-   FILAMENT FORM OVERRIDES
+   FILAMENT FORM OVERRIDES - Standardized
    ===================================================== */
 
 /* Input Fields */
 .fi-input {
     border-radius: 8px;
-    border: 1px solid var(--cu-border, #e4e4e7);
-    font-size: 14px;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
     transition: all 0.15s ease;
 }
 
 .fi-input:focus {
-    border-color: var(--cu-primary, #8b5cf6);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    border-color: var(--cu-primary, #07a0cf);
+    box-shadow: 0 0 0 3px rgba(7, 160, 207, 0.1);
 }
 
 .dark .fi-input {
@@ -363,36 +364,60 @@ html, html.dark {
 /* Select */
 .fi-select {
     border-radius: 8px;
+    font-size: 12px;
+}
+
+/* Labels */
+.fi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.dark .fi-label {
+    color: #fafafa;
+}
+
+/* Hint Text */
+.fi-hint {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
 }
 
 /* Buttons */
 .fi-btn {
     border-radius: 8px;
-    font-weight: 500;
+    font-weight: 600;
     transition: all 0.15s ease;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .fi-btn-primary {
-    background: linear-gradient(135deg, var(--cu-primary, #8b5cf6), #7c3aed);
+    background: linear-gradient(135deg, var(--cu-primary, #07a0cf), #0589b0);
     border: none;
 }
 
 .fi-btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 12px rgba(7, 160, 207, 0.3);
 }
 
 /* Cards */
 .fi-card {
     background: var(--cu-bg, #ffffff);
-    border: 1px solid var(--cu-border, #e4e4e7);
+    border: 1px solid #e2e8f0;
     border-radius: 12px;
     transition: all 0.2s ease;
 }
 
 .fi-card:hover {
-    border-color: var(--cu-primary, #8b5cf6);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .dark .fi-card {
@@ -452,6 +477,10 @@ html, html.dark {
     .cu-sidebar.open {
         transform: translateX(0);
     }
+
+    .cu-content {
+        padding: 16px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -466,6 +495,162 @@ html, html.dark {
     .cu-page-title {
         font-size: 16px;
     }
+
+    .fi-page {
+        padding: 12px;
+    }
+
+    .fi-section {
+        margin-bottom: 16px;
+        border-radius: 12px;
+    }
+
+    .fi-ta-row {
+        padding: 12px 8px;
+    }
+
+    .fi-td {
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+
+    .fi-input {
+        font-size: 16px;
+        padding: 12px 14px;
+    }
+
+    .fi-btn {
+        min-height: 44px;
+        padding: 10px 16px;
+    }
+
+    .fi-btn-icon {
+        width: 44px;
+        height: 44px;
+    }
+
+    .fi-card {
+        border-radius: 12px;
+        padding: 16px;
+    }
+
+    .fi-widget {
+        border-radius: 12px;
+    }
+
+    .fi-badge {
+        font-size: 11px;
+        padding: 3px 8px;
+    }
+
+    .fi-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .fi-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .fi-tab {
+        white-space: nowrap;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    .fi-modal-panel {
+        border-radius: 16px 16px 0 0;
+        max-height: 90vh;
+    }
+
+    .fi-dropdown {
+        border-radius: 12px;
+    }
+
+    .fi-dropdown-item {
+        padding: 12px 14px;
+    }
+
+    .fi-notification {
+        border-radius: 12px;
+    }
+
+    .fi-empty-state {
+        padding: 40px 20px;
+    }
+
+    .fi-empty-state-icon {
+        width: 64px;
+        height: 64px;
+    }
+
+    .fi-empty-state-icon svg {
+        width: 32px;
+        height: 32px;
+    }
+
+    .fi-kanban-board {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        padding: 16px;
+    }
+
+    .fi-kanban-column {
+        min-width: 280px;
+        scroll-snap-align: start;
+        border-radius: 12px;
+    }
+
+    .fi-kanban-card {
+        padding: 12px;
+        border-radius: 8px;
+    }
+
+    .fi-search-input {
+        padding: 10px 14px 10px 36px;
+    }
+
+    .fi-stats-overview {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px !important;
+    }
+
+    .fi-stats-overview-stat {
+        min-width: 0 !important;
+    }
+}
+
+/* Tablet adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .cu-content {
+        padding: 16px;
+    }
+
+    .fi-stats-overview {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 16px !important;
+    }
+
+    .fi-widgets-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 16px !important;
+    }
+}
+
+/* Large screens */
+@media (min-width: 1536px) {
+    .cu-sidebar {
+        width: 300px !important;
+    }
+
+    .cu-content {
+        padding: 24px 32px;
+    }
 }
 
 /* =====================================================
@@ -473,10 +658,10 @@ html, html.dark {
    ===================================================== */
 
 /* =====================================================
-   TOAST NOTIFICATIONS
+   TOAST NOTIFICATIONS - Standardized
    ===================================================== */
 .fi-notification {
-    border-radius: 12px;
+    border-radius: 10px;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(10px);
     animation: toastEnter 0.3s ease-out;
@@ -507,18 +692,18 @@ html, html.dark {
 }
 
 .fi-notification-info {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(124, 58, 237, 0.95));
+    background: linear-gradient(135deg, rgba(7, 160, 207, 0.95), rgba(5, 137, 176, 0.95));
 }
 
 /* =====================================================
-   MODAL / SLIDE OVER ENHANCEMENTS
+   MODAL / SLIDE OVER ENHANCEMENTS - Standardized
    ===================================================== */
 .fi-modal {
     backdrop-filter: blur(4px);
 }
 
 .fi-modal-panel {
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     animation: modalSlideIn 0.3s ease-out;
 }
@@ -535,13 +720,15 @@ html, html.dark {
 }
 
 .fi-slide-over-panel {
-    border-radius: 16px 0 0 16px;
+    border-radius: 12px 0 0 12px;
 }
 
 .fi-modal-title {
-    font-weight: 600;
-    font-size: 18px;
-    color: var(--cu-text);
+    font-weight: 700;
+    font-size: 14px;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .dark .fi-modal-title {
@@ -549,7 +736,7 @@ html, html.dark {
 }
 
 /* =====================================================
-   ENHANCED TABLE UX
+   ENHANCED TABLE UX - Standardized
    ===================================================== */
 
 /* Row Selection */
@@ -558,18 +745,18 @@ html, html.dark {
 }
 
 .fi-checkbox:checked {
-    background: var(--cu-primary, #8b5cf6);
-    border-color: var(--cu-primary, #8b5cf6);
+    background: #07a0cf;
+    border-color: #07a0cf;
 }
 
 /* Sortable Column */
 .fi-th-sortable:hover {
-    background: rgba(139, 92, 246, 0.08);
-    color: var(--cu-primary);
+    background: rgba(7, 160, 207, 0.08);
+    color: #07a0cf;
 }
 
 .fi-th-sortable.active {
-    color: var(--cu-primary);
+    color: #07a0cf;
 }
 
 /* Quick Filter Pills */
@@ -578,35 +765,37 @@ html, html.dark {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(139, 92, 246, 0.1);
-    color: var(--cu-primary);
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 500;
+    background: rgba(7, 160, 207, 0.1);
+    color: #07a0cf;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
     transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .fi-filter-pill:hover {
-    background: rgba(139, 92, 246, 0.2);
+    background: rgba(7, 160, 207, 0.2);
 }
 
 .fi-filter-pill button {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    background: rgba(139, 92, 246, 0.2);
-    color: var(--cu-primary);
+    background: rgba(7, 160, 207, 0.2);
+    color: #07a0cf;
 }
 
 /* Bulk Actions Bar */
 .fi-bulk-actions {
-    background: var(--cu-primary);
+    background: #07a0cf;
     color: white;
     padding: 12px 20px;
-    border-radius: 8px;
+    border-radius: 10px;
     margin-bottom: 16px;
     animation: slideUp 0.2s ease-out;
 }
@@ -736,12 +925,13 @@ html, html.dark {
 }
 
 /* =====================================================
-   ENHANCED BUTTONS
+   ENHANCED BUTTONS - Standardized
    ===================================================== */
 
 .fi-btn {
     position: relative;
     overflow: hidden;
+    border-radius: 8px;
 }
 
 .fi-btn::before {
@@ -758,14 +948,14 @@ html, html.dark {
 }
 
 .fi-btn-primary {
-    background: linear-gradient(135deg, var(--cu-primary, #8b5cf6), #7c3aed);
+    background: linear-gradient(135deg, #07a0cf, #0589b0);
     border: none;
-    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 14px rgba(7, 160, 207, 0.3);
 }
 
 .fi-btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 6px 20px rgba(7, 160, 207, 0.4);
 }
 
 .fi-btn-primary:active {
@@ -774,23 +964,23 @@ html, html.dark {
 
 .fi-btn-secondary {
     background: var(--cu-bg);
-    border: 1px solid var(--cu-border);
-    color: var(--cu-text);
+    border: 1px solid #e2e8f0;
+    color: #334155;
 }
 
 .fi-btn-secondary:hover {
-    border-color: var(--cu-primary);
-    color: var(--cu-primary);
+    border-color: #07a0cf;
+    color: #07a0cf;
 }
 
 .fi-btn-danger {
-    background: linear-gradient(135deg, var(--cu-danger, #ef4444), #dc2626);
+    background: linear-gradient(135deg, #ef4444, #dc2626);
     color: white;
     border: none;
 }
 
 .fi-btn-success {
-    background: linear-gradient(135deg, var(--cu-success, #10b981), #059669);
+    background: linear-gradient(135deg, #10b981, #059669);
     color: white;
     border: none;
 }
@@ -840,7 +1030,7 @@ html, html.dark {
 }
 
 /* =====================================================
-   EMPTY STATES
+   EMPTY STATES - Standardized
    ===================================================== */
 
 .fi-empty-state {
@@ -855,9 +1045,9 @@ html, html.dark {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(139, 92, 246, 0.1);
+    background: rgba(7, 160, 207, 0.1);
     border-radius: 20px;
-    color: var(--cu-primary);
+    color: #07a0cf;
 }
 
 .fi-empty-state-icon svg {
@@ -866,21 +1056,22 @@ html, html.dark {
 }
 
 .fi-empty-state-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--cu-text);
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
     margin-bottom: 8px;
 }
 
 .fi-empty-state-description {
-    font-size: 14px;
-    color: var(--cu-text-muted);
+    font-size: 12px;
+    color: #64748b;
     max-width: 400px;
     margin: 0 auto 24px;
+    font-weight: 500;
 }
 
 .dark .fi-empty-state-icon {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(7, 160, 207, 0.15);
 }
 
 .dark .fi-empty-state-title {
@@ -892,7 +1083,7 @@ html, html.dark {
 }
 
 /* =====================================================
-   BADGES & TAGS
+   BADGES & TAGS - Standardized
    ===================================================== */
 
 .fi-badge {
@@ -900,34 +1091,36 @@ html, html.dark {
     align-items: center;
     gap: 4px;
     padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: 999px;
+    font-size: 10px;
     font-weight: 600;
+    text-transform: capitalize;
+    letter-spacing: 0.2px;
 }
 
 .fi-badge-primary {
-    background: rgba(139, 92, 246, 0.15);
-    color: var(--cu-primary);
+    background: rgba(7, 160, 207, 0.12);
+    color: #07a0cf;
 }
 
 .fi-badge-success {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(16, 185, 129, 0.12);
     color: #059669;
 }
 
 .fi-badge-warning {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(245, 158, 11, 0.12);
     color: #d97706;
 }
 
 .fi-badge-danger {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.12);
     color: #dc2626;
 }
 
 .fi-badge-muted {
-    background: rgba(161, 161, 170, 0.15);
-    color: #71717a;
+    background: rgba(148, 163, 184, 0.12);
+    color: #64748b;
 }
 
 /* Status Dot */
@@ -939,27 +1132,27 @@ html, html.dark {
 }
 
 .fi-status-dot.success {
-    background: var(--cu-success);
+    background: #10b981;
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
 .fi-status-dot.warning {
-    background: var(--cu-warning);
+    background: #f59e0b;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
 }
 
 .fi-status-dot.danger {
-    background: var(--cu-danger);
+    background: #ef4444;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
 }
 
 .fi-status-dot.info {
-    background: var(--cu-primary);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    background: #07a0cf;
+    box-shadow: 0 0 0 3px rgba(7, 160, 207, 0.2);
 }
 
 /* =====================================================
-   SEARCH & FILTER
+   SEARCH & FILTER - Standardized
    ===================================================== */
 
 .fi-search {
@@ -968,66 +1161,68 @@ html, html.dark {
 
 .fi-search-input {
     width: 100%;
-    padding: 10px 16px 10px 40px;
+    padding: 10px 14px 10px 38px;
     background: var(--cu-bg);
-    border: 1px solid var(--cu-border);
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
-    font-size: 14px;
-    color: var(--cu-text);
+    font-size: 12px;
+    color: #334155;
     transition: all 0.15s ease;
 }
 
 .fi-search-input:focus {
     outline: none;
-    border-color: var(--cu-primary);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    border-color: #07a0cf;
+    box-shadow: 0 0 0 3px rgba(7, 160, 207, 0.1);
 }
 
 .fi-search-icon {
     position: absolute;
-    left: 14px;
+    left: 12px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--cu-text-muted);
+    color: #64748b;
     width: 16px;
     height: 16px;
 }
 
 /* =====================================================
-   TABS ENHANCEMENTS
+   TABS ENHANCEMENTS - Standardized
    ===================================================== */
 
 .fi-tabs {
-    border-bottom: 1px solid var(--cu-border);
+    border-bottom: 2px solid #e2e8f0;
     gap: 4px;
 }
 
 .fi-tab {
-    padding: 12px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--cu-text-muted);
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
     border-bottom: 2px solid transparent;
     transition: all 0.15s ease;
-    margin-bottom: -1px;
+    margin-bottom: -2px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
 }
 
 .fi-tab:hover {
-    color: var(--cu-text);
+    color: #334155;
 }
 
 .fi-tab.active {
-    color: var(--cu-primary);
-    border-bottom-color: var(--cu-primary);
+    color: #07a0cf;
+    border-bottom-color: #07a0cf;
 }
 
 /* =====================================================
-   DROPDOWN & CONTEXT MENU
+   DROPDOWN & CONTEXT MENU - Standardized
    ===================================================== */
 
 .fi-dropdown {
     background: var(--cu-bg);
-    border: 1px solid var(--cu-border);
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
     padding: 6px;
@@ -1055,56 +1250,62 @@ html, html.dark {
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
-    border-radius: 6px;
-    font-size: 14px;
-    color: var(--cu-text);
+    border-radius: 8px;
+    font-size: 12px;
+    color: #334155;
     transition: all 0.15s ease;
     cursor: pointer;
+    font-weight: 500;
 }
 
 .fi-dropdown-item:hover {
-    background: rgba(139, 92, 246, 0.1);
+    background: rgba(7, 160, 207, 0.1);
+    color: #07a0cf;
 }
 
 .fi-dropdown-item.danger:hover {
     background: rgba(239, 68, 68, 0.1);
-    color: var(--cu-danger);
+    color: #dc2626;
 }
 
 .fi-dropdown-divider {
     height: 1px;
-    background: var(--cu-border);
+    background: #e2e8f0;
     margin: 6px 0;
 }
 
+.dark .fi-dropdown-divider {
+    background: #3f3f46;
+}
+
 /* =====================================================
-   PROGRESS INDICATORS
+   PROGRESS INDICATORS - Standardized
    ===================================================== */
 
 .fi-progress {
-    height: 6px;
-    background: var(--cu-border);
-    border-radius: 3px;
+    height: 8px;
+    background: #f1f5f9;
+    border-radius: 999px;
     overflow: hidden;
 }
 
 .fi-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--cu-primary), #7c3aed);
-    border-radius: 3px;
+    background: linear-gradient(90deg, #07a0cf, #0589b0);
+    border-radius: 999px;
     transition: width 0.3s ease;
 }
 
 .fi-progress-success .fi-progress-bar {
-    background: linear-gradient(90deg, var(--cu-success), #059669);
+    background: linear-gradient(90deg, #10b981, #059669);
 }
 
 .fi-progress-warning .fi-progress-bar {
-    background: linear-gradient(90deg, var(--cu-warning), #d97706);
+    background: linear-gradient(90deg, #f59e0b, #d97706);
 }
 
 .fi-progress-danger .fi-progress-bar {
-    background: linear-gradient(90deg, var(--cu-danger), #dc2626);
+    background: linear-gradient(90deg, #ef4444, #dc2626);
 }
 
 /* Circular Progress */
@@ -1123,11 +1324,11 @@ html, html.dark {
 }
 
 .fi-circular-progress .bg {
-    stroke: var(--cu-border);
+    stroke: #e2e8f0;
 }
 
 .fi-circular-progress .progress {
-    stroke: var(--cu-primary);
+    stroke: #07a0cf;
     stroke-linecap: round;
     transition: stroke-dashoffset 0.3s ease;
 }
@@ -1138,7 +1339,7 @@ html, html.dark {
 
 .fi-widget {
     background: var(--cu-bg);
-    border: 1px solid var(--cu-border);
+    border: 1px solid #e2e8f0;
     border-radius: 12px;
     overflow: hidden;
 }
@@ -1148,17 +1349,25 @@ html, html.dark {
     align-items: center;
     justify-content: space-between;
     padding: 16px;
-    border-bottom: 1px solid var(--cu-border);
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .fi-widget-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--cu-text);
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
 }
 
 .dark .fi-widget {
     background: #1f1f23;
+    border-color: #2d2d35;
+}
+
+.dark .fi-widget-header {
+    background: #27272a;
     border-color: #2d2d35;
 }
 
@@ -1167,22 +1376,22 @@ html, html.dark {
 }
 
 /* =====================================================
-   KANBAN BOARD ENHANCEMENTS
+   KANBAN BOARD ENHANCEMENTS - Standardized
    ===================================================== */
 
 .fi-kanban-board {
     display: flex;
-    gap: 20px;
+    gap: 16px;
     overflow-x: auto;
-    padding: 20px;
+    padding: 16px;
     min-height: calc(100vh - 200px);
 }
 
 .fi-kanban-column {
     flex: 0 0 300px;
-    background: var(--cu-bg-secondary);
+    background: #f8fafc;
     border-radius: 12px;
-    border: 1px solid var(--cu-border);
+    border: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - 240px);
@@ -1197,25 +1406,29 @@ html, html.dark {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
-    border-bottom: 1px solid var(--cu-border);
+    padding: 12px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .fi-kanban-column-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--cu-text);
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
 .fi-kanban-column-count {
-    background: var(--cu-bg);
+    background: #ffffff;
     padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 12px;
-    color: var(--cu-text-muted);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
 }
 
 .dark .fi-kanban-column-count {
@@ -1232,8 +1445,8 @@ html, html.dark {
 }
 
 .fi-kanban-card {
-    background: var(--cu-bg);
-    border: 1px solid var(--cu-border);
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
     padding: 14px;
     cursor: grab;
@@ -1241,15 +1454,15 @@ html, html.dark {
 }
 
 .fi-kanban-card:hover {
-    border-color: var(--cu-primary);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+    border-color: #07a0cf;
+    box-shadow: 0 4px 12px rgba(7, 160, 207, 0.15);
     transform: translateY(-2px);
 }
 
 .fi-kanban-card:active {
     cursor: grabbing;
     transform: scale(1.02) rotate(1deg);
-    box-shadow: 0 8px 20px rgba(139, 92, 246, 0.2);
+    box-shadow: 0 8px 20px rgba(7, 160, 207, 0.2);
 }
 
 .dark .fi-kanban-card {
@@ -1258,14 +1471,15 @@ html, html.dark {
 }
 
 .dark .fi-kanban-card:hover {
-    border-color: var(--cu-primary);
+    border-color: #07a0cf;
 }
 
 .fi-kanban-card-title {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--cu-text);
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
     margin-bottom: 8px;
+    line-height: 1.4;
 }
 
 .dark .fi-kanban-card-title {
@@ -1275,16 +1489,17 @@ html, html.dark {
 .fi-kanban-card-meta {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 12px;
-    color: var(--cu-text-muted);
+    gap: 10px;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
 }
 
 .fi-kanban-card-avatar {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    border: 2px solid var(--cu-bg);
+    border: 2px solid #ffffff;
     margin-left: -8px;
 }
 
@@ -1299,7 +1514,7 @@ html, html.dark {
     opacity: 0;
     transition: opacity 0.15s ease;
     cursor: grab;
-    color: var(--cu-text-muted);
+    color: #64748b;
 }
 
 .fi-kanban-card:hover .fi-kanban-card-drag-handle {
@@ -1307,7 +1522,7 @@ html, html.dark {
 }
 
 /* =====================================================
-   AVATAR STACK
+   AVATAR STACK - Standardized
    ===================================================== */
 
 .fi-avatar-stack {
@@ -1316,11 +1531,11 @@ html, html.dark {
 }
 
 .fi-avatar-stack .avatar {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     border: 2px solid white;
-    margin-left: -10px;
+    margin-left: -8px;
     transition: transform 0.15s ease;
 }
 
@@ -1334,18 +1549,18 @@ html, html.dark {
 }
 
 .fi-avatar-stack .avatar-more {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
-    background: var(--cu-bg-secondary);
+    background: #f1f5f9;
     border: 2px solid white;
-    margin-left: -10px;
+    margin-left: -8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--cu-text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
 }
 
 /* =====================================================
@@ -1397,12 +1612,12 @@ html, html.dark {
 }
 
 /* =====================================================
-   SCROLLBAR STYLING
+   SCROLLBAR STYLING - Standardized
    ===================================================== */
 
 .fi-scroll::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 .fi-scroll::-webkit-scrollbar-track {
@@ -1410,12 +1625,12 @@ html, html.dark {
 }
 
 .fi-scroll::-webkit-scrollbar-thumb {
-    background: var(--cu-border);
-    border-radius: 4px;
+    background: #cbd5e1;
+    border-radius: 3px;
 }
 
 .fi-scroll::-webkit-scrollbar-thumb:hover {
-    background: var(--cu-text-muted);
+    background: #94a3b8;
 }
 
 /* =====================================================
@@ -1540,7 +1755,7 @@ html, html.dark {
 }
 
 /* =====================================================
-   TOOLTIP ENHANCEMENTS
+   TOOLTIP ENHANCEMENTS - Standardized
    ===================================================== */
 
 .fi-tooltip {
@@ -1554,9 +1769,10 @@ html, html.dark {
     left: 50%;
     transform: translateX(-50%) translateY(-4px);
     padding: 6px 10px;
-    background: #18181b;
+    background: #0f172a;
     color: white;
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 600;
     border-radius: 6px;
     white-space: nowrap;
     opacity: 0;

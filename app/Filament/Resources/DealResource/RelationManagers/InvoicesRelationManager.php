@@ -49,9 +49,9 @@ use TomatoPHP\FilamentInvoices\Models\InvoiceItem;
                     $prefix = request()->input('type', 'invoice') === 'sale' ? '#DG/' : '#PI/';
                     $datePart = now()->format('my/');
                     $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -4)) : 0;
+                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
                     $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-                    return $prefix . '013' . $datePart . $newNumber;
+                    return $prefix . $datePart . $newNumber;
                 })
                 ->required()
                 ->columnSpanFull()
@@ -61,9 +61,9 @@ use TomatoPHP\FilamentInvoices\Models\InvoiceItem;
                     $prefix = $state === 'sale' ? '#DG/' : '#PI/';
                     $datePart = now()->format('my/');
                     $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -4)) : 0;
+                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
                     $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-                    $set('uuid', $prefix . '013' . $datePart . $newNumber);
+                    $set('uuid', $prefix . $datePart . $newNumber);
                 }),
 
                 Forms\Components\Grid::make(['sm' => 1, 'lg' => 2])->schema([
@@ -118,9 +118,9 @@ use TomatoPHP\FilamentInvoices\Models\InvoiceItem;
                                 $prefix = $state === 'estimate' ? '#PI/' : '#DG/';
                                 $datePart = now()->format('my/');
                                 $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                                $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -4)) : 0;
-                                $newNumber = str_pad($lastNumber + 1 + Invoice::max('id'), 5, '0', STR_PAD_LEFT);
-                                $set('uuid', $prefix . '013' . $datePart . $newNumber);
+                                $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
+                                $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
+                                $set('uuid', $prefix . $datePart . $newNumber);
                             }),
                         Forms\Components\Select::make('status')
                             ->label(trans('filament-invoices::messages.invoices.sections.invoice_data.columns.status'))

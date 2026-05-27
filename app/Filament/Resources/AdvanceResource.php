@@ -49,12 +49,12 @@ class AdvanceResource extends Resource
 
                 Forms\Components\Select::make('project_id')
                     ->label('Pilih Project')
-                    ->options(Project::all()->pluck('nama_perusahaan', 'id'))
+                    ->options(fn () => cache()->remember('projects_list', 300, fn () => Project::all()->pluck('nama_perusahaan', 'id')))
                     ->searchable()
                     ->required(),
 
                 Forms\Components\Textarea::make('keterangan_advance')
-                    ->label('Keterangan Expense')
+                    ->label('Keterangan Advance')
                     ->required(),
 
                 Forms\Components\TextInput::make('amount')

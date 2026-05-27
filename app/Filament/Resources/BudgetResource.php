@@ -41,21 +41,30 @@ class BudgetResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Budget'),
+                    ->label('Nama Budget')
+                    ->sortable()
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('description')
-                    ->label('Keterangan'),
+                    ->label('Keterangan')
+                    ->limit(50),
                 Tables\Columns\TextColumn::make('amount')
                     ->money('IDR')
-                    ->label('Nominal'),
+                    ->label('Nominal')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
-                    ->label('Dibuat Pada'),
+                    ->label('Dibuat Pada')
+                    ->sortable(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\Filter::make('has_balance')
+                    ->label('Ada Saldo')
+                    ->query(fn ($query) => $query->where('amount', '>', 0)),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

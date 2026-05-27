@@ -6,42 +6,43 @@ use Spatie\LaravelSettings\Settings;
 
 class GeneralSettings extends Settings
 {
-    public string $brand_name;
-    public ?string $brand_logo;
-    public string $brand_logoHeight;
-    public bool $site_active;
-    public ?string $site_favicon;
-    public array $site_theme;
+    public mixed $brand_name;
+    public mixed $brand_logo = null;
+    public mixed $brand_logoHeight;
+    public mixed $site_active;
+    public mixed $site_favicon = null;
+    public mixed $site_theme = [];
+    public bool $dark_mode_enabled = false;
 
     // Event categories with colors
-    public array $event_categories = [];
+    public mixed $event_categories = [];
 
     // Quotation Template Settings - Individual Properties
-    public bool $quot_show_cover_pages = true;
-    public ?string $quot_cover_page_1 = null;
-    public ?string $quot_cover_page_2 = null;
-    public ?string $quot_cover_page_3 = null;
-    public string $quot_theme_color = '#f04f29';
-    public ?string $quot_logo = null;
-    public string $quot_company_name = 'Digitalk Creative';
-    public string $quot_company_email = 'hubungi@digitalkcreative.id';
-    public string $quot_company_phone = '085186028747';
-    public string $quot_signature_name = 'Indra Purwanto';
-    public string $quot_signature_title = 'Director';
-    public ?string $quot_signature_image = null;
-    public string $quot_terms = '';
+    public mixed $quot_show_cover_pages = true;
+    public mixed $quot_cover_page_1 = null;
+    public mixed $quot_cover_page_2 = null;
+    public mixed $quot_cover_page_3 = null;
+    public mixed $quot_theme_color = '#f04f29';
+    public mixed $quot_logo = null;
+    public mixed $quot_company_name = 'Digitalk Creative';
+    public mixed $quot_company_email = 'hubungi@digitalkcreative.id';
+    public mixed $quot_company_phone = '085186028747';
+    public mixed $quot_signature_name = 'Indra Purwanto';
+    public mixed $quot_signature_title = 'Director';
+    public mixed $quot_signature_image = null;
+    public mixed $quot_terms = '';
 
     // Invoice Template Settings - Individual Properties
-    public string $inv_theme_color = '#f04f29';
-    public ?string $inv_logo = null;
-    public string $inv_company_name = 'PT. Digital Catha Sangkara';
-    public string $inv_company_address = 'Gedung EduCenter Lt.2A Unit VO-24088 Jl. Sekolah Foresta.8 BSD City, Lengkong Kulon, Pagedangan, Tangerang Regency, Banten 15331';
-    public string $inv_company_phone = '085186028747';
-    public string $inv_bank_name = 'BCA';
-    public string $inv_bank_account = '5385141120';
-    public string $inv_bank_account_name = 'PT DIGITAL CATHA';
-    public string $inv_signature_name = 'Madita Heidy';
-    public ?string $inv_signature_image = null;
+    public mixed $inv_theme_color = '#f04f29';
+    public mixed $inv_logo = null;
+    public mixed $inv_company_name = 'PT. Digital Catha Sangkara';
+    public mixed $inv_company_address = 'Gedung EduCenter Lt.2A Unit VO-24088 Jl. Sekolah Foresta.8 BSD City, Lengkong Kulon, Pagedangan, Tangerang Regency, Banten 15331';
+    public mixed $inv_company_phone = '085186028747';
+    public mixed $inv_bank_name = 'BCA';
+    public mixed $inv_bank_account = '5385141120';
+    public mixed $inv_bank_account_name = 'PT DIGITAL CATHA';
+    public mixed $inv_signature_name = 'Madita Heidy';
+    public mixed $inv_signature_image = null;
 
     public static function group(): string
     {
@@ -51,6 +52,7 @@ class GeneralSettings extends Settings
     public static function defaults(): array
     {
         return [
+            'dark_mode_enabled' => false,
             'event_categories' => [
                 ['color' => '#3bbeff', 'label' => 'Shooting Visit'],
                 ['color' => '#347b9e', 'label' => 'Shooting Studio'],
@@ -131,6 +133,12 @@ class GeneralSettings extends Settings
     public function getTermsArray(): array
     {
         $terms = $this->quot_terms ?? '';
+
+        // Handle array input (when mixed type returns array)
+        if (is_array($terms)) {
+            return array_filter($terms);
+        }
+
         return array_filter(array_map('trim', explode("\n", $terms)));
     }
 

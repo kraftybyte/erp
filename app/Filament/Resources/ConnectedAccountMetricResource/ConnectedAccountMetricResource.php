@@ -38,6 +38,7 @@ class ConnectedAccountMetricResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->query(fn () => ConnectedAccountMetric::with('account'))
             ->defaultSort('date', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('account.username')

@@ -24,8 +24,19 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // API Rate Limiter - 60 requests per minute
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // PDF Download Rate Limiter - 30 downloads per minute per user/IP
+        RateLimiter::for('pdf-downloads', function (Request $request) {
+            return Limit::perMinute(30)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Timeline API Rate Limiter - 20 updates per minute
+        RateLimiter::for('timeline', function (Request $request) {
+            return Limit::perMinute(20)->by($request->user()?->id ?: $request->ip());
         });
 
         $this->routes(function () {

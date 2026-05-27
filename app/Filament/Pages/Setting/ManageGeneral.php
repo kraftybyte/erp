@@ -52,9 +52,15 @@ class ManageGeneral extends SettingsPage
         $data['theme-editor'] = $fileService->readfile($this->themePath);
         $data['tw-config-editor'] = $fileService->readfile($this->twConfigPath);
 
-        // Convert terms array back to newlines for textarea
-        $termsArray = $settings->getTermsArray();
-        $data['quot_terms'] = implode("\n", $termsArray);
+        // Convert terms to string for textarea - handle both string and array
+        $terms = $settings->quot_terms;
+        if (is_array($terms) && !empty($terms)) {
+            $data['quot_terms'] = implode("\n", $terms);
+        } elseif (is_string($terms)) {
+            $data['quot_terms'] = $terms;
+        } else {
+            $data['quot_terms'] = '';
+        }
 
         $this->form->fill($data);
     }
@@ -111,6 +117,10 @@ class ManageGeneral extends SettingsPage
                     ->tabs([
                         Forms\Components\Tabs\Tab::make('Color Palette')
                             ->schema([
+                                Forms\Components\Toggle::make('dark_mode_enabled')
+                                    ->label('Dark Mode')
+                                    ->hint('Enable dark theme for the admin panel')
+                                    ->reactive(),
                                 Forms\Components\ColorPicker::make('site_theme.primary')
                                     ->label(fn () => __('page.general_settings.fields.primary')),
                                 Forms\Components\ColorPicker::make('site_theme.secondary')

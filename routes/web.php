@@ -21,23 +21,26 @@ use Filament\Notifications\Notification;
 | be assigned to the "web" middleware group. Make something great!
 |
 */
-Route::get('/quotations/{quotation}', [QuotationPdfController::class, 'show'])->name('quotation.show');
-Route::get('/quotations/{quotation}/download', [QuotationPdfController::class, 'download'])->name('quotation.download');
-Route::middleware('auth')->group(function () {
-    Route::post('/send-whatsapp', [WablasController::class, 'sendMessage']);
+// Quotation PDF Routes (protected with auth + rate limiting)
+Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
+    Route::get('/quotations/{quotation}', [QuotationPdfController::class, 'show'])->name('quotation.show');
+    Route::get('/quotations/{quotation}/download', [QuotationPdfController::class, 'download'])->name('quotation.download');
 });
-// Invoice PDF Download
-Route::get('/invoices/{invoice}/download', [InvoicePdfController::class, 'download'])->name('invoices.download');
 
-// Contract Routes
-Route::get('/contracts/{contract}/preview', [ContractPdfController::class, 'preview'])
-    ->name('filament.admin.resources.contracts.preview')
-    ->middleware('auth');
-Route::get('/contracts/{contract}/download-pdf', [ContractPdfController::class, 'downloadPdf'])
-    ->name('filament.admin.resources.contracts.download-pdf')
-    ->middleware('auth');
+// Invoice PDF Download (protected with auth + rate limiting)
+Route::get('/invoices/{invoice}/download', [InvoicePdfController::class, 'download'])
+    ->name('invoices.download')
+    ->middleware(['auth', 'throttle:pdf-downloads']);
 
-// Timeline Update API
+// Contract Routes (with rate limiting)
+Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
+    Route::get('/contracts/{contract}/preview', [ContractPdfController::class, 'preview'])
+        ->name('filament.admin.resources.contracts.preview');
+    Route::get('/contracts/{contract}/download-pdf', [ContractPdfController::class, 'downloadPdf'])
+        ->name('filament.admin.resources.contracts.download-pdf');
+});
+
+// Timeline Update API (with rate limiting)
 Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
     $timeline = \App\Models\ProjectTimeline::find($request->id);
 
@@ -60,7 +63,10 @@ Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
             . ' – '
             . now()->format('d F Y, H:i')
     ]);
-})->middleware('auth')->name('timeline.update');
+})->middleware(['auth', 'throttle:timeline'])->name('timeline.update');
+
+// WhatsApp Message Route
+Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');
 
 // PWA Routes
 Route::get('/manifest.json', function () {

@@ -112,10 +112,28 @@ class LeadsResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                //
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'Dalam Komunikasi' => 'Dalam Komunikasi',
+                        'Proposal Sudah Dikirim' => 'Proposal Sudah Dikirim',
+                        'Menang' => 'Menang',
+                        'Kalah' => 'Kalah',
+                        'Converted' => 'Converted',
+                    ]),
+                Tables\Filters\SelectFilter::make('source')
+                    ->label('Source')
+                    ->options([
+                        'Website' => 'Website',
+                        'Social Media' => 'Social Media',
+                        'Email' => 'Email Marketing',
+                        'Event' => 'Event',
+                        'Referral' => 'Referral',
+                        'Partner' => 'Partner',
+                    ]),
             ])
             ->actions([
 

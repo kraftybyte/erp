@@ -59,7 +59,7 @@ class ExpenseResource extends Resource
 
                 Forms\Components\Select::make('project_id')
                     ->label('Pilih Project')
-                    ->options(Project::all()->pluck('nama_perusahaan', 'id'))
+                    ->options(fn () => cache()->remember('projects_list', 300, fn () => Project::all()->pluck('nama_perusahaan', 'id')))
                     ->searchable()
                     ->required(),
 
@@ -149,8 +149,17 @@ class ExpenseResource extends Resource
                     ->url(fn($record) => $record->attachment ? asset('storage/' . $record->attachment) : null)
                     ->openUrlInNewTab(),
             ])
+            ->defaultSort('submission_date', 'desc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'Pending' => 'Pending',
+                        'Disetujui' => 'Disetujui',
+                        'Ditolak' => 'Ditolak',
+                        'Dibayarkan' => 'Dibayarkan',
+                        'Selesai' => 'Selesai',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\Action::make('upload_invoice')
@@ -160,8 +169,25 @@ class ExpenseResource extends Resource
                     ->color('danger')
                     ->label('Upload Invoice Pembelian')
                     ->action(function ($record, array $data) {
-                        if ($data['attachment'] instanceof \Illuminate\Http\UploadedFile) {
-                            $path = $data['attachment']->storeAs('expense', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment']->getClientOriginalExtension());
+                        $file = $data['attachment'];
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            // Validate file size (5MB max)
+                            if ($file->getSize() > 5 * 1024 * 1024) {
+                                throw ValidationException::withMessages([
+                                    'attachment' => 'Ukuran file maksimal 5MB.',
+                                ]);
+                            }
+
+                            // Validate file type
+                            $allowedMimes = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+                            $extension = strtolower($file->getClientOriginalExtension());
+                            if (!in_array($extension, $allowedMimes)) {
+                                throw ValidationException::withMessages([
+                                    'attachment' => 'Format file harus JPG, PNG, WebP, atau PDF.',
+                                ]);
+                            }
+
+                            $path = $file->storeAs('expense', uniqid() . '-' . now()->format('d-m-Y') . '.' . $extension, 'public');
                             if ($path) {
                                 $record->update([
                                     'attachment' => $path,
@@ -238,11 +264,14 @@ class ExpenseResource extends Resource
                         
                     Forms\Components\FileUpload::make('attachment')
                             ->label('Upload Invoice Pembayaran')
-                            ->acceptedFileTypes(['image/*', 'application/pdf'])
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                            ->maxSize(5120) // 5MB
                             ->directory('expense/invoice/' . now()->format('Y/m/d'))
                             ->required()
                             ->validationMessages([
                                 'required' => 'Bukti pembayaran harus diunggah.',
+                                'max' => 'Ukuran file maksimal 5MB.',
+                                'mimes' => 'Format file harus JPG, PNG, WebP, atau PDF.',
                             ]),
                     ])
                     ->hidden(fn($record) => !empty($record->attachment) || auth()->id() !== $record->user_id),
@@ -254,12 +283,29 @@ class ExpenseResource extends Resource
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
                         DB::transaction(function () use ($record, $data) {
+                            // Deduct from budget with pessimistic locking
+                            if (!empty($data['budget_id'])) {
+                                $budget = Budget::lockForUpdate()->find($data['budget_id']);
+                                if ($budget) {
+                                    $newAmount = $budget->amount - (float) $data['paid'];
+                                    if ($newAmount < 0) {
+                                        throw ValidationException::withMessages([
+                                            'budget_id' => 'Saldo budget tidak mencukupi. Sisa: Rp ' . number_format($budget->amount, 0, ',', '.'),
+                                        ]);
+                                    }
+                                    $budget->update(['amount' => $newAmount]);
+                                }
+                            }
+
+                            // Update expense status
                             $record->update([
                                 'status' => 'Dibayarkan',
                                 'paid_by' => auth()->id(),
                                 'paid' => $data['paid'],
                                 'reference' => $data['reference'],
-                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension()) : $data['attachment_pay'],
+                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
+                                    ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
+                                    : $data['attachment_pay'],
                             ]);
                         });
                     })
@@ -278,25 +324,19 @@ class ExpenseResource extends Resource
                             ->required(),
                         Forms\Components\FileUpload::make('attachment_pay')
                             ->label('Bukti Pembayaran')
-                            ->acceptedFileTypes(['image/*', 'application/pdf'])
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                            ->maxSize(5120) // 5MB
                             ->directory('expense/payments/' . now()->format('Y/m/d'))
                             ->required()
                             ->validationMessages([
                                 'required' => 'Bukti pembayaran harus diunggah.',
+                                'max' => 'Ukuran file maksimal 5MB.',
+                                'mimes' => 'Format file harus JPG, PNG, WebP, atau PDF.',
                             ]),
                             Forms\Components\Select::make('budget_id')
                             ->label('Pilih Budget')
-                            ->options(Budget::all()->pluck('name', 'id'))
-                            ->required()
-                            ->reactive()
-                            ->afterStateUpdated(function ($state, callable $set, $get, $record) {
-                                $budget = Budget::find($get('budget_id'));
-                                if ($budget) {
-                                    $budget->update([
-                                        'amount' => $budget->amount - $get('paid'),
-                                    ]);
-                                }
-                            }),
+                            ->options(fn () => cache()->remember('budgets_list', 300, fn () => Budget::all()->pluck('name', 'id')))
+                            ->required(),
                         ])
                         ->requiresConfirmation()
                         ->color('success')

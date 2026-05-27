@@ -75,9 +75,7 @@ class AssetResource extends Resource
                 
                 Forms\Components\Select::make('penanggung_jawab_id')
                 ->label('Nama Penanggung Jawab')
-                ->options(
-                    User::all()->mapWithKeys(fn($user) => [$user->id => "{$user->firstname} {$user->lastname}"])
-                )
+                ->options(fn () => cache()->remember('users_list', 300, fn () => User::all()->mapWithKeys(fn($user) => [$user->id => "{$user->firstname} {$user->lastname}"])))
                 ->searchable()
                 ->required(),            
 
@@ -89,14 +87,27 @@ class AssetResource extends Resource
 
             Forms\Components\FileUpload::make('bon_invoice')
                 ->label('Bon / Invoice')
+                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                ->maxSize(5120) // 5MB
                 ->directory('asset/invoice/' . now()->format('Y/m/d'))
-                ->nullable(),
+                ->nullable()
+                ->validationMessages([
+                    'max' => 'Ukuran file maksimal 5MB.',
+                    'mimes' => 'Format file harus JPG, PNG, WebP, atau PDF.',
+                ]),
 
             Forms\Components\FileUpload::make('foto')
                 ->label('Foto Barang')
                 ->image()
+                ->imageResizeMaxWidth(1920)
+                ->imageResizeMaxHeight(1920)
+                ->maxSize(5120) // 5MB
                 ->directory('assets')
-                ->nullable(),
+                ->nullable()
+                ->validationMessages([
+                    'max' => 'Ukuran file maksimal 5MB.',
+                    'image' => 'File harus berupa gambar.',
+                ]),
 
             Forms\Components\TextInput::make('harga_barang')
                 ->label('Harga Barang')

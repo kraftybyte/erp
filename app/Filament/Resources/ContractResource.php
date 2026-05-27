@@ -265,6 +265,11 @@ class ContractResource extends Resource
                                 'application/pdf',
                                 'application/msword',
                                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            ])
+                            ->maxSize(10240) // 10MB
+                            ->validationMessages([
+                                'max' => 'Ukuran file maksimal 10MB.',
+                                'mimes' => 'Format file harus PDF atau DOCX.',
                             ]),
                     ]),
             ]);

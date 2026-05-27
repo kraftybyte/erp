@@ -61,14 +61,8 @@ class ContractTemplateService
 
         // Logo HTML
         $logoHtml = $agencyLogo
-            ? '<img src="' . $agencyLogo . '" alt="' . $agencyName . '" style="height: 50px;">'
-            : '<div style="font-size: 16px; font-weight: bold;">' . $agencyName . '</div>';
-
-        // Signature info
-        $clientSignName = $contract->client_signatory_name ?? '..................';
-        $clientSignTitle = $contract->client_signatory_title ?? 'Klien';
-        $agencySignName = $contract->agency_signatory_name ?? $agencyName;
-        $agencySignTitle = $contract->agency_signatory_title ?? 'Agency';
+            ? '<img src="' . $agencyLogo . '" alt="' . htmlspecialchars($agencyName) . '" style="height: 50px;">'
+            : '<div style="font-size: 16px; font-weight: bold;">' . htmlspecialchars($agencyName) . '</div>';
 
         // Additional clauses
         $additionalClauses = '';
