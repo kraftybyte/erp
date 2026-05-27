@@ -2,22 +2,61 @@
 
 > **Purpose**: This document provides comprehensive context about the ERP Creative application to enable AI-assisted code analysis, debugging, feature development, and refactoring.
 >
-> **Last Updated**: 2026-05-26
+> **Last Updated**: 2026-05-27
 >
 > **Company**: ERP Creative
 >
 > **Type**: Business Management ERP for Digital Marketing Agency
 >
-> **Version**: 2.0
+> **Version**: 2.1
+
+---
+
+## CHANGELOG (v2.1)
+
+### Recent Updates (2026-05-27)
+
+#### UI/UX Standardization
+- ✅ **Font Inter** - Replace Sora with Inter globally (cleaner, more readable)
+- ✅ **Table Standardization** - Unified table styling across all resources
+  - Header: gradient background, uppercase, letter-spacing 0.6px
+  - Body: 12px font, #334155 color, 11px padding
+  - Hover: #f8fafc background
+- ✅ **Card Styling** - Consistent border (#e2e8f0), border-radius (12px), subtle shadows
+- ✅ **Badge Styling** - Pill shape (999px radius), 10px font, uppercase
+- ✅ **Button Styling** - 8px radius, 12px font, Inter font
+- ✅ **Form Inputs** - Consistent 8px radius, 12px font, focus states
+- ✅ **Scrollbar** - 6px width, #cbd5e1 thumb color
+
+#### Resource Improvements
+| Resource | Changes |
+|----------|---------|
+| **AnnouncementResource** | Fixed query builder (::class error), null user handling |
+| **AdvanceResource** | Typo fix: "Keterangan Expense" → "Keterangan Advance" |
+| **ProductResource** | Added filter (Pajak), defaultSort, hiddenLabel/tooltip |
+| **ExpenseResource** | Added status filter, defaultSort (submission_date desc) |
+| **BudgetResource** | Added DeleteAction, filter (Ada Saldo), defaultSort, hiddenLabel/tooltip |
+| **PurchaseRequestResource** | Added status filter, defaultSort |
+| **LeadsResource** | Added status + source filters, defaultSort |
+| **EmployeeResource** | Added division filter, defaultSort, hiddenLabel/tooltip |
+| **ProjectResource** | Added deal status filter, defaultSort |
+| **MetaAdAccountResource** | Added is_active filter, defaultSort, hiddenLabel/tooltip |
+| **QuotationResource** | Added status filter, defaultSort |
+| **SocialAccountResource** | Added is_active filter, defaultSort |
+| **UserResource** | Fixed query → modifyQueryUsing, added role filter, defaultSort |
+| **ConnectedAccountMetricResource** | Added eager loading (with account) |
+
+#### Database
+- ✅ **Performance Indexes Migration** - `2026_05_26_000001_add_performance_indexes.php`
+- ✅ **Dark Mode Settings Migration** - `2026_05_26_000002_add_dark_mode_to_settings.php`
 
 ---
 
 ## CHANGELOG (v2.0)
 
-### Recent Updates (2026-05-26)
+### Updates (2026-05-26)
 - ✅ Invoice Template Settings - UI untuk customize invoice
 - ✅ Invoice PDF Template - Dynamic PDF dengan customizable settings
-- ✅ Font Sora - Global typography untuk semua UI
 - ✅ Header Layout Fix - Balance text dengan logo di invoice PDF
 - ✅ Settings Database Migration - Semua invoice settings di database
 
@@ -1052,27 +1091,29 @@ When modifying code, verify:
 
 ## 16. UI/THEMING
 
-### 16.1 Typography - Font Sora
+### 16.1 Typography - Font Inter
 
-**Font**: Sora (Google Fonts)
-**Weights**: 100, 200, 300, 400, 500, 600, 700, 800
-
-**Files Modified**:
-- `resources/css/app.css` - Import & global apply
-- `resources/css/filament/admin/theme.css` - Filament theme
-- `resources/css/filament-clickup.css` - ClickUp style overrides
-- `resources/views/pdf/invoice-dynamic.blade.php` - PDF template
+**Font**: Inter (Google Fonts) - Selected for cleaner, more readable appearance
+**Weights**: 400, 500, 600, 700, 800
 
 **CSS Implementation**:
 ```css
-/* Font Sora - Import */
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap');
+/* resources/css/filament-clickup.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* Apply to all elements */
 * {
-    font-family: 'Sora', sans-serif !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 ```
+
+**Font Size Standards**:
+| Element | Size | Weight | Transform |
+|---------|------|--------|----------|
+| Table Headers | 10px | 700 | UPPERCASE |
+| Labels | 12px | 600 | UPPERCASE |
+| Body Text | 12px | 400-500 | Normal |
+| Titles | 14-16px | 700 | Normal |
+| KPI Numbers | 48px | 800 | Normal |
 
 **Applied To**:
 - Sidebar navigation
@@ -1094,20 +1135,95 @@ resources/css/
 ├── app.css                    # Main Tailwind entry point
 ├── filament/
 │   └── admin/
-│       ├── theme.css          # Filament admin theme (Sora)
+│       ├── theme.css          # Filament admin theme
 │       └── tailwind.config.js  # Tailwind configuration
-├── filament-clickup.css       # ClickUp style overrides
+├── filament-clickup.css       # ClickUp style overrides (STANDARDIZED)
 ├── clickup.css                # Legacy styles
 └── pwa.css                    # PWA styles
 ```
 
-### 16.3 Theme Colors (Default)
+### 16.3 CSS Standardization System
+
+**Primary Color Palette**:
+| Name | Hex | Usage |
+|------|-----|-------|
+| Primary | #07a0cf | Main brand, CTAs, links |
+| Primary Dark | #0589b0 | Hover states |
+| Text | #0f172a | Headings, primary text |
+| Text Secondary | #334155 | Body text |
+| Muted | #64748b | Labels, captions |
+| Border | #e2e8f0 | Cards, inputs |
+| Background | #f8fafc | Page background |
+| Surface | #ffffff | Card backgrounds |
+
+**Table System**:
+```css
+/* Header */
+background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+border-bottom: 2px solid #e2e8f0;
+font-size: 10px;
+font-weight: 700;
+text-transform: uppercase;
+letter-spacing: 0.6px;
+color: #64748b;
+
+/* Body Row */
+font-size: 12px;
+color: #334155;
+padding: 11px 14px;
+border-bottom: 1px solid #f1f5f9;
+
+/* Hover */
+background: #f8fafc;
+```
+
+**Badge System**:
+```css
+border-radius: 999px;  /* Pill shape */
+font-size: 10px;
+font-weight: 600;
+padding: 4px 10px;
+text-transform: capitalize;
+letter-spacing: 0.2px;
+```
+
+**Button System**:
+```css
+border-radius: 8px;
+font-size: 12px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.3px;
+```
+
+**Form Input System**:
+```css
+border-radius: 8px;
+border: 1px solid #e2e8f0;
+font-size: 12px;
+:focus {
+    border-color: #07a0cf;
+    box-shadow: 0 0 0 3px rgba(7, 160, 207, 0.1);
+}
+```
+
+**Scrollbar System**:
+```css
+width: 6px;
+thumb: #cbd5e1;
+hover: #94a3b8;
+radius: 3px;
+```
+
+### 16.4 Theme Colors (Default)
 
 | Color | Hex | Usage |
 |-------|-----|-------|
-| Primary | #f04f29 | Main brand color |
-| Success | #22c55e | Positive states |
-| Warning | #eab308 | Warning states |
+| Primary | #07a0cf | Main brand color |
+| Primary Dark | #0589b0 | Hover states |
+| Accent | #ff5915 | Secondary actions |
+| Success | #10b981 | Positive states |
+| Warning | #f59e0b | Warning states |
 | Danger | #ef4444 | Error/danger states |
 | Info | #3b82f6 | Info states |
 
@@ -1157,8 +1273,8 @@ chore: Maintenance tasks
 
 ### Key Patterns
 ```php
-// Font Sora (CSS)
-* { font-family: 'Sora', sans-serif !important; }
+// Font Inter (CSS)
+* { font-family: 'Inter', sans-serif !important; }
 
 // Invoice Settings
 $settings = app(GeneralSettings::class);
@@ -1174,6 +1290,10 @@ $user->hasRole(['Director', 'Finance', 'super_admin'])
 
 // Token Encryption
 'access_token' => 'encrypted' // in $casts
+
+// Query Builder (Filament)
+->modifyQueryUsing(fn($query) => $query->with('relation'))
+// NOT ->query(fn($query) => ...) which causes ::class error
 ```
 
 ### Important File Locations
@@ -1186,7 +1306,94 @@ $user->hasRole(['Director', 'Finance', 'super_admin'])
 resources/views/pdf/invoice-dynamic.blade.php
 app/Settings/GeneralSettings.php
 app/Filament/Pages/Setting/ManageGeneral.php
+resources/css/filament-clickup.css (CSS STANDARDIZATION)
 ```
+
+---
+
+## 20. RESOURCE STANDARDS
+
+### 20.1 Table Standards
+All Filament resources should follow this standard pattern:
+
+```php
+public static function table(Table $table): Table
+{
+    return $table
+        // Always use modifyQueryUsing, NOT query()
+        ->modifyQueryUsing(fn ($query) => $query->with(['relation']))
+        // Default sort - newest first
+        ->defaultSort('created_at', 'desc')
+        ->columns([
+            // Columns with searchable(), sortable(), label()
+        ])
+        // Add filters for status/foreign keys
+        ->filters([
+            Tables\Filters\SelectFilter::make('status')
+                ->label('Status')
+                ->options([...]),
+        ])
+        ->actions([
+            Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+            Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+        ]);
+}
+```
+
+### 20.2 Resource Checklist
+- [ ] `modifyQueryUsing` (NOT `query`)
+- [ ] `defaultSort` (usually created_at desc)
+- [ ] Filters for status/foreign keys
+- [ ] Edit/Delete with hiddenLabel() + tooltip()
+- [ ] eager loading with `with()` for relationships
+
+---
+
+## 21. KNOWN ISSUES & SOLUTIONS
+
+| Issue | Error Message | Solution |
+|-------|---------------|----------|
+| Announcement table blank | "Cannot use ::class on null" | Use `modifyQueryUsing` instead of `query` |
+| User table error | "attempt to evaluate closure but [$query] was unresolvable" | Use `modifyQueryUsing` |
+| Null user in widget | `$announcement->user->firstname` | Use null coalescing: `$announcement->user->firstname ?? 'Admin'` |
+| BudgetResource missing delete | Logic error | Add DeleteAction to table |
+
+---
+
+## 22. FUTURE IMPROVEMENTS ROADMAP
+
+### Priority 1: Critical
+- [ ] Database indexes (already added migration)
+- [ ] Form Request validation classes
+- [ ] Mass assignment protection audit
+
+### Priority 2: Data Integrity
+- [ ] Audit logging service
+- [ ] Activity trail for finance resources
+
+### Priority 3: Performance
+- [ ] Model $casts optimization
+- [ ] Consistent cache naming (erp:prefix)
+- [ ] Query caching with laravel-model-caching
+
+### Priority 4: Missing Features
+- [ ] Excel export for all resources
+- [ ] REST API endpoints (routes/api.php)
+- [ ] Scheduled tasks (Console/Kernel.php)
+
+### Priority 5: Automation
+- [ ] LeadFollowUpJob
+- [ ] ContractRenewalJob
+- [ ] InvoiceReminderJob
+
+### Priority 6: Testing
+- [ ] Unit tests for models (80% target)
+- [ ] Feature tests for workflows
+
+### Priority 7: Integrations
+- [ ] Google Analytics 4
+- [ ] Accounting software sync (Jurnal/Zahir)
+- [ ] Enhanced WhatsApp templates
 
 ---
 
