@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Models;
+use App\Settings\GeneralSettings;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
@@ -23,24 +24,24 @@ class Quotation extends Model
 
     public static function generateUuid(): string
     {
-        // Prefix tetap #DG/
-        $prefix = '#DG/';
+        $settings = app(GeneralSettings::class);
+        $prefix = ($settings->quotation_prefix ?? 'DG');
+        $datePart = now()->format('ym'); // Format: YYMM
 
-        // Format bulan dan 2 digit terakhir tahun (MMYY)
-        $datePart = now()->format('my') . '/';
+        // Get highest sequence number across ALL quotations (continue sequence)
+        $allQuotations = self::where('uuid', 'like', '#%/%/%')->get();
 
-        // Cari quotation terakhir dengan prefix dan tanggal yang sama
-        $lastQuotation = self::where('uuid', 'like', $prefix . $datePart . '%')
-            ->latest('id')
-            ->first();
+        $highestSeq = 0;
+        foreach ($allQuotations as $q) {
+            $seq = intval(substr($q->uuid, -5));
+            if ($seq > $highestSeq) {
+                $highestSeq = $seq;
+            }
+        }
 
-        // Ambil nomor terakhir dari UUID terakhir
-        $lastNumber = $lastQuotation ? intval(substr($lastQuotation->uuid, -5)) : 0;
+        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
 
-        // Tambah 1 untuk nomor baru
-        $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-
-        return $prefix . $datePart . $newNumber;
+        return '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
     }
 
     public function items(): HasMany

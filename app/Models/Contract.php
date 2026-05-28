@@ -29,6 +29,9 @@ class Contract extends Model
         'client_signatory_title',
         'agency_signatory_name',
         'agency_signatory_title',
+        // Payment type
+        'payment_type',
+        'installment_months',
     ];
 
     protected $casts = [

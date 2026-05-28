@@ -8,6 +8,7 @@ use App\Models\Quotation;
 use App\Models\Product;
 use App\Models\Leads;
 use App\Models\Deal;
+use App\Settings\GeneralSettings;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -18,6 +19,7 @@ use Filament\Notifications\Notification;
 use TomatoPHP\FilamentInvoices\Models\Invoice;
 use TomatoPHP\FilamentInvoices\Models\InvoicesItem;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class QuotationResource extends Resource
 {
@@ -307,29 +309,29 @@ class QuotationResource extends Resource
                         )->first();
 
                         /* ========= GENERATE PROFORMA UUID ========= */
-                        $prefix = '#PI/';
-                        $datePart = now()->format('my/');
+                        $settings = app(GeneralSettings::class);
+                        $prefix = ($settings->invoice_prefix ?? 'INV');
+                        $datePart = now()->format('ym'); // Format: YYMM
 
-                        $lastInvoice = Invoice::where(
-                            'uuid',
-                            'like',
-                            $prefix . '013' . $datePart . '%'
-                        )
-                            ->latest('uuid')
-                            ->first();
+                        // Get highest sequence number across ALL invoices (continue sequence)
+                        $allInvoices = Invoice::where('uuid', 'like', '#%/%/%')->get();
 
-                        $lastNumber = $lastInvoice
-                            ? intval(substr($lastInvoice->uuid, -5))
-                            : 0;
+                        $highestSeq = 0;
+                        foreach ($allInvoices as $inv) {
+                            $seq = intval(substr($inv->uuid, -5));
+                            if ($seq > $highestSeq) {
+                                $highestSeq = $seq;
+                            }
+                        }
 
                         $newNumber = str_pad(
-                            $lastNumber + 1,
+                            $highestSeq + 1,
                             5,
                             '0',
                             STR_PAD_LEFT
                         );
 
-                        $uuid = $prefix . '013' . $datePart . $newNumber;
+                        $uuid = '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
 
                         /* ========= DB TRANSACTION ========= */
                         \DB::transaction(function () use ($record, $uuid, $deal) {

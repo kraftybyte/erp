@@ -44,6 +44,10 @@ class GeneralSettings extends Settings
     public mixed $inv_signature_name = 'Madita Heidy';
     public mixed $inv_signature_image = null;
 
+    // ID Prefix Settings
+    public mixed $quotation_prefix = 'DG';
+    public mixed $invoice_prefix = 'INV';
+
     public static function group(): string
     {
         return 'general';
@@ -84,6 +88,9 @@ class GeneralSettings extends Settings
             'inv_bank_account_name' => 'PT DIGITAL CATHA',
             'inv_signature_name' => 'Madita Heidy',
             'inv_signature_image' => null,
+            // ID Prefix Settings
+            'quotation_prefix' => 'DG',
+            'invoice_prefix' => 'INV',
         ];
     }
 

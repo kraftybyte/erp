@@ -127,11 +127,6 @@ Route::get('test', function () {
 });
 
 
-Route::get('/admin/{any}', function () {
-    return redirect()->route('filament.admin.auth.login');
-})->where('any', '.*')->middleware('guest');
-
-
 Route::get('/', function () {
     return redirect(Filament::getUrl());
 });

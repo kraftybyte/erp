@@ -160,6 +160,15 @@ class ManageGeneral extends SettingsPage
                             ]),
                         Forms\Components\Tabs\Tab::make('Quotation Template')
                             ->schema([
+                                Forms\Components\Section::make('ID Settings')
+                                    ->description('Pengaturan format ID quotation')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('quotation_prefix')
+                                            ->label('Prefix Quotation ID')
+                                            ->placeholder('DG')
+                                            ->maxLength(10)
+                                            ->helperText('Contoh: DG → #DG/2605/00001'),
+                                    ]),
                                 Forms\Components\Section::make('Cover Pages')
                                     ->description('Atur tampilan cover page quotation')
                                     ->schema([
@@ -237,6 +246,15 @@ class ManageGeneral extends SettingsPage
                             ]),
                         Forms\Components\Tabs\Tab::make('Invoice Template')
                             ->schema([
+                                Forms\Components\Section::make('ID Settings')
+                                    ->description('Pengaturan format ID invoice')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('invoice_prefix')
+                                            ->label('Prefix Invoice ID')
+                                            ->placeholder('INV')
+                                            ->maxLength(10)
+                                            ->helperText('Contoh: INV → #INV/2605/00001'),
+                                    ]),
                                 Forms\Components\Section::make('Theme Color')
                                     ->description('Pilih warna utama untuk invoice')
                                     ->schema([

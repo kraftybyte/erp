@@ -195,19 +195,43 @@ class ContractResource extends Resource
                             ->prefix('Rp ')
                             ->required(),
 
-                        Grid::make(2)
+                        Select::make('payment_type')
+                            ->label('Tipe Pembayaran')
+                            ->options([
+                                'full' => 'Lunas (Bayar Sekaligus)',
+                                'dp_monthly' => 'DP + Bayar Per Bulan',
+                                'monthly' => 'Cicilan Per Bulan (Tanpa DP)',
+                            ])
+                            ->default('full')
+                            ->live(),
+
+                        // DP + Monthly Payment
+                        Grid::make(3)
                             ->schema([
                                 TextInput::make('down_payment_percent')
                                     ->label('DP (%)')
                                     ->numeric()
                                     ->suffix('%')
-                                    ->default(50),
+                                    ->minValue(1)
+                                    ->maxValue(100)
+                                    ->default(30)
+                                    ->visible(fn (callable $get) => $get('payment_type') === 'dp_monthly'),
 
                                 TextInput::make('remaining_payment_percent')
-                                    ->label('Sisa Pembayaran')
+                                    ->label('Sisa')
                                     ->disabled()
                                     ->dehydrated(false)
-                                    ->placeholder(fn (callable $get) => 'Sisa: ' . (100 - ($get('down_payment_percent') ?? 50)) . '%'),
+                                    ->visible(fn (callable $get) => $get('payment_type') === 'dp_monthly')
+                                    ->placeholder(fn (callable $get) => (100 - ($get('down_payment_percent') ?? 30)) . '%'),
+
+                                TextInput::make('installment_months')
+                                    ->label('Bayar Per (Bulan)')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue(60)
+                                    ->placeholder(fn (callable $get) => $get('duration_months') ?? 3)
+                                    ->helperText('Jumlah bulan untuk pembayaran')
+                                    ->visible(fn (callable $get) => in_array($get('payment_type'), ['dp_monthly', 'monthly'])),
                             ]),
                     ]),
 
@@ -365,9 +389,9 @@ class ContractResource extends Resource
     {
         return [
             'index' => Pages\ListContracts::route('/'),
-            'view' => Pages\ViewContract::route('/{record}'),
             'create' => Pages\CreateContract::route('/create'),
             'edit' => Pages\EditContract::route('/{record}/edit'),
+            'view' => Pages\ViewContract::route('/{record}'),
         ];
     }
 }
