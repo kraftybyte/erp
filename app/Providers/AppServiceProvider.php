@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Gate;
 use App\Models\PaymentAccount;
 use App\Models\Company;
 use App\Models\Account;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use App\Policies\InvoicePolicy;
 use App\Policies\ContractPolicy;
 use App\Policies\ProjectPolicy;

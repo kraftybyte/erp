@@ -3,7 +3,8 @@
 namespace App\Observers;
 
 use App\Models\Transaction;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\PaymentAccount;
+use App\Models\Invoice;
 
 class InvoiceObserver
 {
@@ -31,6 +32,12 @@ class InvoiceObserver
             return;
         }
 
+        // Verify PaymentAccount exists [v2.2]
+        $account = PaymentAccount::find($accountId);
+        if (!$account) {
+            return;
+        }
+
         // Create transaction record [v2.2]
         Transaction::create([
             'payment_account_id' => $accountId,
@@ -43,5 +50,8 @@ class InvoiceObserver
             'transaction_date' => now()->toDateString(),
             'category' => 'operational',
         ]);
+
+        // Sync PaymentAccount balance after transaction [v2.2]
+        $account->syncBalanceFromTransactions();
     }
 }
