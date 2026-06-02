@@ -4,7 +4,7 @@ namespace App\Observers;
 
 use App\Models\Transaction;
 use App\Models\PaymentAccount;
-use App\Models\Invoice;
+use TomatoPHP\FilamentInvoices\Models\Invoice;
 use Illuminate\Support\Facades\Log;
 
 class InvoiceObserver
