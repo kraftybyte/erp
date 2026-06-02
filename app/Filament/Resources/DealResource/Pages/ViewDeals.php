@@ -26,7 +26,7 @@ class ViewDeals extends ViewRecord
                 ->icon('heroicon-o-rocket-launch')
                 ->color('gray')
                 ->url(fn () => route('filament.admin.resources.projects.create', [
-                    'deal_id' => $this->record->deal_id,
+                    'deal_id' => $this->record->id,
                 ]))
                 ->hidden(fn ($record) => $record && !Gate::allows('edit-Deal', $record)),
 
@@ -35,7 +35,7 @@ class ViewDeals extends ViewRecord
                 ->icon('heroicon-s-plus')
                 ->color('secondary')
                 ->url(fn () => route('filament.admin.resources.contracts.create', [
-                    'deal_id' => $this->record->deal_id,
+                    'deal_id' => $this->record->id,
                 ]))
                 ->hidden(fn ($record) => $record && !Gate::allows('edit-Deal', $record)),
 
@@ -44,6 +44,7 @@ class ViewDeals extends ViewRecord
                 ->icon('heroicon-s-plus')
                 ->color('primary')
                 ->url(fn () => route('filament.admin.resources.invoices.create', [
+                    'deal_id' => $this->record->id,
                     'nama_perusahaan' => $this->record->nama_perusahaan,
                 ]))
                 ->hidden(fn ($record) => $record && !Gate::allows('edit-Deal', $record)),
@@ -52,7 +53,9 @@ class ViewDeals extends ViewRecord
                 ->label('Quotations')
                 ->icon('heroicon-s-plus')
                 ->color('danger')
-                ->url(fn () => route('filament.admin.resources.quotations.create'))
+                ->url(fn () => route('filament.admin.resources.quotations.create', [
+                    'deal_id' => $this->record->id,
+                ]))
                 ->hidden(fn ($record) => $record && !Gate::allows('edit-Deal', $record)),
 
             Action::make('EditDeals')

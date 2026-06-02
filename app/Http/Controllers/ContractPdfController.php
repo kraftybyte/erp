@@ -6,6 +6,8 @@ use App\Models\Contract;
 use App\Services\ContractTemplateService;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class ContractPdfController extends Controller
 {
@@ -13,6 +15,12 @@ class ContractPdfController extends Controller
     {
         if (!$this->userCanAccess($request->user(), $contract)) {
             abort(403, 'Unauthorized access to contract');
+        }
+
+        // For uploaded file type, show message
+        if ($contract->type === 'file' && $contract->file_path) {
+            return response('Contract file uploaded. Please download from the contract management page.', 200)
+                ->header('Content-Type', 'text/plain');
         }
 
         $service = app(ContractTemplateService::class);
@@ -27,17 +35,43 @@ class ContractPdfController extends Controller
             abort(403, 'Unauthorized access to contract');
         }
 
-        $service = app(ContractTemplateService::class);
-        $html = $service->generate($contract);
+        // For uploaded file type, serve the actual file [v2.2]
+        if ($contract->type === 'file' && $contract->file_path) {
+            $filePath = storage_path('app/' . $contract->file_path);
+            if (file_exists($filePath)) {
+                $filename = 'kontrak-' . $contract->id . '-' . Str::slug($contract->deal?->nama_perusahaan ?? 'client') . '.pdf';
+                return response()->download($filePath, $filename);
+            }
+        }
 
-        $pdf = Pdf::loadHTML($html);
-        $pdf->setPaper('A4', 'portrait');
+        try {
+            $service = app(ContractTemplateService::class);
+            $html = $service->generate($contract);
 
-        return response()->streamDownload(
-            fn () => print($pdf->output()),
-            'kontrak-' . $contract->id . '-' . $contract->deal?->nama_perusahaan . '.pdf',
-            ['Content-Type' => 'application/pdf']
-        );
+            $pdf = Pdf::loadHTML($html);
+            $pdf->setPaper('A4', 'portrait');
+
+            $output = $pdf->output();
+            if (empty($output)) {
+                throw new \Exception('PDF generation produced empty output');
+            }
+
+            // Sanitize filename [v2.2]
+            $filename = 'kontrak-' . $contract->id . '-' . Str::slug($contract->deal?->nama_perusahaan ?? 'client') . '.pdf';
+
+            return response()->streamDownload(
+                fn () => print($output),
+                $filename,
+                ['Content-Type' => 'application/pdf']
+            );
+        } catch (\Exception $e) {
+            Log::error('Contract PDF generation failed: ' . $e->getMessage(), [
+                'contract_id' => $contract->id,
+                'user_id' => $request->user()?->id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            abort(500, 'Gagal membuat PDF kontrak: ' . $e->getMessage());
+        }
     }
 
     private function userCanAccess($user, Contract $contract): bool

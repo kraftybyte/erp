@@ -242,9 +242,9 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                         <br>
                         <b>Number:</b> {{ $invoice->uuid }}
                         <br>
-                        <b>Date:</b> {{ \Carbon\Carbon::parse($invoice->date)->locale('id')->translatedFormat('d-F-Y') }}
+                        <b>Date:</b> {{ $invoice->date ? \Carbon\Carbon::parse($invoice->date)->locale('id')->translatedFormat('d-F-Y') : 'N/A' }}
                         <br>
-                        <b>Due Date:</b> {{ \Carbon\Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('d-F-Y') }}
+                        <b>Due Date:</b> {{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('d-F-Y') : 'N/A' }}
                         @if ($invoice->type === 'sale')
                         <br>
                         <b>Type Payment:</b> {{ $invoice->type_payment }}
@@ -271,7 +271,7 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                 </tr>
             </thead>
             <tbody>
-                @foreach ($invoice->invoicesItems as $item)
+                @foreach ($invoice->invoicesItems ?? [] as $item)
                 <tr>
                     <td style="text-align: center; font-size: 11px;">Service</td>
                     <td style="text-align: left; font-size: 11px;">

@@ -3,9 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Transaction;
-use App\Models\PaymentAccount;
 use TomatoPHP\FilamentInvoices\Models\Invoice;
-use Illuminate\Support\Facades\DB;
 
 class InvoiceObserver
 {
@@ -14,28 +12,36 @@ class InvoiceObserver
      */
     public function updated(Invoice $invoice): void
     {
-        // Check if paid was changed
-        if ($invoice->isDirty('paid') && $invoice->paid > 0) {
-            $originalPaid = $invoice->getOriginal('paid') ?? 0;
-            $paidChange = $invoice->paid - $originalPaid;
-
-            if ($paidChange > 0) {
-                // Get payment account from invoice or default
-                $accountId = $invoice->payment_account_id ?? null;
-
-                // Create transaction record
-                Transaction::create([
-                    'payment_account_id' => $accountId,
-                    'user_id' => auth()->id() ?? 1,
-                    'type' => 'in',
-                    'amount' => $paidChange,
-                    'description' => "Payment Invoice: {$invoice->uuid} - {$invoice->nama_perusahaan}",
-                    'reference_type' => 'invoice',
-                    'reference_id' => $invoice->id,
-                    'transaction_date' => now()->toDateString(),
-                    'category' => 'operational',
-                ]);
-            }
+        // Only process if paid changed and has positive amount
+        if (!$invoice->isDirty('paid') || $invoice->paid <= 0) {
+            return;
         }
+
+        $originalPaid = $invoice->getOriginal('paid') ?? 0;
+        $paidChange = $invoice->paid - $originalPaid;
+
+        // Only create transaction if there's a positive change
+        if ($paidChange <= 0) {
+            return;
+        }
+
+        // Only create transaction if payment_account_id is set [v2.2]
+        $accountId = $invoice->payment_account_id;
+        if (empty($accountId)) {
+            return;
+        }
+
+        // Create transaction record [v2.2]
+        Transaction::create([
+            'payment_account_id' => $accountId,
+            'user_id' => auth()->id() ?? 1,
+            'type' => 'in',
+            'amount' => $paidChange,
+            'description' => "Payment Invoice: {$invoice->uuid} - {$invoice->nama_perusahaan}",
+            'reference_type' => 'invoice',
+            'reference_id' => $invoice->getKey(),
+            'transaction_date' => now()->toDateString(),
+            'category' => 'operational',
+        ]);
     }
 }
