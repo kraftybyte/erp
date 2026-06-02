@@ -86,6 +86,7 @@ class AppServiceProvider extends ServiceProvider
         Task::observe(TaskObserver::class);
         Announcement::observe(AnnouncementObserver::class);
         Invoice::observe(InvoiceObserver::class);
+        TomatoInvoice::observe(InvoiceObserver::class);
 
         // Dark Mode Configuration
         try {
