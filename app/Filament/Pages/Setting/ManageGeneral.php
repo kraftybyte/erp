@@ -121,22 +121,38 @@ class ManageGeneral extends SettingsPage
                                     ->label('Dark Mode')
                                     ->hint('Enable dark theme for the admin panel')
                                     ->reactive(),
-                                Forms\Components\ColorPicker::make('site_theme.primary')
-                                    ->label(fn () => __('page.general_settings.fields.primary')),
-                                Forms\Components\ColorPicker::make('site_theme.secondary')
-                                    ->label(fn () => __('page.general_settings.fields.secondary')),
-                                Forms\Components\ColorPicker::make('site_theme.gray')
-                                    ->label(fn () => __('page.general_settings.fields.gray')),
-                                Forms\Components\ColorPicker::make('site_theme.success')
-                                    ->label(fn () => __('page.general_settings.fields.success')),
-                                Forms\Components\ColorPicker::make('site_theme.danger')
-                                    ->label(fn () => __('page.general_settings.fields.danger')),
-                                Forms\Components\ColorPicker::make('site_theme.info')
-                                    ->label(fn () => __('page.general_settings.fields.info')),
-                                Forms\Components\ColorPicker::make('site_theme.warning')
-                                    ->label(fn () => __('page.general_settings.fields.warning')),
-                            ])
-                            ->columns(3),
+                                Forms\Components\Section::make('Primary Gradient')
+                                    ->description('Warna gradient utama untuk dashboard cards')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\ColorPicker::make('primary_gradient_from')
+                                                ->label('Gradient From')
+                                                ->default('#3b82f6'),
+                                            Forms\Components\ColorPicker::make('primary_gradient_to')
+                                                ->label('Gradient To')
+                                                ->default('#1d4ed8'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Theme Colors')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\ColorPicker::make('site_theme.primary')
+                                                ->label(fn () => __('page.general_settings.fields.primary')),
+                                            Forms\Components\ColorPicker::make('site_theme.secondary')
+                                                ->label(fn () => __('page.general_settings.fields.secondary')),
+                                            Forms\Components\ColorPicker::make('site_theme.gray')
+                                                ->label(fn () => __('page.general_settings.fields.gray')),
+                                            Forms\Components\ColorPicker::make('site_theme.success')
+                                                ->label(fn () => __('page.general_settings.fields.success')),
+                                            Forms\Components\ColorPicker::make('site_theme.danger')
+                                                ->label(fn () => __('page.general_settings.fields.danger')),
+                                            Forms\Components\ColorPicker::make('site_theme.info')
+                                                ->label(fn () => __('page.general_settings.fields.info')),
+                                            Forms\Components\ColorPicker::make('site_theme.warning')
+                                                ->label(fn () => __('page.general_settings.fields.warning')),
+                                        ]),
+                                    ]),
+                            ]),
                         Forms\Components\Tabs\Tab::make('Event Categories')
                             ->schema([
                                 Forms\Components\Section::make('Agenda Categories')

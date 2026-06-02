@@ -6,7 +6,8 @@ use App\Filament\Resources\ExpenseResource\Pages;
 use App\Filament\Resources\ExpenseResource\RelationManagers;
 use App\Helpers\ColorHelper;
 use App\Models\Expense;
-use App\Models\Budget;
+use App\Models\PaymentAccount;
+use App\Models\Transaction;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -88,11 +89,11 @@ class ExpenseResource extends Resource
 
             // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
             if ($user->hasRole(['Director','Finance', 'super_admin'])) {
-                return $query->with(['user', 'paidBy', 'project']);
+                return $query->with(['user', 'paidBy', 'project', 'paymentAccount']);
             }
 
             // Jika bukan, hanya tampilkan data miliknya sendiri
-            return $query->with(['user', 'paidBy', 'project'])->where('user_id', $user->id);
+            return $query->with(['user', 'paidBy', 'project', 'paymentAccount'])->where('user_id', $user->id);
         })
             ->columns([
                 Tables\Columns\TextColumn::make('id')
@@ -117,6 +118,13 @@ class ExpenseResource extends Resource
                     ->label('Nominal')
                     ->sortable()
                     ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 2, ',', '.')),
+
+                Tables\Columns\TextColumn::make('paymentAccount.name')
+                    ->label('Rekening')
+                    ->formatStateUsing(fn($state, $record) => $state ?? '-')
+                    ->badge()
+                    ->color('info')
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -160,6 +168,9 @@ class ExpenseResource extends Resource
                         'Dibayarkan' => 'Dibayarkan',
                         'Selesai' => 'Selesai',
                     ]),
+                Tables\Filters\SelectFilter::make('payment_account_id')
+                    ->label('Rekening')
+                    ->options(fn () => \App\Models\PaymentAccount::active()->pluck('name', 'id')),
             ])
             ->actions([
                 Tables\Actions\Action::make('upload_invoice')
@@ -283,25 +294,41 @@ class ExpenseResource extends Resource
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
                         DB::transaction(function () use ($record, $data) {
-                            // Deduct from budget with pessimistic locking
-                            if (!empty($data['budget_id'])) {
-                                $budget = Budget::lockForUpdate()->find($data['budget_id']);
-                                if ($budget) {
-                                    $newAmount = $budget->amount - (float) $data['paid'];
-                                    if ($newAmount < 0) {
-                                        throw ValidationException::withMessages([
-                                            'budget_id' => 'Saldo budget tidak mencukupi. Sisa: Rp ' . number_format($budget->amount, 0, ',', '.'),
-                                        ]);
-                                    }
-                                    $budget->update(['amount' => $newAmount]);
-                                }
+                            // Get payment account with pessimistic locking
+                            $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
+                            if (!$account) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Rekening tidak ditemukan.',
+                                ]);
                             }
 
-                            // Update expense status
+                            // Check balance
+                            $availableBalance = $account->getAvailableBalance();
+                            if ($availableBalance < (float) $data['paid']) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
+                                ]);
+                            }
+
+                            // Create transaction record
+                            Transaction::create([
+                                'payment_account_id' => $account->id,
+                                'user_id' => auth()->id(),
+                                'type' => 'out',
+                                'amount' => (float) $data['paid'],
+                                'description' => "Expense: {$record->keterangan_expense}",
+                                'reference_type' => 'expense',
+                                'reference_id' => $record->id,
+                                'transaction_date' => now()->toDateString(),
+                                'category' => 'operational',
+                            ]);
+
+                            // Update expense status with payment account
                             $record->update([
                                 'status' => 'Dibayarkan',
                                 'paid_by' => auth()->id(),
                                 'paid' => $data['paid'],
+                                'payment_account_id' => $account->id,
                                 'reference' => $data['reference'],
                                 'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
                                     ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
@@ -315,10 +342,11 @@ class ExpenseResource extends Resource
                             ->numeric()
                             ->required()
                             ->prefix('Rp')
+                            ->default(fn($record) => $record->amount)
+                            ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
-                            ])
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', '.')),
+                            ]),
                         Forms\Components\TextInput::make('reference')
                             ->label('Nomor Referensi')
                             ->required(),
@@ -333,14 +361,19 @@ class ExpenseResource extends Resource
                                 'max' => 'Ukuran file maksimal 5MB.',
                                 'mimes' => 'Format file harus JPG, PNG, WebP, atau PDF.',
                             ]),
-                            Forms\Components\Select::make('budget_id')
-                            ->label('Pilih Budget')
-                            ->options(fn () => cache()->remember('budgets_list', 300, fn () => Budget::all()->pluck('name', 'id')))
-                            ->required(),
+                        Forms\Components\Select::make('payment_account_id')
+                            ->label('Pilih Rekening')
+                            ->options(fn () => cache()->remember('payment_accounts_list', 300, fn () =>
+                                PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
+                                    [$account->id => "{$account->name} - Rp " . number_format($account->getAvailableBalance(), 0, ',', '.')]
+                                )->toArray()
+                            ))
+                            ->required()
+                            ->reactive(),
                         ])
                         ->requiresConfirmation()
                         ->color('success')
-                        ->icon('heroicon-o-currency-dollar')
+                        ->icon('heroicon-o-credit-card')
                         ->hidden(fn ($record) =>
                             !auth()->user()->can('restore_expense', Expense::class) ||
                             $record->status !== 'Disetujui' ||

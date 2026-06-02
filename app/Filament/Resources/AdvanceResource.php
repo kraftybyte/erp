@@ -6,7 +6,8 @@ use App\Filament\Resources\AdvanceResource\Pages;
 use App\Filament\Resources\AdvanceResource\RelationManagers;
 use App\Helpers\ColorHelper;
 use App\Models\Advance;
-use App\Models\Budget;
+use App\Models\PaymentAccount;
+use App\Models\Transaction;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -78,13 +79,13 @@ class AdvanceResource extends Resource
 
             // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
             if ($user->hasRole(['Director','Finance', 'super_admin'])) {
-                return $query->with(['user', 'paidBy', 'project']);
+                return $query->with(['user', 'paidBy', 'project', 'paymentAccount']);
             }
 
             // Jika bukan, hanya tampilkan data miliknya sendiri
-            return $query->with(['user', 'paidBy', 'project'])->where('user_id', $user->id);
+            return $query->with(['user', 'paidBy', 'project', 'paymentAccount'])->where('user_id', $user->id);
         })
-        
+
             ->columns([
                 Tables\Columns\TextColumn::make('id')
                     ->label('ID Advance')
@@ -107,6 +108,13 @@ class AdvanceResource extends Resource
                     ->label('Nominal')
                     ->sortable()
                     ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 2, ',', '.')),
+
+                Tables\Columns\TextColumn::make('paymentAccount.name')
+                    ->label('Rekening')
+                    ->formatStateUsing(fn($state, $record) => $state ?? '-')
+                    ->badge()
+                    ->color('info')
+                    ->sortable(),
                 
 
                 Tables\Columns\TextColumn::make('status')
@@ -142,7 +150,18 @@ class AdvanceResource extends Resource
                     ->openUrlInNewTab(),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'Pending' => 'Pending',
+                        'Disetujui' => 'Disetujui',
+                        'Ditolak' => 'Ditolak',
+                        'Dibayarkan' => 'Dibayarkan',
+                        'Selesai' => 'Selesai',
+                    ]),
+                Tables\Filters\SelectFilter::make('payment_account_id')
+                    ->label('Rekening')
+                    ->options(fn () => \App\Models\PaymentAccount::active()->pluck('name', 'id')),
             ])
             ->actions([
                 Tables\Actions\Action::make('upload_invoice')
@@ -249,12 +268,45 @@ class AdvanceResource extends Resource
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
                         DB::transaction(function () use ($record, $data) {
+                            // Get payment account with pessimistic locking
+                            $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
+                            if (!$account) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Rekening tidak ditemukan.',
+                                ]);
+                            }
+
+                            // Check balance
+                            $availableBalance = $account->getAvailableBalance();
+                            if ($availableBalance < (float) $data['paid']) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
+                                ]);
+                            }
+
+                            // Create transaction record
+                            Transaction::create([
+                                'payment_account_id' => $account->id,
+                                'user_id' => auth()->id(),
+                                'type' => 'out',
+                                'amount' => (float) $data['paid'],
+                                'description' => "Advance: {$record->keterangan_advance}",
+                                'reference_type' => 'advance',
+                                'reference_id' => $record->id,
+                                'transaction_date' => now()->toDateString(),
+                                'category' => 'operational',
+                            ]);
+
+                            // Update advance status with payment account
                             $record->update([
                                 'status' => 'Dibayarkan',
                                 'paid_by' => auth()->id(),
                                 'paid' => $data['paid'],
+                                'payment_account_id' => $account->id,
                                 'reference' => $data['reference'],
-                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension()) : $data['attachment_pay'],
+                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
+                                    ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
+                                    : $data['attachment_pay'],
                             ]);
                         });
                     })
@@ -264,10 +316,11 @@ class AdvanceResource extends Resource
                             ->numeric()
                             ->required()
                             ->prefix('Rp')
+                            ->default(fn($record) => $record->amount)
+                            ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
-                            ])
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', '.')),
+                            ]),
                         Forms\Components\TextInput::make('reference')
                             ->label('Nomor Referensi')
                             ->required(),
@@ -279,25 +332,20 @@ class AdvanceResource extends Resource
                             ->validationMessages([
                                 'required' => 'Bukti pembayaran harus diunggah.',
                             ]),
-                        Forms\Components\Select::make('budget_id')
-                            ->label('Pilih Budget')
-                            ->options(Budget::all()->pluck('name', 'id'))
-                            ->required()
-                            ->reactive()
-                            ->afterStateUpdated(function ($state, callable $set, $get, $record) {
-                                $budget = Budget::find($get('budget_id'));
-                                if ($budget) {
-                                    $budget->update([
-                                        'amount' => $budget->amount - $get('paid'),
-                                    ]);
-                                }
-                            }),
+                        Forms\Components\Select::make('payment_account_id')
+                            ->label('Pilih Rekening')
+                            ->options(fn () => cache()->remember('payment_accounts_list', 300, fn () =>
+                                PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
+                                    [$account->id => "{$account->name} - Rp " . number_format($account->getAvailableBalance(), 0, ',', '.')]
+                                )->toArray()
+                            ))
+                            ->required(),
                         ])
                         ->requiresConfirmation()
                         ->color('success')
-                        ->icon('heroicon-o-currency-dollar')
-                        ->hidden(fn($record) => 
-                        !auth()->user()->can('restore_advance') || 
+                        ->icon('heroicon-o-credit-card')
+                        ->hidden(fn($record) =>
+                        !auth()->user()->can('restore_advance') ||
                         in_array($record->status, ['Pending','Dibayarkan','Selesai','Ditolak'])
                     ),
                     

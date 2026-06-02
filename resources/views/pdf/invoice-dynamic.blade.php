@@ -17,10 +17,9 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $invoiceTitle }} {{ $invoice->nama_perusahaan }} - {{ $invoice->uuid }}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style type="text/css">
         body {
-            font-family: 'Sora', sans-serif;
+            font-family: DejaVu Sans, sans-serif;
         }
 
         p, li, ul, ol {

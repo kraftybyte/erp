@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Observers\AdvanceObserver;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -27,20 +28,26 @@ class Advance extends Model
         'reference',
         'rejection_reason',
         'attachment_pay',
-        'total_harga'
+        'total_harga',
+        'payment_account_id',
+        'paid',
     ];
 
-    public function user()
+    protected $casts = [
+        'paid' => 'decimal:2',
+    ];
+
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function paidBy()
+    public function paidBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'paid_by');
     }
 
-    public function project()
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }
@@ -48,5 +55,10 @@ class Advance extends Model
     public function itemAdvance()
     {
         return $this->hasMany(ItemAdvance::class);
+    }
+
+    public function paymentAccount(): BelongsTo
+    {
+        return $this->belongsTo(PaymentAccount::class, 'payment_account_id');
     }
 }

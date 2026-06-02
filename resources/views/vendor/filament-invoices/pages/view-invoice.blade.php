@@ -47,14 +47,14 @@
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Due Date</span>
                                 <span class="font-medium">
-                                    {{ $this->getRecord()->due_date->toDateString() }}
+                                    {{ $this->getRecord()->due_date?->toDateString() ?? 'N/A' }}
                                 </span>
                             </div>
 
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Status</span>
                                 <span class="font-semibold">
-                                    {{ type_of($this->getRecord()->status, 'invoices', 'status')->name }}
+                                    {{ type_of($this->getRecord()->status, 'invoices', 'status')?->name ?? $this->getRecord()->status }}
                                 </span>
                             </div>
                         </div>

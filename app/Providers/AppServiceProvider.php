@@ -16,8 +16,7 @@ use TomatoPHP\FilamentInvoices\Services\Contracts\InvoiceFrom;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
-use App\Models\Budget;
-use App\Observers\BudgetObserver;
+use App\Models\PaymentAccount;
 use App\Models\Company;
 use App\Models\Account;
 use TomatoPHP\FilamentInvoices\Models\Invoice;
@@ -40,8 +39,14 @@ use App\Models\PurchaseRequest;
 use App\Models\Announcement;
 use App\Models\Event;
 use App\Models\Asset;
+use App\Models\SocialAccount;
 use App\Observers\TaskObserver;
 use App\Observers\AnnouncementObserver;
+use App\Observers\PaymentAccountObserver;
+use App\Observers\ContractObserver;
+use App\Observers\DealObserver;
+use App\Observers\SocialAccountObserver;
+use App\Observers\InvoiceObserver;
 
 
 
@@ -71,9 +76,15 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Announcement::class, AnnouncementPolicy::class);
         Gate::policy(Event::class, EventPolicy::class);
         Gate::policy(Asset::class, AssetPolicy::class);
-        Budget::observe(BudgetObserver::class);
+
+        // Register Observers
+        PaymentAccount::observe(PaymentAccountObserver::class);
+        Contract::observe(ContractObserver::class);
+        Deal::observe(DealObserver::class);
+        SocialAccount::observe(SocialAccountObserver::class);
         Task::observe(TaskObserver::class);
         Announcement::observe(AnnouncementObserver::class);
+        Invoice::observe(InvoiceObserver::class);
 
         // Dark Mode Configuration
         try {

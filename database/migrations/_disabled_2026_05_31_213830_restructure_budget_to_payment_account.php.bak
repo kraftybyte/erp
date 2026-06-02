@@ -1,0 +1,132 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        // Step 1: Rename budgets table to payment_accounts
+        Schema::rename('budgets', 'payment_accounts');
+
+        // Step 2: Modify payment_accounts table (was budgets)
+        Schema::table('payment_accounts', function (Blueprint $table) {
+            // Drop old columns
+            $table->dropColumn('description');
+
+            // Add new columns
+            $table->string('bank_name')->nullable()->after('name');
+            $table->string('account_number')->nullable()->after('bank_name');
+            $table->string('account_holder')->nullable()->after('account_number');
+            $table->decimal('initial_balance', 15, 2)->default(0)->after('account_holder');
+            $table->boolean('is_active')->default(true)->after('initial_balance');
+            $table->text('notes')->nullable()->after('is_active');
+
+            // Rename amount to current_balance for clarity
+            $table->renameColumn('amount', 'current_balance');
+        });
+
+        // Step 3: Rename budget_logs table to transactions
+        Schema::rename('budget_logs', 'transactions');
+
+        // Step 4: Modify transactions table (was budget_logs)
+        Schema::table('transactions', function (Blueprint $table) {
+            // Rename columns
+            $table->renameColumn('budget_id', 'payment_account_id');
+            $table->renameColumn('change_amount', 'amount');
+            $table->renameColumn('action', 'type');
+            $table->renameColumn('note', 'description');
+
+            // Add new columns
+            $table->string('reference_type')->nullable()->after('type'); // expense, advance, invoice, manual, deposit
+            $table->unsignedBigInteger('reference_id')->nullable()->after('reference_type');
+            $table->date('transaction_date')->nullable()->after('reference_id');
+            $table->string('category')->nullable()->after('transaction_date'); // untuk grouping
+
+            // Add indexes
+            $table->index('payment_account_id');
+            $table->index('type');
+            $table->index('reference_type');
+            $table->index('transaction_date');
+
+            // Add foreign key
+            $table->foreign('payment_account_id')
+                  ->references('id')
+                  ->on('payment_accounts')
+                  ->onDelete('cascade');
+        });
+
+        // Step 5: Add payment_account_id and paid to expenses table
+        Schema::table('expenses', function (Blueprint $table) {
+            $table->unsignedBigInteger('payment_account_id')->nullable()->after('project_id');
+            $table->decimal('paid', 15, 2)->nullable()->after('attachment_pay');
+
+            $table->foreign('payment_account_id')
+                  ->references('id')
+                  ->on('payment_accounts')
+                  ->onDelete('set null');
+        });
+
+        // Step 6: Add payment_account_id and paid to advances table
+        Schema::table('advances', function (Blueprint $table) {
+            $table->unsignedBigInteger('payment_account_id')->nullable()->after('project_id');
+            $table->decimal('paid', 15, 2)->nullable()->after('attachment_pay');
+
+            $table->foreign('payment_account_id')
+                  ->references('id')
+                  ->on('payment_accounts')
+                  ->onDelete('set null');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        // Remove foreign keys from expenses and advances first
+        Schema::table('expenses', function (Blueprint $table) {
+            $table->dropForeign(['payment_account_id']);
+            $table->dropColumn(['payment_account_id', 'paid']);
+        });
+
+        Schema::table('advances', function (Blueprint $table) {
+            $table->dropForeign(['payment_account_id']);
+            $table->dropColumn(['payment_account_id', 'paid']);
+        });
+
+        // Reverse transactions table
+        Schema::table('transactions', function (Blueprint $table) {
+            $table->dropForeign(['payment_account_id']);
+            $table->dropIndex(['payment_account_id']);
+            $table->dropIndex(['type']);
+            $table->dropIndex(['reference_type']);
+            $table->dropIndex(['transaction_date']);
+
+            $table->dropColumn(['reference_type', 'reference_id', 'transaction_date', 'category']);
+
+            $table->renameColumn('payment_account_id', 'budget_id');
+            $table->renameColumn('amount', 'change_amount');
+            $table->renameColumn('type', 'action');
+            $table->renameColumn('description', 'note');
+        });
+
+        // Rename back to budget_logs
+        Schema::rename('transactions', 'budget_logs');
+
+        // Reverse payment_accounts table
+        Schema::table('payment_accounts', function (Blueprint $table) {
+            $table->dropColumn(['bank_name', 'account_number', 'account_holder', 'initial_balance', 'is_active', 'notes']);
+            $table->renameColumn('current_balance', 'amount');
+            $table->text('description')->nullable()->after('name');
+        });
+
+        // Rename back to budgets
+        Schema::rename('payment_accounts', 'budgets');
+    }
+};

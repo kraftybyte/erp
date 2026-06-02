@@ -2,19 +2,40 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
-class Budget extends Model
+/**
+ * Budget model - proxy to PaymentAccount for backward compatibility
+ *
+ * @deprecated Use PaymentAccount instead
+ */
+class Budget extends PaymentAccount
 {
-    use HasFactory;
+    protected $table = 'payment_accounts';
 
-    protected $fillable = ['name', 'description', 'amount'];
+    public $timestamps = true;
 
-    public function logs()
+    /**
+     * Override increment to sync amount and current_balance
+     */
+    public function increment($column, $amount = 1, array $extra = []): int
     {
-        return $this->hasMany(BudgetLog::class);
+        if ($column === 'amount') {
+            // Update both amount and current_balance atomically
+            DB::table($this->getTable())
+                ->where('id', $this->id)
+                ->update([
+                    'amount' => DB::raw('amount + ' . $amount),
+                    'current_balance' => DB::raw('current_balance + ' . $amount),
+                    'updated_at' => now(),
+                ]);
+
+            // Refresh the model
+            $this->refresh();
+
+            return 1;
+        }
+
+        return parent::increment($column, $amount, $extra);
     }
-    
-    
 }

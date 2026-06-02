@@ -304,9 +304,9 @@ Forms\Components\Section::make(trans('filament-invoices::messages.invoices.secti
                         ->toggleable(),
                     Tables\Columns\TextColumn::make('due_date')
                         ->label(trans('filament-invoices::messages.invoices.columns.due_date'))
-                        ->tooltip(fn($record) => $record->due_date->isFuture() ? $record->due_date->diffForHumans() : ($record->due_date->isToday() ? 'Due Today!' : 'Over Due!'))
-                        ->color(fn($record) => $record->due_date->isFuture() ? 'success' : ($record->due_date->isToday() ? 'warning' : 'danger'))
-                        ->icon(fn($record) => $record->due_date->isFuture() ? 'heroicon-s-check-circle' : ($record->due_date->isToday() ? 'heroicon-s-exclamation-circle' : 'heroicon-s-x-circle'))
+                        ->tooltip(fn($record) => !$record->due_date ? 'No due date' : ($record->due_date->isFuture() ? $record->due_date->diffForHumans() : ($record->due_date->isToday() ? 'Due Today!' : 'Over Due!')))
+                        ->color(fn($record) => !$record->due_date ? 'gray' : ($record->due_date->isFuture() ? 'success' : ($record->due_date->isToday() ? 'warning' : 'danger')))
+                        ->icon(fn($record) => !$record->due_date ? null : ($record->due_date->isFuture() ? 'heroicon-s-check-circle' : ($record->due_date->isToday() ? 'heroicon-s-exclamation-circle' : 'heroicon-s-x-circle')))
                         ->date('Y-m-d')
                         ->sortable()
                         ->toggleable(),

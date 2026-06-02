@@ -2,9 +2,8 @@
 
 namespace App\Filament\Widgets;
 
-use App\Models\Budget;
-use App\Models\Expense;
-use App\Models\Advance;
+use App\Models\PaymentAccount;
+use App\Models\Transaction;
 use Carbon\Carbon;
 use Filament\Widgets\StatsOverviewWidget\Card;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -20,51 +19,62 @@ class BudgetUtilization extends BaseWidget
 
     protected function getCards(): array
     {
-        $budgets = Budget::all();
-        $totalBudget = $budgets->sum('amount');
+        $accounts = PaymentAccount::active()->get();
 
-        // Calculate used amount from all expenses and advances
-        $allExpenses = Expense::whereIn('status', ['Disetujui', 'Selesai'])->sum('paid');
-        $allAdvances = Advance::whereIn('status', ['Disetujui', 'Selesai'])->sum('paid');
-        $usedAmount = $allExpenses + $allAdvances;
+        // Calculate total balance from all accounts
+        $totalBalance = $accounts->sum(fn($account) => $account->getAvailableBalance());
 
-        $utilizationRate = $totalBudget > 0 ? round(($usedAmount / $totalBudget) * 100, 1) : 0;
-        $remaining = $totalBudget - $usedAmount;
+        // Calculate total transactions this month
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $endOfMonth = Carbon::now()->endOfMonth();
 
-        // Monthly spending
-        $currentMonth = Carbon::now()->startOfMonth();
-        $monthlyExpenses = Expense::whereIn('status', ['Disetujui', 'Selesai'])
-            ->whereBetween('submission_date', [$currentMonth, now()])
-            ->sum('paid');
-        $monthlyAdvances = Advance::whereIn('status', ['Disetujui', 'Selesai'])
-            ->whereBetween('submission_date', [$currentMonth, now()])
-            ->sum('paid');
-        $monthlySpending = $monthlyExpenses + $monthlyAdvances;
+        $monthlyIn = Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
+            ->where('type', 'in')
+            ->sum('amount');
 
-        // Budget count
-        $budgetCount = $budgets->count();
+        $monthlyOut = Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
+            ->where('type', 'out')
+            ->sum('amount');
 
-        // Low balance budgets (below 20%)
-        $criticalCount = $budgets->filter(fn ($b) => $b->amount > 0 && (($usedAmount / $b->amount) >= 0.8))->count();
+        $monthlyNet = $monthlyIn - $monthlyOut;
+
+        // Total initial balance (total deposited)
+        $totalInitial = $accounts->sum('initial_balance');
+
+        // Total in all time
+        $totalIn = $accounts->sum(fn($account) => $account->getTotalIn());
+
+        // Total out all time
+        $totalOut = $accounts->sum(fn($account) => $account->getTotalOut());
+
+        // Account count
+        $accountCount = $accounts->count();
+
+        // Low balance accounts (below 20% of initial or below 1M)
+        $criticalCount = $accounts->filter(fn ($account) =>
+            $account->getAvailableBalance() < 1000000 ||
+            ($account->initial_balance > 0 && ($account->getAvailableBalance() / $account->initial_balance) < 0.2)
+        )->count();
 
         return [
-            Card::make('Total Budget', 'Rp ' . number_format($totalBudget / 1000000, 1) . 'M')
-                ->description(number_format($utilizationRate) . '% utilized')
-                ->descriptionColor($utilizationRate >= 80 ? 'warning' : 'success')
+            Card::make('Total Saldo', 'Rp ' . number_format($totalBalance / 1000000, 1) . 'M')
+                ->description($accountCount . ' rekening aktif')
+                ->descriptionColor($totalBalance >= 0 ? 'success' : 'danger')
                 ->icon('heroicon-o-wallet'),
 
-            Card::make('Used Amount', 'Rp ' . number_format($usedAmount / 1000000, 1) . 'M')
-                ->description('Remaining: Rp ' . number_format($remaining / 1000000, 1) . 'M')
+            Card::make('Saldo Awal', 'Rp ' . number_format($totalInitial / 1000000, 1) . 'M')
+                ->description('Total deposit')
+                ->icon('heroicon-o-banknotes'),
+
+            Card::make('Arus Bulan Ini', 'Rp ' . number_format(abs($monthlyNet) / 1000000, 1) . 'M')
+                ->description(($monthlyNet >= 0 ? '+' : '-') . ' netto bulan ini')
+                ->descriptionColor($monthlyNet >= 0 ? 'success' : 'danger')
+                ->icon('heroicon-o-arrows-right-left'),
+
+            Card::make('Total Pengeluaran', 'Rp ' . number_format($totalOut / 1000000, 1) . 'M')
+                ->description($criticalCount . ' rekening kritis')
+                ->descriptionColor($criticalCount > 0 ? 'warning' : 'success')
                 ->icon('heroicon-o-credit-card'),
-
-            Card::make('Monthly Spending', 'Rp ' . number_format($monthlySpending / 1000000, 1) . 'M')
-                ->description('This month')
-                ->icon('heroicon-o-calendar'),
-
-            Card::make('Budget Count', number_format($budgetCount))
-                ->description($criticalCount . ' critical (>80%)')
-                ->descriptionColor($criticalCount > 0 ? 'danger' : 'success')
-                ->icon('heroicon-o-calculator'),
         ];
     }
 }

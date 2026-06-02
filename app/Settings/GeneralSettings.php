@@ -14,6 +14,10 @@ class GeneralSettings extends Settings
     public mixed $site_theme = [];
     public bool $dark_mode_enabled = false;
 
+    // Primary Gradient Colors
+    public mixed $primary_gradient_from = '#90c646';
+    public mixed $primary_gradient_to = '#6fa335';
+
     // Event categories with colors
     public mixed $event_categories = [];
 
@@ -57,6 +61,8 @@ class GeneralSettings extends Settings
     {
         return [
             'dark_mode_enabled' => false,
+            'primary_gradient_from' => '#90c646',
+            'primary_gradient_to' => '#6fa335',
             'event_categories' => [
                 ['color' => '#3bbeff', 'label' => 'Shooting Visit'],
                 ['color' => '#347b9e', 'label' => 'Shooting Studio'],
