@@ -20,6 +20,7 @@ use App\Models\PaymentAccount;
 use App\Models\Company;
 use App\Models\Account;
 use App\Models\Invoice;
+use TomatoPHP\FilamentInvoices\Models\Invoice as TomatoInvoice;
 use App\Policies\InvoicePolicy;
 use App\Policies\ContractPolicy;
 use App\Policies\ProjectPolicy;
