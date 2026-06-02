@@ -2,13 +2,42 @@
 
 > **Purpose**: This document provides comprehensive context about the ERP Creative application to enable AI-assisted code analysis, debugging, feature development, and refactoring.
 >
-> **Last Updated**: 2026-05-27
+> **Last Updated**: 2026-06-02
 >
 > **Company**: ERP Creative
 >
 > **Type**: Business Management ERP for Digital Marketing Agency
 >
-> **Version**: 2.1
+> **Version**: 2.2
+
+---
+
+## CHANGELOG (v2.2)
+
+### Recent Updates (2026-06-02)
+
+#### Budget to PaymentAccount Restructuring
+- ✅ **BudgetLog deleted** - Simplified budget tracking
+- ✅ **BudgetResource deleted** - Removed old budget management
+- ✅ **PaymentAccount created** - New unified payment account system
+  - `app/Models/PaymentAccount.php`
+  - `app/Filament/Resources/PaymentAccountResource.php`
+  - `app/Observers/PaymentAccountObserver.php`
+- ✅ **Transaction model** - New model for tracking all payment transactions
+- ✅ **Invoice relationship** - Invoices now link to PaymentAccount
+- ✅ **PaymentDashboard page** - New dashboard for payment overview
+
+#### Invoice PDF Fixes
+- ✅ **Font fix** - Removed Sora Google Font from DomPDF (DomPDF can't use HTTP fonts)
+- ✅ **Null checks** - Fixed multiple null-safe issues:
+  - `due_date->isFuture()` in ListInvoices table
+  - `due_date->toDateString()` in view-invoice page
+  - `type_of()->name` in view-invoice page
+
+#### Database Migrations (2026-06-02)
+- ✅ `2026_05_31_214500_complete_payment_account_structure.php`
+- ✅ `2026_05_31_220000_add_payment_account_to_invoices.php`
+- ✅ `2026_06_01_000001_add_primary_gradient_to_settings.php`
 
 ---
 
@@ -109,13 +138,35 @@
                     └──────────────┘     └──────────────┘
 ```
 
-### 1.3 Finance Flow
+### 1.3 Finance Flow [v2.2]
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   ADVANCE   │────▶│  DISETUJUI  │────▶│ DIBAYARKAN  │────▶│  SELESAI    │     │   BUDGET    │
-│  (Uang Muka)│     │  (Approved) │     │ (Paid)      │     │ (Completed) │     │  (Ter跟踪)  │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   ADVANCE   │────▶│  DISETUJUI  │────▶│ DIBAYARKAN  │────▶│  SELESAI    │
+│  (Uang Muka)│     │  (Approved) │     │ (Paid)      │     │ (Completed) │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   EXPENSE   │────▶│  DISETUJUI  │────▶│ DIBAYARKAN  │────▶│  SELESAI    │
+│ (Pengeluaran│     │  (Approved) │     │ (Paid)      │     │ (Completed) │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        PAYMENT ACCOUNT SYSTEM [v2.2]                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐  │
+│  │  PAYMENT_ACCOUNT  │     │    TRANSACTION    │     │     INVOICE      │  │
+│  ├──────────────────┤     ├──────────────────┤     ├──────────────────┤  │
+│  │ id               │◀─── │ id               │     │ id               │  │
+│  │ name             │     │ account_id        │────▶│ payment_account   │  │
+│  │ type             │     │ type (in/out)     │     │ paid             │  │
+│  │ account_number   │     │ amount            │     │ status           │  │
+│  │ bank_name        │     │ reference         │     └──────────────────┘  │
+│  │ amount           │     └──────────────────┘                            │
+│  └──────────────────┘                                                       │
+│                              Payment Tracking                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   EXPENSE   │────▶│  DISETUJUI  │────▶│ DIBAYARKAN  │────▶│  SELESAI    │
@@ -180,6 +231,7 @@ app/
 │   │   ├── AnalyticsDashboard.php  # Financial analytics
 │   │   ├── TaskKanbanBoard.php # Kanban board (Mokhosh)
 │   │   ├── ProjectTimelineBoard.php
+│   │   ├── PaymentDashboard.php    # Payment overview [v2.2]
 │   │   └── PwaSettings.php
 │   ├── Resources/              # Filament resources (CRUD)
 │   │   ├── LeadsResource.php
@@ -193,7 +245,8 @@ app/
 │   │   ├── EmployeeResource.php
 │   │   ├── AbsenceResource.php
 │   │   ├── SocialAccountResource.php
-│   │   └── MetaAdAccountResource.php
+│   │   ├── MetaAdAccountResource.php
+│   │   └── PaymentAccountResource.php  # [v2.2]
 │   └── Widgets/                # Dashboard widgets
 │       ├── InvoiceStatsOverview.php
 │       ├── InvoiceRevenueChart.php
@@ -216,13 +269,15 @@ app/
 ├── Notifications/            # Notification classes
 │   ├── AbsenceApprovalNotification.php
 │   └── PurchaseRequestApprovalNotification.php
-├── Observers/                # Model observers
+├── Observers/                # Model observers [v2.2]
 │   ├── ExpenseObserver.php
 │   ├── AdvanceObserver.php
 │   ├── AbsenceObserver.php
-│   ├── BudgetObserver.php
-│   └── TaskObserver.php
-├── Policies/                 # Authorization policies (27)
+│   ├── TaskObserver.php
+│   ├── InvoiceObserver.php          # Invoice payment tracking
+│   ├── PaymentAccountObserver.php   # Payment account balance updates
+│   └── SocialAccountObserver.php    # Social account sync status
+├── Policies/                 # Authorization policies
 ├── Providers/
 │   ├── FilamentServiceProvider.php
 │   ├── Filament/AdminPanelProvider.php  # Filament panel config
@@ -334,6 +389,48 @@ app/
 └──────────────┘     └──────────────┘     └──────────────┘
 ```
 
+### 3.1b PaymentAccount System Architecture [v2.2]
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         PAYMENT ACCOUNT SYSTEM                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐ │
+│  │ PAYMENT_ACCOUNT │      │   INVOICE        │      │   EXPENSE       │ │
+│  ├─────────────────┤      ├─────────────────┤      ├─────────────────┤ │
+│  │ id              │      │ id              │      │ id              │ │
+│  │ name            │      │ uuid            │      │ amount          │ │
+│  │ type            │      │ grand_total     │      │ status          │ │
+│  │ account_number  │─────▶│ paid            │      │ paid_by         │ │
+│  │ bank_name       │      │ payment_account │      │ reference       │ │
+│  │ amount          │      │ (FK)            │      │ payment_account │ │
+│  │ description     │      └─────────────────┘      │ (FK)            │ │
+│  │ is_active       │              │                 └─────────────────┘ │
+│  └────────┬────────┘              │                           │        │
+│           │                       │                           │        │
+│           │                       ▼                           ▼        │
+│           │              ┌──────────────────────────────────────────┐  │
+│           │              │              TRANSACTION                 │  │
+│           │              ├──────────────────────────────────────────┤  │
+│           │              │ id                                       │  │
+│           │              │ payment_account_id (FK)                  │  │
+│           │              │ transactionable_type (Invoice, Expense)  │  │
+│           │              │ transactionable_id                       │  │
+│           │              │ type (income / expense)                   │  │
+│           │              │ amount                                   │  │
+│           │              │ reference                                │  │
+│           │              │ transaction_date                         │  │
+│           │              │ created_by                               │  │
+│           │              └──────────────────────────────────────────┘  │
+│           │                          ▲                                │
+│           └──────────────────────────┴────────────────────────────────┘
+│                                    │
+│                         PaymentAccountObserver
+│                    (auto-updates payment_account.amount)
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 ### 3.2 Model Details
 
 #### User (users table)
@@ -358,6 +455,44 @@ app/
 - FilamentUser (canAccessPanel)
 - HasAvatar, HasName, HasMedia (Spatie)
 - HasRoles (Spatie Permission)
+```
+
+#### PaymentAccount (payment_accounts table) [v2.2]
+```php
+// Key fields
+- id
+- name (account name, e.g., "BCA Operational", "Cash Box")
+- type (cash, bank, ewallet, etc.)
+- account_number (optional)
+- bank_name (optional)
+- description
+- is_active (boolean)
+
+// Relationships
+- transactions() → hasMany (Transaction)
+
+// Usage
+- Replaces old Budget/BudgetLog system
+- Invoices link to PaymentAccount for payment tracking
+```
+
+#### Transaction (transactions table) [v2.2]
+```php
+// Key fields
+- id
+- payment_account_id (FK)
+- transactionable_type, transactionable_id (polymorphic)
+- type (income, expense)
+- amount
+- description
+- reference (optional)
+- transaction_date
+- created_by (user_id)
+
+// Polymorphic relationships
+- invoice_payments() → morphMany from Invoice
+- expense_payments() → morphMany from Expense
+- advance_payments() → morphMany from Advance
 ```
 
 #### Leads (leads table)
@@ -388,11 +523,15 @@ app/
 - product() → belongsToMany via deal_product
 - project() → hasMany
 - tasks() → hasManyThrough via Project
-- invoices() → hasMany (by nama_perusahaan)
-- quotations() → hasMany (by nama_perusahaan)
+- invoices() → hasMany (matched by nama_perusahaan)
+- quotations() → hasMany
 - contracts() → hasMany
 - socialAccounts() → hasMany (client_id)
 - metaAdAccounts() → hasMany (client_id)
+
+// Deal-Invoice matching note [v2.2]
+- Invoices still matched to Deal by nama_perusahaan (not foreign key)
+- Invoices now have payment_account_id for payment tracking
 ```
 
 #### Project (projects table)
@@ -489,7 +628,7 @@ app/
 // Business rules
 - Director/Finance/Super Admin can see all
 - Others see only own expenses
-- Budget deduction on payment
+- PaymentAccount deduction on payment [v2.2]
 ```
 
 #### Advance (advances table)
@@ -501,14 +640,17 @@ app/
 - attachment, attachment_pay
 - total_harga
 - rejection_reason
+- payment_account_id (FK) [v2.2]
 
 // Relationships
 - user(), paidBy(), project()
 - itemAdvance() → hasMany
+- paymentAccount() → belongsTo [v2.2]
 
 // Business rules
 - Same approval flow as Expense
 - Realisasi tracking for items
+- Links to PaymentAccount for payment tracking
 ```
 
 #### Absence (absences table)
@@ -533,13 +675,15 @@ app/
 - Only Head/Director/Finance can approve
 ```
 
-#### Budget (budgets table)
+#### Budget (budgets table) [DEPRECATED v2.2]
 ```php
+// NOTE: Budget/BudgetLog system has been replaced by PaymentAccount/Transaction [v2.2]
+
 // Key fields
 - id, name, description, amount
 
 // Relationships
-- logs() → hasMany (BudgetLog)
+- logs() → hasMany (BudgetLog) [DEPRECATED]
 ```
 
 #### SocialAccount (social_accounts table)
