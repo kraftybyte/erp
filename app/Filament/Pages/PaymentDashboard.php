@@ -90,9 +90,12 @@ class PaymentDashboard extends Page
 
     public function loadData()
     {
-        // Total balance across all active accounts
-        $this->totalBalance = PaymentAccount::active()->get()->sum(function ($account) {
-            return $account->getAvailableBalance();
+        // Get all active accounts with their current_balance from database
+        $accountsData = PaymentAccount::active()->get();
+
+        // Calculate total balance from current_balance field (ensure numeric)
+        $this->totalBalance = $accountsData->sum(function ($account) {
+            return (float) ($account->current_balance ?? 0);
         });
 
         // This month stats
@@ -112,22 +115,14 @@ class PaymentDashboard extends Page
         $pendingAdvance = Advance::whereIn('status', ['Pending', 'Disetujui'])->count();
         $this->pendingPayments = $pendingExpense + $pendingAdvance;
 
-        // All active accounts with balance
-        $this->accounts = PaymentAccount::active()
-            ->withCount(['transactions as total_in' => function ($query) {
-                $query->where('type', 'in');
-            }, 'transactions as total_out' => function ($query) {
-                $query->where('type', 'out');
-            }])
-            ->get()
-            ->map(function ($account) {
-                $account->available_balance = $account->getAvailableBalance();
-                $account->percentage = $this->totalBalance > 0
-                    ? round(($account->available_balance / $this->totalBalance) * 100, 1)
-                    : 0;
-                return $account;
-            })
-            ->sortByDesc('available_balance');
+        // All active accounts with balance (use current_balance field)
+        $this->accounts = $accountsData->map(function ($account) {
+            $account->available_balance = $account->current_balance ?? 0;
+            $account->percentage = $this->totalBalance > 0
+                ? round(($account->available_balance / $this->totalBalance) * 100, 1)
+                : 0;
+            return $account;
+        })->sortByDesc('available_balance');
 
         // Monthly stats (last 6 months)
         $this->monthlyStats = collect();
