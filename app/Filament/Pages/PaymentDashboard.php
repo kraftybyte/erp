@@ -11,6 +11,7 @@ use Filament\Pages\Page;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Livewire\Attributes\On;
 
 class PaymentDashboard extends Page
 {
@@ -31,6 +32,17 @@ class PaymentDashboard extends Page
     public $accounts;
     public $recentTransactions;
     public $monthlyStats;
+
+    // Pagination for unlimited scroll
+    public $transactionsPage = 1;
+    public $transactionsPerPage = 20;
+    public $hasMoreTransactions = false;
+    public $totalTransactions = 0;
+
+    // Filter state
+    public $filterAccount = null;
+    public $filterType = null;
+    public $filterCategory = null;
 
     // Theme colors from settings
     public $primaryColor;
@@ -117,13 +129,6 @@ class PaymentDashboard extends Page
             })
             ->sortByDesc('available_balance');
 
-        // Recent transactions
-        $this->recentTransactions = Transaction::with(['paymentAccount', 'user'])
-            ->orderBy('transaction_date', 'desc')
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
-
         // Monthly stats (last 6 months)
         $this->monthlyStats = collect();
         for ($i = 5; $i >= 0; $i--) {
@@ -145,6 +150,75 @@ class PaymentDashboard extends Page
                 'net' => (float) ($in - $out),
             ]);
         }
+
+        // Load transactions with pagination
+        $this->loadTransactions(reset: true);
+    }
+
+    public function loadTransactions(bool $reset = false)
+    {
+        if ($reset) {
+            $this->transactionsPage = 1;
+            $this->recentTransactions = collect();
+        }
+
+        $query = Transaction::with(['paymentAccount', 'user'])
+            ->orderBy('transaction_date', 'desc')
+            ->orderBy('created_at', 'desc');
+
+        // Apply filters
+        if ($this->filterAccount) {
+            $query->where('payment_account_id', $this->filterAccount);
+        }
+        if ($this->filterType) {
+            $query->where('type', $this->filterType);
+        }
+        if ($this->filterCategory) {
+            $query->where('category', $this->filterCategory);
+        }
+
+        // Get total count
+        $this->totalTransactions = (clone $query)->count();
+
+        // Get paginated results
+        $newTransactions = (clone $query)
+            ->offset(($this->transactionsPage - 1) * $this->transactionsPerPage)
+            ->limit($this->transactionsPerPage)
+            ->get();
+
+        if ($reset) {
+            $this->recentTransactions = $newTransactions;
+        } else {
+            $this->recentTransactions = $this->recentTransactions->merge($newTransactions);
+        }
+
+        // Check if there are more
+        $this->hasMoreTransactions = $this->recentTransactions->count() < $this->totalTransactions;
+    }
+
+    public function loadMoreTransactions()
+    {
+        $this->transactionsPage++;
+        $this->loadTransactions();
+    }
+
+    public function applyFilters()
+    {
+        $this->loadTransactions(reset: true);
+    }
+
+    public function clearFilters()
+    {
+        $this->filterAccount = null;
+        $this->filterType = null;
+        $this->filterCategory = null;
+        $this->loadTransactions(reset: true);
+    }
+
+    #[On('refresh-transactions')]
+    public function refreshTransactions()
+    {
+        $this->loadTransactions(reset: true);
     }
 
     public function refreshData()

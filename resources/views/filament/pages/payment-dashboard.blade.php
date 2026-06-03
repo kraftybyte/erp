@@ -323,20 +323,103 @@ border-bottom: 1px solid #f1f5f9;
                         </svg>
                     </div>
                     <span>Transaksi Terbaru</span>
+                    <span class="badge ml-2" style="background-color: {{ $rgba($primaryColor, 0.1) }}; color: {{ $primaryColor }};">
+                        {{ $totalTransactions }} transaksi
+                    </span>
                 </div>
-                <span class="badge" style="background-color: {{ $rgba($primaryColor, 0.1) }}; color: {{ $primaryColor }};">
-                    {{ $recentTransactions->count() }} transaksi
-                </span>
             </div>
 
-            <div class="overflow-auto max-h-[400px] scroll-thin">
+            {{-- Filters --}}
+            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                <div class="flex flex-wrap items-center gap-3">
+                    {{-- Filter Rekening --}}
+                    <select
+                        wire:model="filterAccount"
+                        wire:change="$emitSelf('filter-changed')"
+                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
+                        style="border-color: #e5e7eb;">
+                        <option value="">Semua Rekening</option>
+                        @foreach($accounts as $account)
+                            <option value="{{ $account->id }}">{{ $account->name }}</option>
+                        @endforeach
+                    </select>
+
+                    {{-- Filter Jenis --}}
+                    <select
+                        wire:model="filterType"
+                        wire:change="$emitSelf('filter-changed')"
+                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
+                        style="border-color: #e5e7eb;">
+                        <option value="">Semua Jenis</option>
+                        <option value="in">Masuk</option>
+                        <option value="out">Keluar</option>
+                    </select>
+
+                    {{-- Filter Kategori --}}
+                    <select
+                        wire:model="filterCategory"
+                        wire:change="$emitSelf('filter-changed')"
+                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
+                        style="border-color: #e5e7eb;">
+                        <option value="">Semua Kategori</option>
+                        <option value="invoice">Pemasukan Invoice</option>
+                        <option value="deposit">Setoran</option>
+                        <option value="operational">Operasional</option>
+                        <option value="withdrawal">Penarikan</option>
+                        <option value="payment">Pembayaran</option>
+                        <option value="expense">Biaya Operasional</option>
+                        <option value="other">Lainnya</option>
+                    </select>
+
+                    {{-- Clear Filters --}}
+                    @if($filterAccount || $filterType || $filterCategory)
+                        <button wire:click="clearFilters()"
+                            class="text-xs text-gray-500 hover:text-gray-700 underline">
+                            Clear filters
+                        </button>
+                    @endif
+
+                    {{-- Refresh Button --}}
+                    <button wire:click="refreshData()"
+                        class="ml-auto text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
+                        style="background-color: {{ $primaryColor }}; color: white;">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-auto max-h-[500px] scroll-thin"
+                x-data="{
+                    observer: null,
+                    init: function() {
+                        var self = this;
+                        // Infinite scroll observer
+                        setTimeout(function() {
+                            var sentinel = self.$el.querySelector('[data-sentinel]');
+                            if (sentinel) {
+                                self.observer = new IntersectionObserver(function(entries) {
+                                    entries.forEach(function(entry) {
+                                        if (entry.isIntersecting) {
+                                            @this.call('loadMoreTransactions');
+                                        }
+                                    });
+                                }, { threshold: 0.1 });
+                                self.observer.observe(sentinel);
+                            }
+                        }, 100);
+                    }
+                }">
                 <table class="data-table">
                     <thead class="sticky top-0 bg-gray-50 z-10">
                         <tr>
-                            <th style="width: 50px; text-align: center;">#</th>
+                            <th style="width: 40px; text-align: center;">#</th>
                             <th>Tanggal</th>
                             <th>Rekening</th>
                             <th>Keterangan</th>
+                            <th>Kategori</th>
                             <th style="text-align: right;">Jumlah</th>
                         </tr>
                     </thead>
@@ -345,14 +428,14 @@ border-bottom: 1px solid #f1f5f9;
                             <tr>
                                 {{-- Tipe --}}
                                 <td style="text-align: center;">
-                                    <div class="w-8 h-8 rounded-lg inline-flex items-center justify-center"
+                                    <div class="w-7 h-7 rounded-lg inline-flex items-center justify-center"
                                         style="background-color: {{ $transaction->type === 'in' ? $rgba($successColor, 0.1) : $rgba($dangerColor, 0.1) }};">
                                         @if($transaction->type === 'in')
-                                            <svg class="w-4 h-4" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                            <svg class="w-3.5 h-3.5" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"/>
                                             </svg>
                                         @else
-                                            <svg class="w-4 h-4" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                            <svg class="w-3.5 h-3.5" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
                                             </svg>
                                         @endif
@@ -368,7 +451,31 @@ border-bottom: 1px solid #f1f5f9;
                                 </td>
                                 {{-- Keterangan --}}
                                 <td>
-                                    <span class="text-sm text-gray-800">{{ $transaction->description ?? '-' }}</span>
+                                    <span class="text-sm text-gray-800 line-clamp-2">{{ $transaction->description ?? '-' }}</span>
+                                </td>
+                                {{-- Kategori --}}
+                                <td>
+                                    @php
+                                        $categoryLabels = [
+                                            'invoice' => 'Pemasukan Invoice',
+                                            'deposit' => 'Setoran',
+                                            'operational' => 'Operasional',
+                                            'payroll' => 'Gaji & Honor',
+                                            'marketing' => 'Marketing',
+                                            'office' => 'Kantor',
+                                            'it' => 'IT & Teknologi',
+                                            'utility' => 'Utilitas',
+                                            'withdrawal' => 'Penarikan',
+                                            'transfer' => 'Transfer',
+                                            'payment' => 'Pembayaran',
+                                            'expense' => 'Biaya Operasional',
+                                            'income' => 'Pendapatan',
+                                            'other' => 'Lainnya',
+                                        ];
+                                    @endphp
+                                    <span class="badge bg-gray-100 text-gray-600">
+                                        {{ $categoryLabels[$transaction->category] ?? $transaction->category ?? '-' }}
+                                    </span>
                                 </td>
                                 {{-- Jumlah --}}
                                 <td style="text-align: right;">
@@ -379,7 +486,7 @@ border-bottom: 1px solid #f1f5f9;
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-12 text-gray-400">
+                                <td colspan="6" class="text-center py-12 text-gray-400">
                                     <div class="flex flex-col items-center">
                                         <svg class="w-10 h-10 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.6M3 3h18m0 0v1.35A2.25 2.25 0 0118.75 6H21M3 3v1.35A2.25 2.25 0 015.25 6H6m12.75 12H21V3"/>
@@ -391,6 +498,21 @@ border-bottom: 1px solid #f1f5f9;
                         @endforelse
                     </tbody>
                 </table>
+
+                {{-- Loading indicator & Load more --}}
+                @if($hasMoreTransactions)
+                    <div class="py-4 text-center" wire:loading wire:target="loadMoreTransactions">
+                        <span class="text-xs text-gray-400 animate-pulse">Memuat lebih banyak...</span>
+                    </div>
+                    {{-- Sentinel element for infinite scroll --}}
+                    <div data-sentinel class="py-3 text-center">
+                        <span class="text-xs text-gray-400">↓ Scroll untuk load lebih</span>
+                    </div>
+                @elseif($recentTransactions->count() > 0)
+                    <div class="py-4 text-center border-t border-gray-100">
+                        <span class="text-xs text-gray-400">Semua transaksi sudah ditampilkan ({{ $totalTransactions }} total)</span>
+                    </div>
+                @endif
             </div>
         </div>
 
