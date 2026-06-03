@@ -176,11 +176,26 @@ border-bottom: 1px solid #f1f5f9;
         .scroll-thin::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 99px; }
         .scroll-thin::-webkit-scrollbar-track { background: transparent; }
 
-        /* Scrollbar visible */
-        .scroll-auto::-webkit-scrollbar { width: 8px; }
-        .scroll-auto::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        .scroll-auto::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .scroll-auto::-webkit-scrollbar-track { background: #f1f5f9; }
+        /* Table scroll container */
+        .table-scroll-container {
+            height: 400px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+        .table-scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .table-scroll-container::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .table-scroll-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .table-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
     </style>
 
     {{-- ── 4-Stat Header ──────────────────────────────────────────────────── --}}
@@ -321,8 +336,8 @@ border-bottom: 1px solid #f1f5f9;
         </div>
 
         {{-- Transaksi Terbaru --}}
-        <div class="lg:col-span-2 fi-section-inner-ctn">
-            <div class="card-header">
+        <div class="lg:col-span-2 fi-section-inner-ctn flex flex-col">
+            <div class="card-header shrink-0">
                 <div class="card-header-title">
                     <div class="card-header-icon" style="background: {{ $primaryColor }};">
                         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -337,7 +352,7 @@ border-bottom: 1px solid #f1f5f9;
             </div>
 
             {{-- Filters --}}
-            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
                 <div class="flex flex-wrap items-center gap-3">
                     {{-- Filter Rekening --}}
                     <select
@@ -398,7 +413,8 @@ border-bottom: 1px solid #f1f5f9;
                 </div>
             </div>
 
-            <div class="overflow-y-auto max-h-[500px] scroll-auto">
+            {{-- Table with scroll --}}
+            <div class="table-scroll-container">
                 <table class="data-table">
                     <thead class="sticky top-0 bg-gray-50 z-10">
                         <tr>
@@ -485,20 +501,26 @@ border-bottom: 1px solid #f1f5f9;
                         @endforelse
                     </tbody>
                 </table>
+            </div>
 
-                {{-- Loading indicator & Load more --}}
+            {{-- Load More Button --}}
+            <div class="px-4 py-3 border-t border-gray-100 bg-gray-50 shrink-0 text-center">
                 @if($hasMoreTransactions)
-                    <div class="py-4 text-center" wire:loading wire:target="loadMoreTransactions">
-                        <span class="text-xs text-gray-400 animate-pulse">Memuat lebih banyak...</span>
-                    </div>
-                    {{-- Sentinel element for infinite scroll --}}
-                    <div data-sentinel class="py-3 text-center">
-                        <span class="text-xs text-gray-400">↓ Scroll untuk load lebih</span>
-                    </div>
+                    <button wire:click="loadMoreTransactions()"
+                        wire:loading.attr="disabled"
+                        class="text-xs px-4 py-2 rounded-lg"
+                        style="background-color: {{ $primaryColor }}; color: white;">
+                        <span wire:loading.remove wire:target="loadMoreTransactions">
+                            Load More ({{ $recentTransactions->count() }} / {{ $totalTransactions }})
+                        </span>
+                        <span wire:loading wire:target="loadMoreTransactions" class="opacity-75">
+                            Loading...
+                        </span>
+                    </button>
                 @elseif($recentTransactions->count() > 0)
-                    <div class="py-4 text-center border-t border-gray-100">
-                        <span class="text-xs text-gray-400">Semua transaksi sudah ditampilkan ({{ $totalTransactions }} total)</span>
-                    </div>
+                    <span class="text-xs text-gray-400">
+                        Semua transaksi sudah ditampilkan ({{ $totalTransactions }} total)
+                    </span>
                 @endif
             </div>
         </div>
