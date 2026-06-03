@@ -136,17 +136,13 @@ class TransactionsRelationManager extends RelationManager
                             ->prefix('Rp')
                             ->required(),
 
-                        Forms\Components\Select::make('source_account_id')
-                            ->label('Dari Rekening')
-                            ->options(\App\Models\PaymentAccount::where('id', '!=', $this->getOwnerRecord()->id)
-                                ->where('is_active', true)
-                                ->pluck('name', 'id')
-                                ->toArray())
-                            ->searchable(),
+                        Forms\Components\TextInput::make('source')
+                            ->label('Dari Rekening / Sumber')
+                            ->placeholder('Contoh: Bank BCA 123456789 a/n PT XYZ'),
 
                         Forms\Components\TextInput::make('description')
                             ->label('Keterangan')
-                            ->placeholder('Contoh: Setoran awal, Transfer dari BCA...')
+                            ->placeholder('Contoh: Setoran awal, Pembayaran klien...')
                             ->required(),
 
                         Forms\Components\DatePicker::make('transaction_date')
@@ -158,16 +154,16 @@ class TransactionsRelationManager extends RelationManager
                             ->label('Kategori')
                             ->options([
                                 'deposit' => 'Setoran',
-                                'transfer' => 'Transfer Masuk',
+                                'payment' => 'Pembayaran Masuk',
+                                'income' => 'Pendapatan',
                                 'other' => 'Lainnya',
                             ]),
                     ])
                     ->action(function (array $data, RelationManager $livewire) {
                         $account = $livewire->getOwnerRecord();
-                        $source = !empty($data['source_account_id']) ? \App\Models\PaymentAccount::find($data['source_account_id']) : null;
 
-                        $description = $source
-                            ? ($source->name ?? 'Unknown') . ' → ' . $data['description']
+                        $description = !empty($data['source'])
+                            ? $data['source'] . ' → ' . $data['description']
                             : $data['description'];
 
                         // Create deposit transaction
@@ -176,22 +172,9 @@ class TransactionsRelationManager extends RelationManager
                             'amount' => $data['amount'],
                             'description' => $description,
                             'transaction_date' => $data['transaction_date'],
-                            'category' => $data['category'] ?? ($source ? 'transfer' : 'deposit'),
+                            'category' => $data['category'] ?? 'deposit',
                             'user_id' => auth()->id(),
                         ]);
-
-                        // Create withdrawal from source account if selected
-                        if ($source) {
-                            $source->transactions()->create([
-                                'type' => 'out',
-                                'amount' => $data['amount'],
-                                'description' => 'Transfer ke ' . $account->name . ' → ' . $data['description'],
-                                'transaction_date' => $data['transaction_date'],
-                                'category' => 'transfer',
-                                'user_id' => auth()->id(),
-                            ]);
-                            $source->syncBalanceFromTransactions();
-                        }
 
                         $account->syncBalanceFromTransactions();
                         $livewire->resetTable();
@@ -208,18 +191,14 @@ class TransactionsRelationManager extends RelationManager
                             ->prefix('Rp')
                             ->required(),
 
-                        Forms\Components\Select::make('destination_account_id')
-                            ->label('Ke Rekening')
-                            ->options(\App\Models\PaymentAccount::where('id', '!=', $this->getOwnerRecord()->id)
-                                ->where('is_active', true)
-                                ->pluck('name', 'id')
-                                ->toArray())
-                            ->searchable()
+                        Forms\Components\TextInput::make('destination')
+                            ->label('Ke Rekening / Tujuan')
+                            ->placeholder('Contoh: Bank BCA 123456789 a/n PT ABC')
                             ->required(),
 
                         Forms\Components\TextInput::make('description')
                             ->label('Keterangan')
-                            ->placeholder('Contoh: Transfer ke rekening lain...')
+                            ->placeholder('Contoh: Pembayaran vendor, fee agency...')
                             ->required(),
 
                         Forms\Components\DatePicker::make('transaction_date')
@@ -231,36 +210,23 @@ class TransactionsRelationManager extends RelationManager
                             ->label('Kategori')
                             ->options([
                                 'withdrawal' => 'Penarikan',
-                                'transfer' => 'Transfer Keluar',
+                                'payment' => 'Pembayaran',
+                                'expense' => 'Biaya Operasional',
                                 'other' => 'Lainnya',
                             ]),
                     ])
                     ->action(function (array $data, RelationManager $livewire) {
                         $account = $livewire->getOwnerRecord();
-                        $destination = \App\Models\PaymentAccount::find($data['destination_account_id']);
 
-                        // Create withdrawal transaction
-                        $tx = $account->transactions()->create([
+                        // Create withdrawal transaction with destination info
+                        $account->transactions()->create([
                             'type' => 'out',
                             'amount' => $data['amount'],
-                            'description' => $data['description'] . ' → ' . ($destination->name ?? 'Unknown'),
+                            'description' => $data['destination'] . ' → ' . $data['description'],
                             'transaction_date' => $data['transaction_date'],
-                            'category' => $data['category'] ?? 'transfer',
+                            'category' => $data['category'] ?? 'withdrawal',
                             'user_id' => auth()->id(),
                         ]);
-
-                        // Create deposit transaction to destination account
-                        if ($destination) {
-                            $destination->transactions()->create([
-                                'type' => 'in',
-                                'amount' => $data['amount'],
-                                'description' => 'Transfer dari ' . $account->name . ' → ' . $data['description'],
-                                'transaction_date' => $data['transaction_date'],
-                                'category' => 'transfer',
-                                'user_id' => auth()->id(),
-                            ]);
-                            $destination->syncBalanceFromTransactions();
-                        }
 
                         $account->syncBalanceFromTransactions();
                         $livewire->resetTable();
