@@ -336,7 +336,7 @@ border-bottom: 1px solid #f1f5f9;
         </div>
 
         {{-- Transaksi Terbaru --}}
-        <div class="lg:col-span-2 fi-section-inner-ctn flex flex-col">
+        <div class="lg:col-span-2 fi-section-inner-ctn flex flex-col h-full">
             <div class="card-header shrink-0">
                 <div class="card-header-title">
                     <div class="card-header-icon" style="background: {{ $primaryColor }};">
@@ -352,61 +352,54 @@ border-bottom: 1px solid #f1f5f9;
             </div>
 
             {{-- Filters --}}
-            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
-                <div class="flex flex-wrap items-center gap-3">
-                    {{-- Filter Rekening --}}
+            <div class="px-4 py-2 border-b border-gray-100 bg-gray-50 shrink-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs text-gray-500 font-medium">Filter:</span>
+
                     <select
-                        wire:model="filterAccount"
-                        wire:change="$emitSelf('filter-changed')"
-                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
-                        style="border-color: #e5e7eb;">
+                        wire:model.live.debounce.300ms="filterAccount"
+                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">Semua Rekening</option>
                         @foreach($accounts as $account)
                             <option value="{{ $account->id }}">{{ $account->name }}</option>
                         @endforeach
                     </select>
 
-                    {{-- Filter Jenis --}}
                     <select
-                        wire:model="filterType"
-                        wire:change="$emitSelf('filter-changed')"
-                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
-                        style="border-color: #e5e7eb;">
+                        wire:model.live.debounce.300ms="filterType"
+                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">Semua Jenis</option>
                         <option value="in">Masuk</option>
                         <option value="out">Keluar</option>
                     </select>
 
-                    {{-- Filter Kategori --}}
                     <select
-                        wire:model="filterCategory"
-                        wire:change="$emitSelf('filter-changed')"
-                        class="text-xs border-gray-200 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-offset-0"
-                        style="border-color: #e5e7eb;">
+                        wire:model.live.debounce.300ms="filterCategory"
+                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">Semua Kategori</option>
-                        <option value="invoice">Pemasukan Invoice</option>
+                        <option value="invoice">Invoice</option>
                         <option value="deposit">Setoran</option>
                         <option value="operational">Operasional</option>
                         <option value="withdrawal">Penarikan</option>
                         <option value="payment">Pembayaran</option>
-                        <option value="expense">Biaya Operasional</option>
+                        <option value="expense">Biaya</option>
                         <option value="other">Lainnya</option>
                     </select>
 
-                    {{-- Clear Filters --}}
                     @if($filterAccount || $filterType || $filterCategory)
-                        <button wire:click="clearFilters()"
-                            class="text-xs text-gray-500 hover:text-gray-700 underline">
-                            Clear filters
+                        <button
+                            wire:click="clearFilters()"
+                            class="h-8 text-xs px-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600">
+                            Clear
                         </button>
                     @endif
 
-                    {{-- Refresh Button --}}
-                    <button wire:click="refreshData()"
-                        class="ml-auto text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
+                    <button
+                        wire:click="refreshData()"
+                        class="h-8 text-xs px-3 rounded-md ml-auto flex items-center gap-1"
                         style="background-color: {{ $primaryColor }}; color: white;">
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Refresh
                     </button>
