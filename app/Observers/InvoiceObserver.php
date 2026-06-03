@@ -66,7 +66,7 @@ class InvoiceObserver
             'reference_type' => 'invoice',
             'reference_id' => $invoice->getKey(),
             'transaction_date' => now()->toDateString(),
-            'category' => 'operational',
+            'category' => 'invoice',
         ]);
 
         // Sync PaymentAccount balance after transaction [v2.2]

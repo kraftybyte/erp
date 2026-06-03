@@ -160,15 +160,19 @@ class Transaction extends Model
     public static function getCategories(): array
     {
         return [
+            'invoice' => 'Pemasukan Invoice',
+            'deposit' => 'Setoran',
             'operational' => 'Operasional',
             'payroll' => 'Gaji & Honor',
             'marketing' => 'Marketing',
             'office' => 'Kantor',
             'it' => 'IT & Teknologi',
             'utility' => 'Utilitas',
-            'deposit' => 'Setoran',
             'withdrawal' => 'Penarikan',
             'transfer' => 'Transfer',
+            'payment' => 'Pembayaran',
+            'expense' => 'Biaya Operasional',
+            'income' => 'Pendapatan',
             'other' => 'Lainnya',
         ];
     }
