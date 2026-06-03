@@ -419,71 +419,71 @@ border-bottom: 1px solid #f1f5f9;
                 <table class="data-table">
                     <thead class="sticky top-0 bg-gray-50 z-10">
                         <tr>
-                            <th style="width: 40px; text-align: center;">#</th>
-                            <th>Tanggal</th>
-                            <th>Rekening</th>
+                            <th style="width: 40px; text-align: center; white-space: nowrap;">#</th>
+                            <th style="white-space: nowrap;">Tanggal</th>
+                            <th style="white-space: nowrap;">Rekening</th>
                             <th>Keterangan</th>
-                            <th>Kategori</th>
-                            <th style="text-align: right;">Jumlah</th>
+                            <th style="white-space: nowrap;">Kategori</th>
+                            <th style="text-align: right; white-space: nowrap;">Jumlah</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($recentTransactions as $index => $transaction)
-                            <tr>
+                            <tr class="hover:bg-gray-50">
                                 {{-- Tipe --}}
-                                <td style="text-align: center;">
-                                    <div class="w-7 h-7 rounded-lg inline-flex items-center justify-center"
+                                <td style="text-align: center; width: 50px;">
+                                    <div class="w-8 h-8 rounded-lg inline-flex items-center justify-center flex-shrink-0"
                                         style="background-color: {{ $transaction->type === 'in' ? $rgba($successColor, 0.1) : $rgba($dangerColor, 0.1) }};">
                                         @if($transaction->type === 'in')
-                                            <svg class="w-3.5 h-3.5" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"/>
+                                            <svg class="w-4 h-4" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
                                             </svg>
                                         @else
-                                            <svg class="w-3.5 h-3.5" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+                                            <svg class="w-4 h-4" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5"/>
                                             </svg>
                                         @endif
                                     </div>
                                 </td>
                                 {{-- Tanggal --}}
-                                <td>
+                                <td style="white-space: nowrap;">
                                     <span class="text-xs text-gray-500">{{ $transaction->transaction_date?->format('d M Y') ?? '-' }}</span>
                                 </td>
                                 {{-- Rekening --}}
                                 <td>
-                                    <span class="text-sm font-medium text-gray-700">{{ $transaction->paymentAccount->name ?? '-' }}</span>
+                                    <span class="text-xs font-medium text-gray-700 whitespace-nowrap">{{ $transaction->paymentAccount->name ?? '-' }}</span>
                                 </td>
                                 {{-- Keterangan --}}
                                 <td>
-                                    <span class="text-sm text-gray-800 line-clamp-2">{{ $transaction->description ?? '-' }}</span>
+                                    <span class="text-xs text-gray-800 whitespace-normal">{{ Str::limit($transaction->description ?? '-', 50) }}</span>
                                 </td>
                                 {{-- Kategori --}}
                                 <td>
                                     @php
                                         $categoryLabels = [
-                                            'invoice' => 'Pemasukan Invoice',
+                                            'invoice' => 'Invoice',
                                             'deposit' => 'Setoran',
                                             'operational' => 'Operasional',
-                                            'payroll' => 'Gaji & Honor',
+                                            'payroll' => 'Gaji',
                                             'marketing' => 'Marketing',
                                             'office' => 'Kantor',
-                                            'it' => 'IT & Teknologi',
+                                            'it' => 'IT',
                                             'utility' => 'Utilitas',
                                             'withdrawal' => 'Penarikan',
                                             'transfer' => 'Transfer',
-                                            'payment' => 'Pembayaran',
-                                            'expense' => 'Biaya Operasional',
+                                            'payment' => 'Bayar',
+                                            'expense' => 'Biaya',
                                             'income' => 'Pendapatan',
                                             'other' => 'Lainnya',
                                         ];
                                     @endphp
-                                    <span class="badge bg-gray-100 text-gray-600">
+                                    <span class="badge bg-gray-100 text-gray-600 text-xs whitespace-nowrap">
                                         {{ $categoryLabels[$transaction->category] ?? $transaction->category ?? '-' }}
                                     </span>
                                 </td>
                                 {{-- Jumlah --}}
-                                <td style="text-align: right;">
-                                    <span class="text-sm font-semibold" style="color: {{ $transaction->type === 'in' ? $successColor : $dangerColor }};">
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <span class="text-xs font-semibold whitespace-nowrap" style="color: {{ $transaction->type === 'in' ? $successColor : $dangerColor }};">
                                         {{ $transaction->type === 'in' ? '+' : '-' }}Rp {{ number_format((float) $transaction->amount, 0, ',', '.') }}
                                     </span>
                                 </td>
