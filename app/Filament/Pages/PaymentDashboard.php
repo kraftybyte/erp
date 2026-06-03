@@ -202,7 +202,17 @@ class PaymentDashboard extends Page
         $this->loadTransactions();
     }
 
-    public function applyFilters()
+    public function updatedFilterAccount()
+    {
+        $this->loadTransactions(reset: true);
+    }
+
+    public function updatedFilterType()
+    {
+        $this->loadTransactions(reset: true);
+    }
+
+    public function updatedFilterCategory()
     {
         $this->loadTransactions(reset: true);
     }
@@ -212,12 +222,6 @@ class PaymentDashboard extends Page
         $this->filterAccount = null;
         $this->filterType = null;
         $this->filterCategory = null;
-        $this->loadTransactions(reset: true);
-    }
-
-    #[On('refresh-transactions')]
-    public function refreshTransactions()
-    {
         $this->loadTransactions(reset: true);
     }
 

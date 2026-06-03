@@ -354,29 +354,34 @@ border-bottom: 1px solid #f1f5f9;
             {{-- Filters --}}
             <div class="px-4 py-2 border-b border-gray-100 bg-gray-50 shrink-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs text-gray-500 font-medium">Filter:</span>
+                    <div class="flex items-center gap-1">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        <span class="text-xs text-gray-500 font-medium">Filter</span>
+                    </div>
 
                     <select
-                        wire:model.live.debounce.300ms="filterAccount"
-                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Rekening</option>
+                        wire:model="filterAccount"
+                        class="h-7 text-xs border border-gray-200 rounded-full px-3 bg-white focus:ring-2 focus:ring-blue-500">
+                        <option value="">Rekening</option>
                         @foreach($accounts as $account)
                             <option value="{{ $account->id }}">{{ $account->name }}</option>
                         @endforeach
                     </select>
 
                     <select
-                        wire:model.live.debounce.300ms="filterType"
-                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Jenis</option>
+                        wire:model="filterType"
+                        class="h-7 text-xs border border-gray-200 rounded-full px-3 bg-white focus:ring-2 focus:ring-blue-500">
+                        <option value="">Jenis</option>
                         <option value="in">Masuk</option>
                         <option value="out">Keluar</option>
                     </select>
 
                     <select
-                        wire:model.live.debounce.300ms="filterCategory"
-                        class="h-8 text-xs border border-gray-200 rounded-md px-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Kategori</option>
+                        wire:model="filterCategory"
+                        class="h-7 text-xs border border-gray-200 rounded-full px-3 bg-white focus:ring-2 focus:ring-blue-500">
+                        <option value="">Kategori</option>
                         <option value="invoice">Invoice</option>
                         <option value="deposit">Setoran</option>
                         <option value="operational">Operasional</option>
@@ -389,14 +394,17 @@ border-bottom: 1px solid #f1f5f9;
                     @if($filterAccount || $filterType || $filterCategory)
                         <button
                             wire:click="clearFilters()"
-                            class="h-8 text-xs px-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600">
+                            class="h-7 text-xs px-3 rounded-full bg-red-100 hover:bg-red-200 text-red-600 font-medium flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
                             Clear
                         </button>
                     @endif
 
                     <button
                         wire:click="refreshData()"
-                        class="h-8 text-xs px-3 rounded-md ml-auto flex items-center gap-1"
+                        class="h-7 text-xs px-3 rounded-full ml-auto flex items-center gap-1.5 font-medium"
                         style="background-color: {{ $primaryColor }}; color: white;">
                         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -497,22 +505,34 @@ border-bottom: 1px solid #f1f5f9;
             </div>
 
             {{-- Load More Button --}}
-            <div class="px-4 py-3 border-t border-gray-100 bg-gray-50 shrink-0 text-center">
+            <div class="px-4 py-3 border-t border-gray-100 bg-gray-50 shrink-0 flex items-center justify-center">
                 @if($hasMoreTransactions)
-                    <button wire:click="loadMoreTransactions()"
+                    <button
+                        wire:click="loadMoreTransactions()"
                         wire:loading.attr="disabled"
-                        class="text-xs px-4 py-2 rounded-lg"
+                        class="h-9 px-5 rounded-full text-xs font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
                         style="background-color: {{ $primaryColor }}; color: white;">
-                        <span wire:loading.remove wire:target="loadMoreTransactions">
-                            Load More ({{ $recentTransactions->count() }} / {{ $totalTransactions }})
+                        <span wire:loading.remove wire:target="loadMoreTransactions" class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                            Lihat Lebih Banyak
                         </span>
-                        <span wire:loading wire:target="loadMoreTransactions" class="opacity-75">
-                            Loading...
+                        <span wire:loading wire:target="loadMoreTransactions" class="flex items-center gap-2 opacity-75">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Memuat...
                         </span>
                     </button>
                 @elseif($recentTransactions->count() > 0)
-                    <span class="text-xs text-gray-400">
-                        Semua transaksi sudah ditampilkan ({{ $totalTransactions }} total)
+                    <div class="flex items-center gap-2 text-xs text-gray-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Menampilkan {{ $recentTransactions->count() }} dari {{ $totalTransactions }} transaksi
+                    </div>
                     </span>
                 @endif
             </div>
