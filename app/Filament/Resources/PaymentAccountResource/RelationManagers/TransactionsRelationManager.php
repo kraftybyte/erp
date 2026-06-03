@@ -154,8 +154,8 @@ class TransactionsRelationManager extends RelationManager
                                 'other' => 'Lainnya',
                             ]),
                     ])
-                    ->action(function (array $data) {
-                        $this->getOwnerRecord()->transactions()->create([
+                    ->action(function (array $data, RelationManager $livewire) {
+                        $livewire->getOwnerRecord()->transactions()->create([
                             'type' => 'in',
                             'amount' => $data['amount'],
                             'description' => $data['description'],
@@ -163,7 +163,7 @@ class TransactionsRelationManager extends RelationManager
                             'category' => $data['category'] ?? 'deposit',
                             'user_id' => auth()->id(),
                         ]);
-                        $this->refresh();
+                        $livewire->resetTable();
                     }),
 
                 Tables\Actions\Action::make('add_withdrawal')
@@ -195,8 +195,8 @@ class TransactionsRelationManager extends RelationManager
                                 'other' => 'Lainnya',
                             ]),
                     ])
-                    ->action(function (array $data) {
-                        $this->getOwnerRecord()->transactions()->create([
+                    ->action(function (array $data, RelationManager $livewire) {
+                        $livewire->getOwnerRecord()->transactions()->create([
                             'type' => 'out',
                             'amount' => $data['amount'],
                             'description' => $data['description'],
@@ -204,7 +204,7 @@ class TransactionsRelationManager extends RelationManager
                             'category' => $data['category'] ?? 'withdrawal',
                             'user_id' => auth()->id(),
                         ]);
-                        $this->refresh();
+                        $livewire->resetTable();
                     }),
             ])
             ->actions([
