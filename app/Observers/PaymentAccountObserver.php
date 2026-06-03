@@ -33,11 +33,18 @@ class PaymentAccountObserver
      */
     public function updated(PaymentAccount $account): void
     {
-        $originalInitial = $account->getOriginal('initial_balance');
-        $newInitial = $account->initial_balance;
+        // Only trigger if initial_balance specifically changed
+        // Ignore changes to current_balance, amount, etc from syncBalanceFromTransactions
+        if (!$account->isDirty('initial_balance')) {
+            return;
+        }
+
+        $originalInitial = $account->getOriginal('initial_balance') ?? 0;
+        $newInitial = $account->initial_balance ?? 0;
         $change = $newInitial - $originalInitial;
 
-        if ($change === 0) {
+        // Only create transaction if there's an actual change
+        if ($change == 0) {
             return;
         }
 
