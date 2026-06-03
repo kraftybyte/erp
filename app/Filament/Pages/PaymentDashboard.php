@@ -35,7 +35,7 @@ class PaymentDashboard extends Page
 
     // Pagination for unlimited scroll
     public $transactionsPage = 1;
-    public $transactionsPerPage = 20;
+    public $transactionsPerPage = 10;
     public $hasMoreTransactions = false;
     public $totalTransactions = 0;
 
