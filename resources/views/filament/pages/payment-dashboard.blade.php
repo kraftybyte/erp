@@ -174,6 +174,13 @@ border-bottom: 1px solid #f1f5f9;
         /* Scrollbar */
         .scroll-thin::-webkit-scrollbar { width: 4px; }
         .scroll-thin::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 99px; }
+        .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+        /* Scrollbar visible */
+        .scroll-auto::-webkit-scrollbar { width: 8px; }
+        .scroll-auto::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .scroll-auto::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .scroll-auto::-webkit-scrollbar-track { background: #f1f5f9; }
     </style>
 
     {{-- ── 4-Stat Header ──────────────────────────────────────────────────── --}}
@@ -391,27 +398,7 @@ border-bottom: 1px solid #f1f5f9;
                 </div>
             </div>
 
-            <div class="overflow-auto max-h-[500px] scroll-thin"
-                x-data="{
-                    observer: null,
-                    init: function() {
-                        var self = this;
-                        // Infinite scroll observer
-                        setTimeout(function() {
-                            var sentinel = self.$el.querySelector('[data-sentinel]');
-                            if (sentinel) {
-                                self.observer = new IntersectionObserver(function(entries) {
-                                    entries.forEach(function(entry) {
-                                        if (entry.isIntersecting) {
-                                            @this.call('loadMoreTransactions');
-                                        }
-                                    });
-                                }, { threshold: 0.1 });
-                                self.observer.observe(sentinel);
-                            }
-                        }, 100);
-                    }
-                }">
+            <div class="overflow-y-auto max-h-[500px] scroll-auto">
                 <table class="data-table">
                     <thead class="sticky top-0 bg-gray-50 z-10">
                         <tr>
