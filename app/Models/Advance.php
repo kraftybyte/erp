@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Observers\AdvanceObserver;
 use Spatie\Permission\Traits\HasRoles;
 
 
 class Advance extends Model
 {
-    use HasRoles;
+    use HasRoles, SoftDeletes;
 
     protected static function boot(): void
     {
@@ -31,11 +32,18 @@ class Advance extends Model
         'total_harga',
         'payment_account_id',
         'paid',
+        'paid_by',
     ];
 
     protected $casts = [
+        'amount' => 'decimal:2',
+        'total_harga' => 'decimal:2',
         'paid' => 'decimal:2',
+        'submission_date' => 'date',
+        'deleted_at' => 'datetime',
     ];
+
+    protected $dates = ['deleted_at'];
 
     public function user(): BelongsTo
     {

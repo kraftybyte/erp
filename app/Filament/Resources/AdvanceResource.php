@@ -276,8 +276,8 @@ class AdvanceResource extends Resource
                                 ]);
                             }
 
-                            // Check balance
-                            $availableBalance = $account->getAvailableBalance();
+                            // Check balance using current_balance field (already synced)
+                            $availableBalance = (float) ($account->current_balance ?? 0);
                             if ($availableBalance < (float) $data['paid']) {
                                 throw ValidationException::withMessages([
                                     'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
@@ -296,6 +296,9 @@ class AdvanceResource extends Resource
                                 'transaction_date' => now()->toDateString(),
                                 'category' => 'operational',
                             ]);
+
+                            // Sync account balance after transaction
+                            $account->syncBalanceFromTransactions();
 
                             // Update advance status with payment account
                             $record->update([
@@ -336,7 +339,7 @@ class AdvanceResource extends Resource
                             ->label('Pilih Rekening')
                             ->options(fn () => cache()->remember('payment_accounts_list', 300, fn () =>
                                 PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
-                                    [$account->id => "{$account->name} - Rp " . number_format($account->getAvailableBalance(), 0, ',', '.')]
+                                    [$account->id => "{$account->name} - Rp " . number_format((float) ($account->current_balance ?? 0), 0, ',', '.')]
                                 )->toArray()
                             ))
                             ->required(),

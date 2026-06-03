@@ -5,11 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Observers\ExpenseObserver;
 
 class Expense extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected static function boot(): void
     {
@@ -21,12 +22,17 @@ class Expense extends Model
         'user_id', 'submission_date', 'project_id', 'keterangan_expense',
         'amount', 'attachment', 'reference',
         'rejection_reason', 'attachment_pay',
-        'payment_account_id', 'paid',
+        'payment_account_id', 'paid', 'paid_by', 'approved_by',
     ];
 
     protected $casts = [
+        'amount' => 'decimal:2',
         'paid' => 'decimal:2',
+        'submission_date' => 'date',
+        'deleted_at' => 'datetime',
     ];
+
+    protected $dates = ['deleted_at'];
 
     // Relationships
     public function itemExpenses()
