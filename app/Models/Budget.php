@@ -2,40 +2,23 @@
 
 namespace App\Models;
 
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Budget model - proxy to PaymentAccount for backward compatibility
- *
- * @deprecated Use PaymentAccount instead
- */
-class Budget extends PaymentAccount
+class Budget extends Model
 {
-    protected $table = 'payment_accounts';
+    protected $fillable = [
+        'name',
+        'description',
+        'amount',
+    ];
 
-    public $timestamps = true;
+    protected $casts = [
+        'amount' => 'decimal:2',
+    ];
 
-    /**
-     * Override increment to sync amount and current_balance
-     */
-    public function increment($column, $amount = 1, array $extra = []): int
+    public function logs(): HasMany
     {
-        if ($column === 'amount') {
-            // Update both amount and current_balance atomically
-            DB::table($this->getTable())
-                ->where('id', $this->id)
-                ->update([
-                    'amount' => DB::raw('amount + ' . $amount),
-                    'current_balance' => DB::raw('current_balance + ' . $amount),
-                    'updated_at' => now(),
-                ]);
-
-            // Refresh the model
-            $this->refresh();
-
-            return 1;
-        }
-
-        return parent::increment($column, $amount, $extra);
+        return $this->hasMany(BudgetLog::class);
     }
 }

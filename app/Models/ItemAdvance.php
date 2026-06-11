@@ -9,6 +9,8 @@ class ItemAdvance extends Model
 {
     use HasFactory;
 
+    protected $table = 'item_advance';
+
     protected $fillable = [
         'advance_id', 'name', 'description', 'quantity', 'price',
     ];

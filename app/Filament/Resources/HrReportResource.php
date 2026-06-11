@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\HrReportResource\Pages;
+use App\Helpers\DateHelper;
 use App\Models\User;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -11,6 +12,7 @@ use Filament\Tables\Table;
 use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -26,7 +28,9 @@ class HrReportResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->hasAnyRole(['super_admin', 'Director', 'HR']);
+        /** @var User|null $user */
+        $user = Auth::user();
+        return $user?->hasAnyRole(['super_admin', 'Director', 'HR']) ?? false;
     }
 
     public static function form(Form $form): Form
@@ -48,8 +52,9 @@ class HrReportResource extends Resource
                     ])
                     ->withAvg(
                         ['tasks as avg_days' => fn ($q) => $q->where('tasks.status', 'Done')
-                                                              ->whereNotNull('tasks.selesai_task')],
-                        DB::raw('DATEDIFF(tasks.updated_at, tasks.mulai_task)')
+                                                              ->whereNotNull('tasks.mulai_task')
+                                                              ->whereNotNull('tasks.updated_at')],
+                        DB::raw(DateHelper::businessDaysSql('tasks.mulai_task', 'tasks.updated_at'))
                     )
             )
             ->columns([
@@ -59,7 +64,7 @@ class HrReportResource extends Resource
                     ->circular()
                     ->size(40),
 
-                Tables\Columns\TextColumn::make('fullname')
+                Tables\Columns\TextColumn::make('name')
                     ->label('Karyawan')
                     ->getStateUsing(fn ($record) => $record->firstname . ' ' . $record->lastname)
                     ->description(fn ($record) => $record->roles->pluck('name')

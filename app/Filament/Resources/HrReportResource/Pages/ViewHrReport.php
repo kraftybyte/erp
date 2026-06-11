@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\HrReportResource\Pages;
 
 use App\Filament\Resources\HrReportResource;
+use App\Helpers\DateHelper;
 use App\Models\User;
 use Carbon\Carbon;
 use Filament\Resources\Pages\Page;
@@ -74,7 +75,7 @@ class ViewHrReport extends Page
 
         $doneTasks = $tasks->where('status', 'Done')->filter(fn($t) => $t->mulai_task && $t->updated_at);
         $avgDays   = $doneTasks->count() > 0
-            ? round($doneTasks->avg(fn($t) => Carbon::parse($t->mulai_task)->diffInDays(Carbon::parse($t->updated_at))))
+            ? round($doneTasks->avg(fn($t) => DateHelper::businessDaysBetween($t->mulai_task, $t->updated_at)))
             : null;
 
         $doneRate    = $total > 0 ? round($done / $total * 100) : 0;
@@ -89,15 +90,15 @@ class ViewHrReport extends Page
             ['label'=>'Terlambat', 'count'=>$late,    'color'=>'#ef4444'],
         ];
 
-        // Detail per task dengan durasi masing-masing
+        // Detail per task dengan durasi masing-masing (business days)
         $this->taskDetail = $tasks->map(function($t) {
             $dur = null;
             $durLabel = '-';
             if ($t->mulai_task && $t->updated_at && $t->status === 'Done') {
-                $dur = (int)round(Carbon::parse($t->mulai_task)->diffInDays(Carbon::parse($t->updated_at)));
+                $dur = DateHelper::businessDaysBetween($t->mulai_task, $t->updated_at);
                 $durLabel = $dur . ' hari';
             } elseif ($t->mulai_task) {
-                $dur = (int)round(Carbon::parse($t->mulai_task)->diffInDays(now()));
+                $dur = DateHelper::businessDaysBetween($t->mulai_task, now());
                 $durLabel = $dur . ' hari (jalan)';
             }
 
@@ -124,8 +125,8 @@ class ViewHrReport extends Page
                 'client'    => $t->client ?? '-',
                 'done_note' => $t->done_note,
                 'selesai'   => $t->updated_at ? Carbon::parse($t->updated_at)->format('d M Y') : '-',
-                'duration'  => $t->mulai_task
-                    ? Carbon::parse($t->mulai_task)->diffInDays(Carbon::parse($t->updated_at)).' hari' : '-',
+                'duration'  => $t->mulai_task && $t->updated_at
+                    ? DateHelper::businessDaysBetween($t->mulai_task, $t->updated_at).' hari' : '-',
             ])->values()->toArray();
 
         // Absence — kategori: izin, cuti, wfh, tukar_hari, wfa

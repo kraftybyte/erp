@@ -17,7 +17,7 @@ class PaymentAccountObserver
         if ($account->initial_balance > 0) {
             Transaction::create([
                 'payment_account_id' => $account->id,
-                'user_id' => Auth::id(),
+                'created_by' => Auth::id(),
                 'type' => 'in',
                 'amount' => $account->initial_balance,
                 'description' => 'Saldo Awal',
@@ -50,7 +50,7 @@ class PaymentAccountObserver
 
         Transaction::create([
             'payment_account_id' => $account->id,
-            'user_id' => Auth::id(),
+            'created_by' => Auth::id(),
             'type' => $change > 0 ? 'in' : 'out',
             'amount' => abs($change),
             'description' => "Perubahan saldo awal: {$account->name}",

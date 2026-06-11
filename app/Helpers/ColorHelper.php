@@ -22,6 +22,12 @@ class ColorHelper
             // In Progress/Process
             'in_progress', 'process', 'processing', 'dalam_project', 'on_progress' => 'info',
 
+            // Realized by User - waiting for Finance verification
+            'sudah di-realisasi user' => 'info',
+
+            // Paid - advance paid but not yet realized
+            'dibayarkan' => 'gray',
+
             // Default/Neutral
             default => 'gray',
         };

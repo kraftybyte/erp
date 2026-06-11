@@ -23,7 +23,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'payment_account_id',
-        'user_id',
+        'created_by',
         'type',
         'amount',
         'description',
@@ -46,7 +46,7 @@ class Transaction extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function expense(): BelongsTo

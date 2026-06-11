@@ -4,6 +4,9 @@ namespace App\Filament\Pages;
 
 use Filament\Pages\Page;
 use App\Models\ProjectTimeline;
+use App\Models\Event;
+use App\Models\Task;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Actions\Action;
 use App\Models\Project;
@@ -31,26 +34,48 @@ class ProjectTimelineBoard extends Page
 
    public function mount(): void
 {
-    $timelines = ProjectTimeline::with('project')->get()
-        ->groupBy(fn ($item) => $item->project->id);
+    // Get all projects that have timeline OR tasks synced to calendar
+    $syncedTaskProjectIds = Event::whereNotNull('task_id')
+        ->with('task.project')
+        ->get()
+        ->pluck('task.project_id')
+        ->filter()
+        ->unique()
+        ->toArray();
 
-    $this->resources = $timelines->map(function ($items, $projectId) {
+    $timelineProjects = ProjectTimeline::with('project')->get()->groupBy(fn ($item) => $item->project->id);
 
+    // Build resources from timeline
+    $timelineResources = $timelineProjects->map(function ($items, $projectId) {
         $projectName = $items->first()->project->nama_perusahaan;
-
         return [
-            'id' => 'project-' . $projectId, // WAJIB ADA
+            'id' => 'project-' . $projectId,
             'title' => $projectName,
             'children' => $items->map(fn ($item) => [
-                'id' => 'phase-' . $item->id, // WAJIB UNIQUE
+                'id' => 'phase-' . $item->id,
                 'title' => $item->nama_phase,
             ])->values()->toArray(),
         ];
     })->values()->toArray();
 
-    $this->events = ProjectTimeline::all()
+    // Add projects from synced tasks (if not already in resources)
+    $existingProjectIds = array_map(fn($r) => (int) str_replace('project-', '', $r['id']), $timelineResources);
+    $projectsFromTasks = Project::whereIn('id', $syncedTaskProjectIds)
+        ->whereNotIn('id', $existingProjectIds)
+        ->get()
+        ->map(fn($project) => [
+            'id' => 'project-' . $project->id,
+            'title' => $project->nama_perusahaan,
+            'children' => [],
+        ])
+        ->toArray();
+
+    $this->resources = array_merge($timelineResources, $projectsFromTasks);
+
+    // Timeline events
+    $timelineEvents = ProjectTimeline::all()
     ->map(fn($item) => [
-        'id' => $item->id,
+        'id' => 'timeline-' . $item->id,
         'resourceId' => 'phase-' . $item->id,
         'title' => $item->nama_phase,
         'start' => $item->start_date->format('Y-m-d'),
@@ -58,6 +83,28 @@ class ProjectTimelineBoard extends Page
         'backgroundColor' => $item->color ?? '#295661',
     ])->toArray();
 
+    // Task-based events (from kanban sync)
+    $taskEvents = Event::whereNotNull('task_id')
+        ->with('task.project')
+        ->get()
+        ->map(function ($event) {
+            $task = $event->task;
+            if (!$task || !$task->project) return null;
+
+            return [
+                'id' => 'task-' . $event->id,
+                'resourceId' => 'project-' . $task->project_id,
+                'title' => $task->nama_task,
+                'start' => $task->mulai_task ? Carbon::parse($task->mulai_task)->format('Y-m-d') : null,
+                'end' => $task->selesai_task ? Carbon::parse($task->selesai_task)->format('Y-m-d') : null,
+                'backgroundColor' => $event->color ?? '#6366f1',
+            ];
+        })
+        ->filter()
+        ->toArray();
+
+    // Merge timeline events and task events
+    $this->events = array_merge($timelineEvents, $taskEvents);
 
     $latest = ProjectTimeline::with('updater')
     ->latest('updated_at')

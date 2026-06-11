@@ -9,7 +9,6 @@ use App\Models\Advance;
 use App\Settings\GeneralSettings;
 use Filament\Pages\Page;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Livewire\Attributes\On;
 
@@ -25,34 +24,38 @@ class PaymentDashboard extends Page
 
     protected static string $view = 'filament.pages.payment-dashboard';
 
-    public $totalBalance;
-    public $totalInThisMonth;
-    public $totalOutThisMonth;
-    public $pendingPayments;
+    // Stats
+    public float $totalBalance = 0;
+    public float $totalInThisMonth = 0;
+    public float $totalOutThisMonth = 0;
+    public int $pendingPayments = 0;
+    public int $pendingExpense = 0;
+    public int $pendingAdvance = 0;
+
+    // Collections
     public $accounts;
     public $recentTransactions;
     public $monthlyStats;
+    public $recentExpenses;
+    public $recentAdvances;
 
-    // Pagination for unlimited scroll
-    public $transactionsPage = 1;
-    public $transactionsPerPage = 10;
-    public $hasMoreTransactions = false;
-    public $totalTransactions = 0;
+    // Pagination
+    public int $transactionsPage = 1;
+    public int $transactionsPerPage = 10;
+    public bool $hasMoreTransactions = false;
+    public int $totalTransactions = 0;
 
-    // Filter state
-    public $filterAccount = null;
-    public $filterType = null;
-    public $filterCategory = null;
+    // Filters
+    public ?string $filterAccount = null;
+    public ?string $filterType = null;
+    public ?string $filterCategory = null;
 
-    // Theme colors from settings
-    public $primaryColor;
-    public $primaryColorDark;
-    public $primaryGradientFrom;
-    public $primaryGradientTo;
-    public $successColor;
-    public $dangerColor;
-    public $warningColor;
-    public $infoColor;
+    // Theme
+    public string $primaryColor = '#07a0cf';
+    public string $successColor = '#10b981';
+    public string $dangerColor = '#ef4444';
+    public string $warningColor = '#f59e0b';
+    public string $infoColor = '#3b82f6';
 
     public function mount()
     {
@@ -66,63 +69,45 @@ class PaymentDashboard extends Page
             $settings = app(GeneralSettings::class);
             $theme = $settings->site_theme ?? [];
 
-            // Default colors
-            $this->primaryColor = $theme['primary'] ?? '#07a0cf';
-            $this->primaryColorDark = $theme['primary_dark'] ?? '#0589b0';
-            $this->primaryGradientFrom = $settings->primary_gradient_from ?? '#3b82f6';
-            $this->primaryGradientTo = $settings->primary_gradient_to ?? '#1d4ed8';
-            $this->successColor = $theme['success'] ?? '#10b981';
-            $this->dangerColor = $theme['danger'] ?? '#ef4444';
-            $this->warningColor = $theme['warning'] ?? '#f59e0b';
-            $this->infoColor = $theme['info'] ?? '#3b82f6';
+            $this->primaryColor = ltrim($settings->primary_gradient_from ?? $theme['primary'] ?? $this->primaryColor, '#');
+            $this->successColor = ltrim($theme['success'] ?? $this->successColor, '#');
+            $this->dangerColor = ltrim($theme['danger'] ?? $this->dangerColor, '#');
+            $this->warningColor = ltrim($theme['warning'] ?? $this->warningColor, '#');
+            $this->infoColor = ltrim($theme['info'] ?? $this->infoColor, '#');
         } catch (\Exception $e) {
-            // Default fallback colors
-            $this->primaryColor = '#07a0cf';
-            $this->primaryColorDark = '#0589b0';
-            $this->primaryGradientFrom = '#3b82f6';
-            $this->primaryGradientTo = '#1d4ed8';
-            $this->successColor = '#10b981';
-            $this->dangerColor = '#ef4444';
-            $this->warningColor = '#f59e0b';
-            $this->infoColor = '#3b82f6';
+            // Use defaults
         }
     }
 
     public function loadData()
     {
-        // Get all active accounts with their current_balance from database
-        $accountsData = PaymentAccount::active()->get();
+        // Accounts with balance
+        $this->accounts = PaymentAccount::active()
+            ->get()
+            ->map(function ($account) {
+                $account->available_balance = (float) ($account->current_balance ?? 0);
+                return $account;
+            })
+            ->sortByDesc('available_balance');
 
-        // Calculate total balance from current_balance field (ensure numeric)
-        $this->totalBalance = $accountsData->sum(function ($account) {
-            return (float) ($account->current_balance ?? 0);
-        });
+        $this->totalBalance = $this->accounts->sum('available_balance');
 
-        // This month stats
+        // Monthly stats
         $startOfMonth = Carbon::now()->startOfMonth();
         $endOfMonth = Carbon::now()->endOfMonth();
 
-        $this->totalInThisMonth = Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
+        $this->totalInThisMonth = (float) Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
             ->where('type', 'in')
             ->sum('amount');
 
-        $this->totalOutThisMonth = Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
+        $this->totalOutThisMonth = (float) Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
             ->where('type', 'out')
             ->sum('amount');
 
-        // Pending payments count
-        $pendingExpense = Expense::whereIn('status', ['Pending', 'Disetujui'])->count();
-        $pendingAdvance = Advance::whereIn('status', ['Pending', 'Disetujui'])->count();
-        $this->pendingPayments = $pendingExpense + $pendingAdvance;
-
-        // All active accounts with balance (use current_balance field)
-        $this->accounts = $accountsData->map(function ($account) {
-            $account->available_balance = $account->current_balance ?? 0;
-            $account->percentage = $this->totalBalance > 0
-                ? round(($account->available_balance / $this->totalBalance) * 100, 1)
-                : 0;
-            return $account;
-        })->sortByDesc('available_balance');
+        // Pending counts
+        $this->pendingExpense = Expense::whereIn('status', ['Pending', 'Disetujui'])->count();
+        $this->pendingAdvance = Advance::whereIn('status', ['Pending', 'Disetujui'])->count();
+        $this->pendingPayments = $this->pendingExpense + $this->pendingAdvance;
 
         // Monthly stats (last 6 months)
         $this->monthlyStats = collect();
@@ -131,22 +116,33 @@ class PaymentDashboard extends Page
             $start = $month->copy()->startOfMonth();
             $end = $month->copy()->endOfMonth();
 
-            $in = Transaction::whereBetween('transaction_date', [$start, $end])
+            $in = (float) Transaction::whereBetween('transaction_date', [$start, $end])
                 ->where('type', 'in')
                 ->sum('amount');
-            $out = Transaction::whereBetween('transaction_date', [$start, $end])
+            $out = (float) Transaction::whereBetween('transaction_date', [$start, $end])
                 ->where('type', 'out')
                 ->sum('amount');
 
             $this->monthlyStats->push([
                 'month' => $month->format('M Y'),
-                'in' => (float) $in,
-                'out' => (float) $out,
-                'net' => (float) ($in - $out),
+                'in' => $in,
+                'out' => $out,
+                'net' => $in - $out,
             ]);
         }
 
-        // Load transactions with pagination
+        // Recent expenses & advances
+        $this->recentExpenses = Expense::with(['user', 'project'])
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+
+        $this->recentAdvances = Advance::with(['user', 'project'])
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+
+        // Transactions
         $this->loadTransactions(reset: true);
     }
 
@@ -161,7 +157,6 @@ class PaymentDashboard extends Page
             ->orderBy('transaction_date', 'desc')
             ->orderBy('created_at', 'desc');
 
-        // Apply filters
         if ($this->filterAccount) {
             $query->where('payment_account_id', $this->filterAccount);
         }
@@ -172,10 +167,8 @@ class PaymentDashboard extends Page
             $query->where('category', $this->filterCategory);
         }
 
-        // Get total count
         $this->totalTransactions = (clone $query)->count();
 
-        // Get paginated results
         $newTransactions = (clone $query)
             ->offset(($this->transactionsPage - 1) * $this->transactionsPerPage)
             ->limit($this->transactionsPerPage)
@@ -187,7 +180,6 @@ class PaymentDashboard extends Page
             $this->recentTransactions = $this->recentTransactions->merge($newTransactions);
         }
 
-        // Check if there are more
         $this->hasMoreTransactions = $this->recentTransactions->count() < $this->totalTransactions;
     }
 
@@ -197,20 +189,9 @@ class PaymentDashboard extends Page
         $this->loadTransactions();
     }
 
-    public function updatedFilterAccount()
-    {
-        $this->loadTransactions(reset: true);
-    }
-
-    public function updatedFilterType()
-    {
-        $this->loadTransactions(reset: true);
-    }
-
-    public function updatedFilterCategory()
-    {
-        $this->loadTransactions(reset: true);
-    }
+    public function updatedFilterAccount() { $this->loadTransactions(reset: true); }
+    public function updatedFilterType() { $this->loadTransactions(reset: true); }
+    public function updatedFilterCategory() { $this->loadTransactions(reset: true); }
 
     public function clearFilters()
     {
@@ -223,5 +204,44 @@ class PaymentDashboard extends Page
     public function refreshData()
     {
         $this->loadData();
+    }
+
+    // Helper methods for blade
+    public function getRgba(string $color, float $opacity): string
+    {
+        $hex = ltrim($color, '#');
+        if (strlen($hex) === 3) {
+            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        }
+        $r = hexdec(substr($hex, 0, 2));
+        $g = hexdec(substr($hex, 2, 2));
+        $b = hexdec(substr($hex, 4, 2));
+        return "rgba({$r}, {$g}, {$b}, {$opacity})";
+    }
+
+    public function formatCurrency(float $amount): string
+    {
+        return 'Rp ' . number_format($amount, 0, ',', '.');
+    }
+
+    public function getCategoryLabel(string $category): string
+    {
+        $labels = [
+            'invoice' => 'Invoice',
+            'deposit' => 'Setoran',
+            'operational' => 'Operasional',
+            'payroll' => 'Gaji',
+            'marketing' => 'Marketing',
+            'office' => 'Kantor',
+            'it' => 'IT',
+            'utility' => 'Utilitas',
+            'withdrawal' => 'Penarikan',
+            'transfer' => 'Transfer',
+            'payment' => 'Pembayaran',
+            'expense' => 'Biaya',
+            'income' => 'Pendapatan',
+            'other' => 'Lainnya',
+        ];
+        return $labels[$category] ?? $category;
     }
 }

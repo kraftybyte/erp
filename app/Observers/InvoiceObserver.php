@@ -59,7 +59,7 @@ class InvoiceObserver
         // Create transaction record [v2.2]
         Transaction::create([
             'payment_account_id' => $accountId,
-            'user_id' => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
             'type' => 'in',
             'amount' => $paidChange,
             'description' => "Payment Invoice: {$invoice->uuid} - {$invoice->nama_perusahaan}",

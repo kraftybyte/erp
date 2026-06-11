@@ -1,4 +1,4 @@
-<x-filament::page>
+<x-filament-panels::page>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
@@ -110,21 +110,14 @@
 (function () {
 
     const ALL_RESOURCES = @json($resources);
-    const ALL_EVENTS    = @json($events);
-    const UPDATE_URL    = "{{ route('timeline.update') }}";
-    const CSRF          = "{{ csrf_token() }}";
-
-    console.log('[Timeline] Total resources:', ALL_RESOURCES.length);
-    console.log('[Timeline] Total events:', ALL_EVENTS.length);
-    console.log('[Timeline] Sample event:', ALL_EVENTS[0] ?? 'kosong');
+    const ALL_EVENTS = @json($events);
+    const UPDATE_URL = "{{ route('timeline.update') }}";
+    const CSRF = "{{ csrf_token() }}";
 
     // ── Filter: sembunyikan event yang end-nya sudah lewat hari ini ──────────
     function filterActive(resources, events) {
-
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-
-        console.log('[Timeline] Cutoff (hari ini 00:00):', today.toISOString());
 
         const activeEvents = events.filter(ev => {
             const endRaw = ev.end || ev.start;
@@ -133,25 +126,17 @@
             const endDate = new Date(endRaw);
 
             if (isNaN(endDate.getTime())) {
-                console.warn('[Timeline] Tanggal tidak valid:', endRaw);
                 return true;
             }
 
-            const visible = endDate >= today;
-            if (!visible) {
-                console.log('[Timeline] Disembunyikan (sudah lewat):', ev.title, '| end:', endRaw);
-            }
-            return visible;
+            return endDate >= today;
         });
 
-        console.log('[Timeline] Events aktif:', activeEvents.length, '/', events.length);
-
         if (activeEvents.length === 0 && events.length > 0) {
-            console.warn('[Timeline] Semua event tersaring! Tampilkan semua sebagai fallback.');
             return { activeResources: resources, activeEvents: events };
         }
 
-        const activeChildIds  = new Set(activeEvents.map(ev => String(ev.resourceId)));
+        const activeChildIds = new Set(activeEvents.map(ev => String(ev.resourceId)));
         const activeParentIds = new Set();
 
         resources.forEach(r => {
@@ -293,7 +278,10 @@
         })
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(d => { if (d.success) flashHistory(d.message); })
-        .catch(e => console.error('[Timeline] Update gagal:', e));
+        .catch(e => {
+            console.error('[Timeline] Update gagal:', e);
+            flashHistory('Gagal menyimpan perubahan');
+ });
     }
 
     // ── History flash ─────────────────────────────────────────────────────────

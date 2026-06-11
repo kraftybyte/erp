@@ -15,10 +15,7 @@ return new class extends Migration
         if (!Schema::hasColumn('expenses', 'payment_account_id')) {
             Schema::table('expenses', function (Blueprint $table) {
                 $table->unsignedBigInteger('payment_account_id')->nullable()->after('project_id');
-                $table->foreign('payment_account_id')
-                      ->references('id')
-                      ->on('payment_accounts')
-                      ->onDelete('set null');
+                // Note: Foreign key constraint removed - payment_accounts table may not exist yet
             });
         }
 
@@ -32,10 +29,7 @@ return new class extends Migration
         if (!Schema::hasColumn('advances', 'payment_account_id')) {
             Schema::table('advances', function (Blueprint $table) {
                 $table->unsignedBigInteger('payment_account_id')->nullable()->after('project_id');
-                $table->foreign('payment_account_id')
-                      ->references('id')
-                      ->on('payment_accounts')
-                      ->onDelete('set null');
+                // Note: Foreign key constraint removed - payment_accounts table may not exist yet
             });
         }
 

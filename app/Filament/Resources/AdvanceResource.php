@@ -17,6 +17,7 @@ use Filament\Tables\Table;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +41,7 @@ class AdvanceResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Hidden::make('user_id')
-                    ->default(fn() => auth()->id())
+                    ->default(fn() => Auth::user()?->id)
                     ->required(),
 
                 Forms\Components\DatePicker::make('submission_date')
@@ -75,47 +76,74 @@ class AdvanceResource extends Resource
     {
         return $table
         ->modifyQueryUsing(function (Builder $query) {
-            $user = auth()->user();
+            /** @var User|null $currentUser */
+            $currentUser = Auth::user();
 
             // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
-            if ($user->hasRole(['Director','Finance', 'super_admin'])) {
-                return $query->with(['user', 'paidBy', 'project', 'paymentAccount']);
+            if ($currentUser?->hasRole(['Director','Finance', 'super_admin'])) {
+                return $query->with(['user', 'paidBy', 'project', 'paymentAccount', 'realizasis.items']);
             }
 
             // Jika bukan, hanya tampilkan data miliknya sendiri
-            return $query->with(['user', 'paidBy', 'project', 'paymentAccount'])->where('user_id', $user->id);
+            return $query->with(['user', 'paidBy', 'project', 'paymentAccount', 'realizasis.items'])->where('user_id', $currentUser?->id);
         })
 
             ->columns([
                 Tables\Columns\TextColumn::make('id')
-                    ->label('ID Advance')
+                    ->label('ID')
                     ->sortable()
-                    ->wrap()
-                    ->alignCenter(),
+                    ->alignCenter()
+                    ->size('sm'),
 
                 Tables\Columns\TextColumn::make('user.fullName')
-                    ->label('Permohonan User')
-                    ->description(fn (Advance $record): string => $record->submission_date ?? '', position: 'after')
+                    ->label('User')
+                    ->description(fn (Advance $record): string => $record->submission_date?->format('d M Y') ?? '', position: 'below')
                     ->sortable()
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('keterangan_advance')
                     ->label('Keterangan')
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->limit(40),
 
-                Tables\Columns\TextColumn::make('amount')
-                    ->label('Nominal')
+                Tables\Columns\TextColumn::make('paid')
+                    ->label('Dibayarkan')
                     ->sortable()
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 2, ',', '.')),
+                    ->formatStateUsing(fn($state) => $state ? 'Rp ' . number_format((float)$state, 0, ',', '.') : '-')
+                    ->color('info'),
 
-                Tables\Columns\TextColumn::make('paymentAccount.name')
-                    ->label('Rekening')
-                    ->formatStateUsing(fn($state, $record) => $state ?? '-')
+                Tables\Columns\TextColumn::make('total_realisasi_display')
+                    ->label('Terealisasi')
+                    ->alignCenter()
+                    ->getStateUsing(function (Advance $record): string {
+                        $total = $record->realizasis->flatMap->items->sum('subtotal');
+                        $paid = (float) ($record->paid ?? 0);
+                        if ($paid <= 0) return '-';
+                        $pct = round(($total / $paid) * 100);
+                        return 'Rp ' . number_format($total, 0, ',', '.') . " ({$pct}%)";
+                    })
                     ->badge()
-                    ->color('info')
-                    ->sortable(),
-                
+                    ->color(fn (Advance $record): string => match(true) {
+                        $record->realizasis->flatMap->items->sum('subtotal') >= (float)$record->paid => 'success',
+                        default => 'warning',
+                    }),
+
+                Tables\Columns\TextColumn::make('remaining_display')
+                    ->label('Sisa')
+                    ->alignCenter()
+                    ->getStateUsing(function (Advance $record): string {
+                        $total = $record->realizasis->flatMap->items->sum('subtotal');
+                        $paid = (float) ($record->paid ?? 0);
+                        $remaining = $paid - $total;
+                        if ($paid <= 0) return '-';
+                        if ($remaining <= 0) return '-';
+                        return 'Rp ' . number_format($remaining, 0, ',', '.');
+                    })
+                    ->color(fn (Advance $record): string => match(true) {
+                        ($record->paid ?? 0) > 0 && (float)$record->paid <= $record->realizasis->flatMap->items->sum('subtotal') => 'success',
+                        default => 'danger',
+                    }),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -124,30 +152,18 @@ class AdvanceResource extends Resource
                     ->alignCenter()
                     ->color(fn ($record) => ColorHelper::status($record->status))
                     ->description(fn($record) => match ($record->status) {
-                        'Ditolak' => trans($record->rejection_reason ?? ''),
-                        'Dibayarkan' => $record->paidBy
-                            ? 'oleh ' . $record->paidBy->fullName . ' pada ' . \Carbon\Carbon::parse($record->updated_at)->format('d M Y H:i')
-                            : 'oleh unknown',
+                        'Ditolak' => $record->rejection_reason ?? '',
+                        'Dibayarkan' => $record->paidBy ? 'by ' . $record->paidBy->fullName : null,
                         default => null,
                     })
                     ->wrap(),
 
-                Tables\Columns\TextColumn::make('attachment')
-                    ->label('Lampiran Invoice')
+                Tables\Columns\TextColumn::make('batch_count')
+                    ->label('Batch')
+                    ->alignCenter()
+                    ->getStateUsing(fn (Advance $record): string => (string) $record->realizasis->count())
                     ->badge()
-                    ->alignCenter()
-                    ->formatStateUsing(fn($state) => $state ? 'Link Invoice' : 'Belum Ada')
-                    ->action(function ($record) {
-                        if ($record && $record->attachment) {
-                            return redirect()->to(asset('storage/' . $record->attachment));
-                        } else {
-                            return back()->with('Error', 'Attachment not found.');
-                        }
-                    })
-                    ->sortable()
-                    ->alignCenter()
-                    ->url(fn($record) => $record->attachment ? asset('storage/' . $record->attachment) : null)
-                    ->openUrlInNewTab(),
+                    ->color('gray'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -164,102 +180,14 @@ class AdvanceResource extends Resource
                     ->options(fn () => \App\Models\PaymentAccount::active()->pluck('name', 'id')),
             ])
             ->actions([
-                Tables\Actions\Action::make('upload_invoice')
-                ->button()
+                Tables\Actions\Action::make('realisasi')
+                ->link()
                 ->size('xs')
-                ->icon('heroicon-o-arrow-up-circle')
-                ->color('danger')
-                ->label('Realisasi Advance')
-                ->action(function ($record, array $data) {
-                    if ($data['attachment'] instanceof \Illuminate\Http\UploadedFile) {
-                        $path = $data['attachment']->storeAs('advance', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment']->getClientOriginalExtension());
-                        if ($path) {
-                            $record->update([
-                                'attachment' => $path,
-                                'status' => 'Sudah di-Realisasi User',
-                            ]);
-                        } else {
-                            return back()->with('error', 'File upload failed.');
-                        }
-                    } else {
-                        $record->update([
-                            'attachment' => $data['attachment'],
-                            'status' => 'Sudah di-Realisasi User',
-
-                        ]);
-                    }
-
-                })
-                ->form([
-                    Forms\Components\Repeater::make('items')
-                    ->label('Item Pengeluaran')
-                    ->relationship('itemAdvance')
-                    ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('Nama Pembelian')
-                            ->required(),
-                
-                        Forms\Components\Textarea::make('description')
-                            ->label('Keterangan Pembelian')
-                            ->required(),
-                
-                        Forms\Components\TextInput::make('price')
-                            ->label('Harga')
-                            ->numeric()
-                            ->prefix('Rp')
-                            ->required()
-                            ->minValue(0)
-                            ->reactive()
-                            ->debounce(500)
-                            ->afterStateUpdated(function ($state, callable $set, $get) {
-                                $set('subtotal', $state * ($get('quantity') ?? 1));
-                                $items = $get('../../items') ?? [];
-                                $set('../../total_harga', collect($items)->sum(fn($item) => (float)($item['subtotal'] ?? 0)));
-                            }),
-                
-                        Forms\Components\TextInput::make('quantity')
-                            ->label('Qty')
-                            ->numeric()
-                            ->default(1)
-                            ->required()
-                            ->minValue(1)
-                            ->reactive()
-                            ->afterStateUpdated(function ($state, callable $set, $get) {
-                                $set('subtotal', ($get('price') ?? 0) * $state);
-                                $items = $get('../../items') ?? [];
-                                $set('../../total_harga', collect($items)->sum(fn($item) => (float)($item['subtotal'] ?? 0)));
-                            }),
-                
-                        Forms\Components\TextInput::make('subtotal')
-                            ->label('Subtotal')
-                            ->disabled()
-                            ->dehydrated()
-                            ->formatStateUsing(fn($state) => 'Rp ' . number_format($state, 0, ',', '.'))
-                            ->required(),
-                    ])
-                    ->createItemButtonLabel('Tambah Item')
-                    ->minItems(1)
-                    ->maxItems(20),
-                
-                    Forms\Components\TextInput::make('total_harga')
-                        ->label('Total Harga')
-                        ->disabled()
-                        ->dehydrated(true)
-                        ->default(0)
-                        ->formatStateUsing(fn($state) => 'Rp ' . number_format((float) $state, 0, ',', '.'))
-                        ->dehydrateStateUsing(fn($state) => (float) str_replace(['Rp', '.', ','], ['', '', '.'], $state))
-                        ->required(),
-                    
-                Forms\Components\FileUpload::make('attachment')
-                        ->label('Upload Invoice Pembayaran')
-                        ->acceptedFileTypes(['image/*', 'application/pdf'])
-                        ->directory('advance/invoice/' . now()->format('Y/m/d'))
-                        ->required()
-                        ->validationMessages([
-                            'required' => 'Bukti pembayaran harus diunggah.',
-                        ]),
-                ])
-                ->hidden(fn($record) => $record->status !== 'Dibayarkan'),
+                ->icon('heroicon-o-document-check')
+                ->color('gray')
+                ->label('Realisasi')
+                ->url(fn ($record) => '/admin/advances/' . $record->id . '/realisasi')
+                ->visible(fn ($record) => $record->status === 'Dibayarkan'),
 
                 Tables\Actions\Action::make('convert_to_pay')
                     ->button()
@@ -267,7 +195,10 @@ class AdvanceResource extends Resource
                     ->color('warning')
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
-                        DB::transaction(function () use ($record, $data) {
+                        /** @var User|null $currentUser */
+                        $currentUser = Auth::user();
+
+                        DB::transaction(function () use ($record, $data, $currentUser) {
                             // Get payment account with pessimistic locking
                             $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
                             if (!$account) {
@@ -287,7 +218,7 @@ class AdvanceResource extends Resource
                             // Create transaction record
                             Transaction::create([
                                 'payment_account_id' => $account->id,
-                                'user_id' => auth()->id(),
+                                'created_by' => $currentUser?->id,
                                 'type' => 'out',
                                 'amount' => (float) $data['paid'],
                                 'description' => "Advance: {$record->keterangan_advance}",
@@ -303,7 +234,7 @@ class AdvanceResource extends Resource
                             // Update advance status with payment account
                             $record->update([
                                 'status' => 'Dibayarkan',
-                                'paid_by' => auth()->id(),
+                                'paid_by' => $currentUser?->id,
                                 'paid' => $data['paid'],
                                 'payment_account_id' => $account->id,
                                 'reference' => $data['reference'],
@@ -348,10 +279,10 @@ class AdvanceResource extends Resource
                         ->color('success')
                         ->icon('heroicon-o-credit-card')
                         ->hidden(fn($record) =>
-                        !auth()->user()->can('restore_advance') ||
+                        !Auth::user()?->can('restore_advance') ||
                         in_array($record->status, ['Pending','Dibayarkan','Selesai','Ditolak'])
                     ),
-                    
+
                 Tables\Actions\Action::make('approve')
                     ->label('Approve')
                     ->action(function ($record) {
@@ -360,8 +291,8 @@ class AdvanceResource extends Resource
                     ->requiresConfirmation()
                     ->color('success')
                     ->icon('heroicon-o-check-circle')
-                    ->hidden(fn($record) => 
-                    !auth()->user()->can('restore_advance') || 
+                    ->hidden(fn($record) =>
+                    !Auth::user()?->can('restore_advance') ||
                     in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Selesai'])
                 ),
 
@@ -381,8 +312,8 @@ class AdvanceResource extends Resource
                     ->requiresConfirmation()
                     ->color('danger')
                     ->icon('heroicon-o-x-circle')
-                    ->hidden(fn($record) => 
-                    !auth()->user()->can('restore_advance') || 
+                    ->hidden(fn($record) =>
+                    !Auth::user()?->can('restore_advance') ||
                     in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Selesai'])
                 ),
 
@@ -395,8 +326,8 @@ class AdvanceResource extends Resource
                     ->requiresConfirmation()
                     ->color('success')
                     ->icon('heroicon-o-check-circle')
-                    ->hidden(fn($record) => 
-                    !auth()->user()->can('restore_advance') || 
+                    ->hidden(fn($record) =>
+                    !Auth::user()?->can('restore_advance') ||
                     in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Pending'])
                 ),
 
@@ -425,6 +356,7 @@ class AdvanceResource extends Resource
             'create' => Pages\CreateAdvance::route('/create'),
             'view' => Pages\ViewAdvance::route('/{record}'),
             'edit' => Pages\EditAdvance::route('/{record}/edit'),
+            'realisasi' => Pages\RealisasiAdvance::route('/{record}/realisasi'),
         ];
     }
 }

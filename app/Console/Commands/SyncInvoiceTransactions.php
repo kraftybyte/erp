@@ -80,7 +80,7 @@ class SyncInvoiceTransactions extends Command
 
                     Transaction::create([
                         'payment_account_id' => $specificAccountId,
-                        'user_id' => $invoice->user_id ?? 1,
+                        'created_by' => $invoice->user_id ?? 1,
                         'type' => 'in',
                         'amount' => $diff,
                         'description' => "Sync Invoice: {$invoice->uuid} - {$invoice->nama_perusahaan}",

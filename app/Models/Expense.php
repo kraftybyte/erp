@@ -20,7 +20,7 @@ class Expense extends Model
 
     protected $fillable = [
         'user_id', 'submission_date', 'project_id', 'keterangan_expense',
-        'amount', 'attachment', 'reference',
+        'amount', 'attachment', 'reference', 'status',
         'rejection_reason', 'attachment_pay',
         'payment_account_id', 'paid', 'paid_by', 'approved_by',
     ];

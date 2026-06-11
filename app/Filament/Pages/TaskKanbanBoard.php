@@ -6,13 +6,14 @@ use App\Enums\TaskStages;
 use App\Models\Task;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Event;
 use App\Helpers\NotifHelper;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Filament\Forms;
 use Filament\Forms\Components\Tabs;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\RichEditor;
@@ -60,7 +61,12 @@ class TaskKanbanBoard extends KanbanBoard
      */
     protected function records(): Collection
     {
-        $user = auth()->user();
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if (!$user) {
+            return collect();
+        }
 
         if ($user->hasRole(['super_admin', 'Director'])) {
             return Task::with(['users', 'project'])->get();
@@ -76,13 +82,16 @@ class TaskKanbanBoard extends KanbanBoard
      */
     protected function getHeaderActions(): array
     {
+        /** @var User|null $currentUser */
+        $currentUser = Auth::user();
+
         return [
             Action::make('new_task')
                 ->label('Tambah Task')
                 ->icon('heroicon-o-plus-circle')
-                ->authorize(fn () => auth()->user()?->hasAnyRole(['Head', 'Director', 'super_admin']))
+                ->authorize(fn () => $currentUser?->hasAnyRole(['Head', 'Director', 'super_admin']))
                 ->form($this->getCreateFormSchema())
-                ->action(function (array $data) {
+                ->action(function (array $data) use ($currentUser) {
 
                     $task = Task::create([
                         'nama_task'    => $data['nama_task'],
@@ -93,14 +102,10 @@ class TaskKanbanBoard extends KanbanBoard
                         'detail_task'  => $data['detail_task'],
                         'mulai_task'   => $data['mulai_task'],
                         'selesai_task' => $data['selesai_task'],
-                        'creator_id'   => auth()->id(),
+                        'creator_id'   => $currentUser?->id,
                     ]);
 
-                    /**
-                     * 🔥 NOTIF TASK BARU (FIX)
-                     */
                     if (!empty($data['user_id'])) {
-
                         $task->users()->sync(array_unique($data['user_id']));
 
                         $users = User::whereIn('id', $data['user_id'])->get();
@@ -111,7 +116,7 @@ class TaskKanbanBoard extends KanbanBoard
                         $url     = '/admin/task-kanban-board';
 
                         foreach ($users as $user) {
-                            if ($user->id === auth()->id()) continue;
+                            if ($user->id === $currentUser?->id) continue;
 
                             NotifHelper::send(
                                 $user,
@@ -162,13 +167,19 @@ class TaskKanbanBoard extends KanbanBoard
                             TextInput::make('nama_layanan')->required(),
                         ]),
 
-                    Tabs\Tab::make('Tim & Status')
+                    Tabs\Tab::make('Tim& Status')
                         ->schema([
                             Select::make('user_id')
                                 ->multiple()
                                 ->searchable()
-                                ->options(User::pluck('firstname', 'id'))
-                                ->default([auth()->id()])
+                                ->options(function () {
+                                    return User::query()
+                                        ->orderBy('firstname')
+                                        ->get()
+                                        ->mapWithKeys(fn ($user) => [$user->id => $user->name])
+                                        ->toArray();
+                                })
+                                ->default(fn () => [Auth::user()?->id])
                                 ->required(),
 
                             Select::make('status')
@@ -255,5 +266,59 @@ class TaskKanbanBoard extends KanbanBoard
         }
 
         $this->viewMode = $mode;
+    }
+
+    /**
+     * GO TO TIMELINE
+     */
+    public function goToTimeline(): void
+    {
+        $this->redirect('/admin/project-timeline-board');
+    }
+
+    /**
+     * TOGGLE CALENDAR EVENT
+     * Create or remove Event from Task
+     */
+    public function toggleCalendarEvent(string|int $recordId): void
+    {
+        $task = Task::with('event')->findOrFail($recordId);
+
+        if ($task->event) {
+            $task->event->delete();
+            Notification::make()
+                ->title('Dihapus dari Calendar')
+                ->success()
+                ->send();
+        } else {
+            Event::create([
+                'title' => $task->nama_task,
+                'description' => $task->detail_task ?? '',
+                'start_time' => $task->mulai_task,
+                'end_time' => $task->selesai_task ?? $task->mulai_task,
+                'color' => $this->getEventColor($task->status),
+                'task_id' => $task->id,
+                'create_by' => Auth::id(),
+            ]);
+            Notification::make()
+                ->title('Ditambahkan ke Calendar')
+                ->success()
+                ->send();
+        }
+    }
+
+    /**
+     * Get event color based on task status
+     */
+    protected function getEventColor(string $status): string
+    {
+        return match ($status) {
+            'Log' => '#94a3b8',
+            'Process' => '#3b82f6',
+            'Review' => '#f59e0b',
+            'Done' => '#22c55e',
+            'Hold' => '#ef4444',
+            default => '#6366f1',
+        };
     }
 }

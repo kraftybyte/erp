@@ -56,11 +56,11 @@ class TopAdvancesChart extends ChartWidget
         // =========================
         $rows = Advance::select(
                 'advances.keterangan_advance',
-                'item_advances.name',
-                'item_advances.description',
-                DB::raw('SUM(item_advances.quantity * item_advances.price) as total')
+                'item_advance.name',
+                'item_advance.description',
+                DB::raw('SUM(item_advance.quantity * item_advance.price) as total')
             )
-            ->join('item_advances', 'item_advances.advance_id', '=', 'advances.id')
+            ->join('item_advance', 'item_advance.advance_id', '=', 'advances.id')
             ->when($startDate && $endDate, function ($q) use ($startDate, $endDate) {
                 // fallback ke created_at kalau submission_date kosong
                 $q->where(function ($sub) use ($startDate, $endDate) {
@@ -71,8 +71,8 @@ class TopAdvancesChart extends ChartWidget
             ->groupBy(
                 'advances.id',
                 'advances.keterangan_advance',
-                'item_advances.name',
-                'item_advances.description'
+                'item_advance.name',
+                'item_advance.description'
             )
             ->get();
 

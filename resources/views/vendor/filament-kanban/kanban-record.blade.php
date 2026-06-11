@@ -2,12 +2,15 @@
     id="{{ $record->getKey() }}"
     wire:click="recordClicked('{{ $record->getKey() }}', {{ @json_encode($record) }})"
     class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition space-y-4"
-    @if($record->timestamps && now()->diffInSeconds($record->{$record::UPDATED_AT}) < 3)
-        x-data
-        x-init="
-            $el.classList.add('animate-pulse', 'bg-blue-50');
-            setTimeout(() => $el.classList.remove('animate-pulse', 'bg-blue-50'), 2000);
-        "
+    @if($record->timestamps)
+        @php $updatedAt = $record->updated_at; @endphp
+        @if($updatedAt && now()->diffInSeconds($updatedAt) < 3)
+            x-data
+            x-init="
+                $el.classList.add('animate-pulse', 'bg-blue-50');
+                setTimeout(() => $el.classList.remove('animate-pulse', 'bg-blue-50'), 2000);
+            "
+        @endif
     @endif
 >
 
@@ -20,17 +23,33 @@
             </h4>
 
             <p class="text-xs text-gray-500 mt-1">
-                {{ $record->project->nama_perusahaan ?? 'N/A' }}
+                {{ $record->project?->nama_perusahaan ?? 'N/A' }}
             </p>
         </div>
 
-        @can('update', $record)
-            <a href="{{ url('admin/tasks/' . $record->id . '/edit') }}"
-               wire:click.stop
-               class="text-xs px-3 py-1 rounded-full bg-gray-50 text-gray-600 hover:bg-gray-200 transition">
-                Edit
-            </a>
-        @endcan
+        <div class="flex items-center gap-2">
+            {{-- Calendar Toggle --}}
+            <button
+                wire:click.stop="toggleCalendarEvent('{{ $record->getKey() }}')"
+                title="{{ $record->event ? 'Hapus dari Calendar' : 'Tambahkan ke Calendar' }}"
+                class="p-1.5 rounded-lg transition-colors
+                    {{ $record->event
+                        ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600' }}"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </button>
+
+            @can('update', $record)
+                <a href="{{ url('admin/tasks/' . $record->id . '/edit') }}"
+                   wire:click.stop
+                   class="text-xs px-3 py-1 rounded-full bg-gray-50 text-gray-600 hover:bg-gray-200 transition">
+                    Edit
+                </a>
+            @endcan
+        </div>
     </div>
 
 
@@ -147,7 +166,8 @@
                 @else
                     @php
                         $colors = ['bg-red-500','bg-blue-500','bg-green-500','bg-yellow-500','bg-purple-500','bg-teal-500','bg-indigo-500'];
-                        $randomColor = $colors[array_rand($colors)];
+                        $colorIndex = abs(crc32($user->id)) % count($colors);
+                        $randomColor = $colors[$colorIndex];
                     @endphp
                     <div class="w-full h-full flex items-center justify-center text-white text-xs font-bold {{ $randomColor }}">
                         {{ strtoupper(substr($user->firstname,0,1)) }}{{ strtoupper(substr($user->lastname,0,1)) }}

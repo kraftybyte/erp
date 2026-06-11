@@ -313,7 +313,7 @@ class ExpenseResource extends Resource
                             // Create transaction record
                             Transaction::create([
                                 'payment_account_id' => $account->id,
-                                'user_id' => auth()->id(),
+                                'created_by' => auth()->id(),
                                 'type' => 'out',
                                 'amount' => (float) $data['paid'],
                                 'description' => "Expense: {$record->keterangan_expense}",

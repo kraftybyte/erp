@@ -25,6 +25,8 @@ class Absence extends Model
         'description',
         'start_time',
         'end_time',
+        'approval_status',
+        'approved_by',
         'work_report',
         'sick_letter',
         'rejection_reason',

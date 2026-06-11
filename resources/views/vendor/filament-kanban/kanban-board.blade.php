@@ -42,13 +42,13 @@
 
     {{-- ─── VIEW TOGGLE ─────────────────────────────────── --}}
     <div class="flex items-center justify-start mb-4">
-        <div class="flex items-center gap-1 rounded-lg p-1" style="background:#e2e8f0;">
+        <div class="flex items-center gap-1 rounded-lg p-1 bg-gray-200">
             <button
                 wire:click="switchView('board')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
-                style="{{ $this->viewMode === 'board'
-                    ? 'background:white; color:#07a0cf; box-shadow:0 1px 3px rgba(0,0,0,0.1);'
-                    : 'background:transparent; color:#64748b;' }}"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
+                    {{ $this->viewMode === 'board'
+                        ? 'bg-white text-sky-600 shadow-sm'
+                        : 'bg-transparent text-slate-500 hover:text-slate-700' }}"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -58,16 +58,29 @@
             </button>
             <button
                 wire:click="switchView('list')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
-                style="{{ $this->viewMode === 'list'
-                    ? 'background:white; color:#07a0cf; box-shadow:0 1px 3px rgba(0,0,0,0.1);'
-                    : 'background:transparent; color:#64748b;' }}"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
+                    {{ $this->viewMode === 'list'
+                        ? 'bg-white text-sky-600 shadow-sm'
+                        : 'bg-transparent text-slate-500 hover:text-slate-700' }}"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                 </svg>
                 List
+            </button>
+            <button
+                wire:click="goToTimeline"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
+                    {{ $this->viewMode === 'timeline'
+                        ? 'bg-white text-sky-600 shadow-sm'
+                        : 'bg-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100' }}"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                Timeline
             </button>
         </div>
     </div>

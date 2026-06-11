@@ -9,7 +9,7 @@ class Event extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['title', 'description', 'start_time', 'end_time', 'color','create_by'];
+    protected $fillable = ['title', 'description', 'start_time', 'end_time', 'color', 'create_by', 'task_id'];
 
     protected $casts = [
         'start_time' => 'datetime:Y-m-d\TH:i:sP',
@@ -18,6 +18,11 @@ class Event extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'create_by'); // Sesuaikan dengan foreign key yang digunakan
+        return $this->belongsTo(User::class, 'create_by');
+    }
+
+    public function task()
+    {
+        return $this->belongsTo(Task::class, 'task_id');
     }
 }

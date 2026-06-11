@@ -50,4 +50,9 @@ class Task extends Model
     {
         return $this->belongsTo(Deal::class, 'deal_id');
     }
+
+    public function event()
+    {
+        return $this->hasOne(Event::class);
+    }
 }

@@ -25,7 +25,6 @@ class ContractTemplateService
         $agencyName = $settings->brand_name ?? 'Getkrafty Indonesia';
         $agencyLogo = $settings->brand_logo ? Storage::url($settings->brand_logo) : null;
         $primaryColor = $settings->site_theme['primary'] ?? '#2563eb';
-        $primaryDark = $this->darkenColor($primaryColor, 15);
 
         // Dates
         $effectiveDate = $contract->effective_date ? Carbon::parse($contract->effective_date) : now();
@@ -251,7 +250,7 @@ class ContractTemplateService
         return $html;
     }
 
-    private function buildSowTable($products, ?string $scopeOfWork = null): string
+    private function buildSowTable(\Illuminate\Database\Eloquent\Collection $products, ?string $scopeOfWork = null): string
     {
         if ($products->isEmpty()) {
             if ($scopeOfWork) {

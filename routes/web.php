@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
 use Filament\Facades\Filament;
 use App\Http\Controllers\QuotationPdfController;
 use App\Http\Controllers\WablasController;
@@ -48,18 +49,20 @@ Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
         return response()->json(['success' => false]);
     }
 
+    /** @var \App\Models\User|null $user */
+    $user = Auth::user();
+    $userName = $user?->name ?? 'Unknown';
+
     $timeline->update([
         'start_date' => $request->start,
         'end_date'   => $request->end,
-        'updated_by' => auth()->id(),
+        'updated_by' => $user?->id,
     ]);
-
-    $user = auth()->user();
 
     return response()->json([
         'success' => true,
         'message' => 'Perubahan terakhir: '
-            . $user->name
+            . $userName
             . ' – '
             . now()->format('d F Y, H:i')
     ]);

@@ -43,6 +43,21 @@ class Invoice extends BaseInvoice
         'due_date',
         'invoice_id',
         'is_default',
+        'total',
+        'name',
+        'for_type',
+        'for_id',
+        'from_type',
+        'from_id',
+        'type_payment',
+        'po_number',
+        'faktur',
+        'nama_perusahaan',
+        'telephone',
+        'alamat',
+        'subtotal',
+        'total_discount',
+        'total_vat',
     ];
 
     /**

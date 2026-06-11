@@ -60,7 +60,7 @@
     }
 
     /* Mobile */
-    @media (max-width: 639px) {
+    @media (max-width: 480px) {
         .kanban-col {
             flex: 0 0 85vw;
             min-width: 85vw;
