@@ -647,15 +647,13 @@
                     <form wire:submit="saveBatch" class="space-y-5" id="batchForm">
 
                         {{-- Upload File --}}
-                        <div>
+                        <div x-data="{ isDragging: false }">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Pengeluaran</label>
                             <div class="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-gray-300 transition-colors cursor-pointer"
-                                 x-data="{ isDragging: false }"
                                  x-on:dragover.prevent="isDragging = true"
                                  x-on:dragleave="isDragging = false"
                                  x-on:drop.prevent="isDragging = false"
-                                 :class="isDragging ? 'border-green-400 bg-green-50/50' : ''"
-                                 wire:ignore>
+                                 :class="isDragging ? 'border-green-400 bg-green-50/50' : ''">
                                 <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="file-upload">
                                 <label for="file-upload" class="cursor-pointer">
                                     <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-2">
