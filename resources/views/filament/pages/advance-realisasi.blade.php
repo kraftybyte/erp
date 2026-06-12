@@ -595,10 +595,10 @@
     {{-- MODAL: Add Batch --}}
     @if($showBatchModal)
         <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" wire:click.self="closeBatchModal">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden" wire:click.stop>
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" wire:click.stop>
 
                 {{-- Header --}}
-                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">Tambah Batch Baru</h2>
                         <p class="text-sm text-gray-500 mt-0.5">Catat pengeluaran dan upload bukti</p>
@@ -610,135 +610,138 @@
                     </button>
                 </div>
 
-                <form wire:submit="saveBatch" class="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                {{-- Content (scrollable) --}}
+                <div class="flex-1 overflow-y-auto">
+                    <form wire:submit="saveBatch" class="p-6 space-y-6">
 
-                    {{-- Upload File --}}
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Pengeluaran</label>
-                        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors cursor-pointer"
-                             x-data="{ isDragging: false }"
-                             x-on:dragover.prevent="isDragging = true"
-                             x-on:dragleave="isDragging = false"
-                             x-on:drop.prevent="isDragging = false"
-                             :class="isDragging ? 'border-green-400 bg-green-50/50' : ''"
-                             wire:ignore>
-                            <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="file-upload">
-                            <label for="file-upload" class="cursor-pointer">
-                                <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <svg class="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                    </svg>
-                                </div>
-                                <p class="text-sm font-medium text-gray-600">Klik untuk upload file</p>
-                                <p class="text-xs text-gray-400 mt-1">atau drag & drop file ke sini</p>
-                            </label>
-                        </div>
-
-                        @if(count($uploadedFiles) > 0)
-                            <div class="mt-3 space-y-2">
-                                @foreach($uploadedFiles as $index => $file)
-                                    <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                        <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                                            <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                            </svg>
-                                        </div>
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-sm font-medium text-gray-700 truncate">{{ $file->getClientOriginalName() }}</p>
-                                            <p class="text-xs text-gray-400">{{ number_format($file->getSize() / 1024, 0) }} KB</p>
-                                        </div>
-                                        <button type="button" wire:click="removeUploadedFile({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
-                                            <svg class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                            </svg>
-                                        </button>
+                        {{-- Upload File --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Pengeluaran</label>
+                            <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors cursor-pointer"
+                                 x-data="{ isDragging: false }"
+                                 x-on:dragover.prevent="isDragging = true"
+                                 x-on:dragleave="isDragging = false"
+                                 x-on:drop.prevent="isDragging = false"
+                                 :class="isDragging ? 'border-green-400 bg-green-50/50' : ''"
+                                 wire:ignore>
+                                <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="file-upload">
+                                <label for="file-upload" class="cursor-pointer">
+                                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg class="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
                                     </div>
-                                @endforeach
+                                    <p class="text-sm font-medium text-gray-600">Klik untuk upload file</p>
+                                    <p class="text-xs text-gray-400 mt-1">atau drag & drop file ke sini</p>
+                                </label>
                             </div>
-                        @endif
-                    </div>
 
-                    {{-- Items --}}
-                    <div>
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-gray-900">Daftar Pengeluaran</h3>
-                            <button type="button" wire:click="addBatchItem" class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: {{ $themeColor }}; color: white;">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                </svg>
-                                Tambah
-                            </button>
-                        </div>
-
-                        <div class="space-y-3">
-                            @foreach($batchItems as $index => $item)
-                                <div class="bg-gray-50 rounded-xl p-4">
-                                    <div class="flex items-center justify-between mb-3">
-                                        <span class="text-sm font-medium text-gray-600">Item {{ $index + 1 }}</span>
-                                        @if(count($batchItems) > 1)
-                                            <button type="button" wire:click="removeBatchItem({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
-                                                <svg class="w-4 h-4 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            @if(count($uploadedFiles) > 0)
+                                <div class="mt-3 space-y-2">
+                                    @foreach($uploadedFiles as $index => $file)
+                                        <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                            <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                                                <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                </svg>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-gray-700 truncate">{{ $file->getClientOriginalName() }}</p>
+                                                <p class="text-xs text-gray-400">{{ number_format($file->getSize() / 1024, 0) }} KB</p>
+                                            </div>
+                                            <button type="button" wire:click="removeUploadedFile({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
+                                                <svg class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                                 </svg>
                                             </button>
-                                        @endif
-                                    </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
 
-                                    <div class="space-y-3">
-                                        <input type="text" wire:model="batchItems.{{ $index }}.name" placeholder="Nama pengeluaran"
-                                               class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+                        {{-- Items --}}
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold text-gray-900">Daftar Pengeluaran</h3>
+                                <button type="button" wire:click="addBatchItem" class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: {{ $themeColor }}; color: white;">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Tambah
+                                </button>
+                            </div>
 
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label class="block text-xs text-gray-500 mb-1">Jumlah</label>
-                                                <input type="number" wire:model="batchItems.{{ $index }}.quantity" min="1" value="1" placeholder="1"
-                                                       class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
-                                            </div>
-                                            <div>
-                                                <label class="block text-xs text-gray-500 mb-1">Harga (Rp)</label>
-                                                <input type="number" wire:model="batchItems.{{ $index }}.price" min="0" placeholder="0"
-                                                       class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 text-right">
-                                            </div>
+                            <div class="space-y-3">
+                                @foreach($batchItems as $index => $item)
+                                    <div class="bg-gray-50 rounded-xl p-4">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <span class="text-sm font-medium text-gray-600">Item {{ $index + 1 }}</span>
+                                            @if(count($batchItems) > 1)
+                                                <button type="button" wire:click="removeBatchItem({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
+                                                    <svg class="w-4 h-4 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                    </svg>
+                                                </button>
+                                            @endif
                                         </div>
 
-                                        @php $subtotal = ($item['price'] ?? 0) * ($item['quantity'] ?? 1); @endphp
-                                        @if($subtotal > 0)
-                                            <div class="text-right">
-                                                <span class="text-sm font-semibold" style="color: {{ $themeColor }};">
-                                                    Rp {{ number_format($subtotal, 0, ',', '.') }}
-                                                </span>
+                                        <div class="space-y-3">
+                                            <input type="text" wire:model="batchItems.{{ $index }}.name" placeholder="Nama pengeluaran"
+                                                   class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label class="block text-xs text-gray-500 mb-1">Jumlah</label>
+                                                    <input type="number" wire:model="batchItems.{{ $index }}.quantity" min="1" value="1" placeholder="1"
+                                                           class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs text-gray-500 mb-1">Harga (Rp)</label>
+                                                    <input type="number" wire:model="batchItems.{{ $index }}.price" min="0" placeholder="0"
+                                                           class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 text-right">
+                                                </div>
                                             </div>
-                                        @endif
+
+                                            @php $subtotal = ($item['price'] ?? 0) * ($item['quantity'] ?? 1); @endphp
+                                            @if($subtotal > 0)
+                                                <div class="text-right">
+                                                    <span class="text-sm font-semibold" style="color: {{ $themeColor }};">
+                                                        Subtotal: Rp {{ number_format($subtotal, 0, ',', '.') }}
+                                                    </span>
+                                                </div>
+                                            @endif
+                                        </div>
                                     </div>
-                                </div>
-                            @endforeach
+                                @endforeach
+                            </div>
                         </div>
-                    </div>
 
-                    {{-- Total --}}
-                    @php $total = collect($batchItems)->sum(fn($item) => ($item['price'] ?? 0) * ($item['quantity'] ?? 1)); @endphp
-                    <div class="flex items-center justify-between py-4 px-5 rounded-xl" style="background: rgba(144,198,70,0.08);">
-                        <span class="text-sm font-medium text-gray-600">Total Batch</span>
-                        <span class="text-2xl font-bold" style="color: {{ $themeColor }};">
-                            Rp {{ number_format($total, 0, ',', '.') }}
-                        </span>
-                    </div>
+                        {{-- Total --}}
+                        @php $total = collect($batchItems)->sum(fn($item) => ($item['price'] ?? 0) * ($item['quantity'] ?? 1)); @endphp
+                        <div class="flex items-center justify-between py-4 px-5 rounded-xl {{ $total > 0 ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200' }}">
+                            <span class="text-sm font-medium text-gray-600">Total</span>
+                            <span class="text-xl font-bold" style="color: {{ $themeColor }};">
+                                Rp {{ number_format($total, 0, ',', '.') }}
+                            </span>
+                        </div>
 
-                    {{-- Notes --}}
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Catatan</label>
-                        <textarea wire:model="batchNotes" rows="2" placeholder="Opsional - Tambahkan catatan jika perlu"
-                                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 resize-none"></textarea>
-                    </div>
-                </form>
+                        {{-- Notes --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Catatan</label>
+                            <textarea wire:model="batchNotes" rows="2" placeholder="Opsional - Tambahkan catatan jika perlu"
+                                      class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 resize-none"></textarea>
+                        </div>
+                    </form>
+                </div>
 
                 {{-- Footer --}}
-                <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+                <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
                     <button wire:click="closeBatchModal" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
                         Batal
                     </button>
                     <button wire:click="saveBatch" class="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors" style="background: {{ $themeColor }};">
-                        Simpan Batch
+                        Simpan
                     </button>
                 </div>
             </div>
