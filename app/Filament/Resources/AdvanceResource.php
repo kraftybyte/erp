@@ -187,7 +187,7 @@ class AdvanceResource extends Resource
                 ->color('gray')
                 ->label('Realisasi')
                 ->url(fn ($record) => '/admin/advances/' . $record->id . '/realisasi')
-                ->visible(fn ($record) => $record->status === 'Dibayarkan'),
+                ->visible(fn ($record) => in_array($record->status, ['Dibayarkan', 'Sudah di-Realisasi User'])),
 
                 Tables\Actions\Action::make('convert_to_pay')
                     ->button()
@@ -321,14 +321,29 @@ class AdvanceResource extends Resource
                 Tables\Actions\Action::make('selesai')
                     ->label('Selesaikan Advance')
                     ->action(function ($record) {
-                        $record->update(['status' => 'Selesai']);
+                        $service = new \App\Services\RealisasiService();
+
+                        // Check if ready to close
+                        if (!$service->isReadyToClose($record)) {
+                            throw new \InvalidArgumentException('Advance belum siap untuk diselesaikan. Pastikan total realization sudah sesuai atau overrun sudah disetujui.');
+                        }
+
+                        // Check if overrun exists and not approved
+                        $totalRealisasi = $service->getTotalRealisasi($record);
+                        $remaining = (float) $record->paid - $totalRealisasi;
+                        if ($remaining < 0 && !$record->overrun_approved_by) {
+                            throw new \InvalidArgumentException('Overrun belum disetujui Finance.');
+                        }
+
+                        // Finish the advance
+                        $service->finishAdvance($record);
                     })
                     ->requiresConfirmation()
                     ->color('success')
                     ->icon('heroicon-o-check-circle')
                     ->hidden(fn($record) =>
                     !Auth::user()?->can('restore_advance') ||
-                    in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Pending'])
+                    !in_array($record->status, ['Sudah di-Realisasi User'])
                 ),
 
                 Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
