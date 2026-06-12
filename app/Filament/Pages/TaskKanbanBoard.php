@@ -172,13 +172,11 @@ class TaskKanbanBoard extends KanbanBoard
                             Select::make('user_id')
                                 ->multiple()
                                 ->searchable()
-                                ->options(function () {
-                                    return User::query()
-                                        ->orderByRaw("COALESCE(firstname, lastname, 'Unknown')")
-                                        ->get()
-                                        ->mapWithKeys(fn ($user) => [$user->id => $user->name])
-                                        ->toArray();
-                                })
+                                ->options(fn () => User::query()
+                                    ->orderByRaw("COALESCE(firstname, lastname, 'Unknown')")
+                                    ->get()
+                                    ->mapWithKeys(fn ($user) => [$user->id => $user->name])
+                                )
                                 ->default(fn () => [Auth::user()?->id])
                                 ->required(),
 
