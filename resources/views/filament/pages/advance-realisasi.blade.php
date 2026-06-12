@@ -592,82 +592,64 @@
     </div>
 
 
-    {{-- ══════════════════════════════════════
-         MODAL: Add Batch
-    ══════════════════════════════════════ --}}
+    {{-- MODAL: Add Batch --}}
     @if($showBatchModal)
-        <div class="modal-overlay" wire:click.self="closeBatchModal">
-            <div class="modal-content" wire:click.stop style="max-width: 680px;">
+        <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" wire:click.self="closeBatchModal">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden" wire:click.stop>
 
-                <div class="modal-header">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                             style="background: {{ $themeColor }}1a;">
-                            <svg class="w-5 h-5" style="color: {{ $themeColor }};" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 class="text-base font-bold text-gray-900">Tambah Batch Baru</h2>
-                            <p class="text-xs text-gray-400">Upload invoice dan bukti pembayaran</p>
-                        </div>
+                {{-- Header --}}
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">Tambah Batch Baru</h2>
+                        <p class="text-sm text-gray-500 mt-0.5">Catat pengeluaran dan upload bukti</p>
                     </div>
-                    <button wire:click="closeBatchModal" class="btn-icon">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <button wire:click="closeBatchModal" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
                     </button>
                 </div>
 
-                <form wire:submit="saveBatch" class="p-6 space-y-6">
+                <form wire:submit="saveBatch" class="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)]">
 
-                    {{-- Dropzone --}}
+                    {{-- Upload File --}}
                     <div>
-                        <label class="form-label">Upload Bukti</label>
-                        <div class="dropzone"
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Pengeluaran</label>
+                        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors cursor-pointer"
                              x-data="{ isDragging: false }"
                              x-on:dragover.prevent="isDragging = true"
                              x-on:dragleave="isDragging = false"
                              x-on:drop.prevent="isDragging = false"
-                             :class="isDragging ? 'border-green-400 bg-green-50' : ''"
+                             :class="isDragging ? 'border-green-400 bg-green-50/50' : ''"
                              wire:ignore>
-                            <input type="file" multiple wire:model="uploadedFiles"
-                                   accept=".pdf,.jpg,.jpeg,.png"
-                                   class="hidden" id="file-upload">
-                            <label for="file-upload" class="cursor-pointer flex flex-col items-center justify-center gap-2">
-                                <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-gray-100 mb-1">
+                            <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="file-upload">
+                            <label for="file-upload" class="cursor-pointer">
+                                <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
                                     <svg class="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                     </svg>
                                 </div>
-                                <p class="text-sm font-semibold text-gray-700">Seret file ke sini</p>
-                                <p class="text-xs text-gray-400">atau <span class="text-blue-600 font-semibold underline">pilih file</span></p>
-                                <p class="text-xs text-gray-400">PDF, JPG, PNG (maks 10MB)</p>
+                                <p class="text-sm font-medium text-gray-600">Klik untuk upload file</p>
+                                <p class="text-xs text-gray-400 mt-1">atau drag & drop file ke sini</p>
                             </label>
                         </div>
 
                         @if(count($uploadedFiles) > 0)
-                            <div class="mt-3 grid grid-cols-2 gap-2">
+                            <div class="mt-3 space-y-2">
                                 @foreach($uploadedFiles as $index => $file)
-                                    <div class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                                        <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-white border border-gray-200 flex-shrink-0">
-                                            @if(in_array($file->getMimeType(), ['image/jpeg', 'image/png', 'image/gif']))
-                                                <svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                                </svg>
-                                            @else
-                                                <svg class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                                                </svg>
-                                            @endif
+                                    <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                        <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                                            <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                            </svg>
                                         </div>
                                         <div class="flex-1 min-w-0">
-                                            <p class="text-xs font-semibold text-gray-700 truncate">{{ $file->getClientOriginalName() }}</p>
+                                            <p class="text-sm font-medium text-gray-700 truncate">{{ $file->getClientOriginalName() }}</p>
                                             <p class="text-xs text-gray-400">{{ number_format($file->getSize() / 1024, 0) }} KB</p>
                                         </div>
-                                        <button type="button" wire:click="removeUploadedFile({{ $index }})" class="btn-icon flex-shrink-0">
-                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        <button type="button" wire:click="removeUploadedFile({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
+                                            <svg class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                             </svg>
                                         </button>
                                     </div>
@@ -677,32 +659,25 @@
                     </div>
 
                     {{-- Items --}}
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <h3 class="text-sm font-bold text-gray-900">Item Pengeluaran</h3>
-                                <span class="badge badge-info" style="font-size:11px; padding: 3px 9px;">{{ count($batchItems) }} item</span>
-                            </div>
-                            <button type="button" wire:click="addBatchItem" class="btn btn-primary" style="padding: 7px 14px; font-size: 13px;">
-                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-900">Daftar Pengeluaran</h3>
+                            <button type="button" wire:click="addBatchItem" class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: {{ $themeColor }}; color: white;">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
-                                Tambah Item
+                                Tambah
                             </button>
                         </div>
 
-                        <div class="space-y-3 max-h-72 overflow-y-auto pr-1">
+                        <div class="space-y-3">
                             @foreach($batchItems as $index => $item)
-                                <div class="item-input-card">
+                                <div class="bg-gray-50 rounded-xl p-4">
                                     <div class="flex items-center justify-between mb-3">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center text-white flex-shrink-0"
-                                                  style="background: {{ $themeColor }};">{{ $index + 1 }}</span>
-                                            <span class="text-xs font-semibold text-gray-400">Item {{ $index + 1 }}</span>
-                                        </div>
+                                        <span class="text-sm font-medium text-gray-600">Item {{ $index + 1 }}</span>
                                         @if(count($batchItems) > 1)
-                                            <button type="button" wire:click="removeBatchItem({{ $index }})" class="btn-icon">
-                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <button type="button" wire:click="removeBatchItem({{ $index }})" class="p-1.5 hover:bg-red-50 rounded-lg transition-colors">
+                                                <svg class="w-4 h-4 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                                 </svg>
                                             </button>
@@ -710,27 +685,27 @@
                                     </div>
 
                                     <div class="space-y-3">
-                                        <input type="text"
-                                               wire:model="batchItems.{{ $index }}.name"
-                                               class="form-input"
-                                               placeholder="Nama item (contoh: Invoice Toko ABC)">
-                                        <div class="grid grid-cols-3 gap-3">
+                                        <input type="text" wire:model="batchItems.{{ $index }}.name" placeholder="Nama pengeluaran"
+                                               class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+
+                                        <div class="grid grid-cols-2 gap-3">
                                             <div>
-                                                <label class="form-label">Qty</label>
-                                                <input type="number" wire:model="batchItems.{{ $index }}.quantity"
-                                                       min="1" class="form-input" placeholder="1">
+                                                <label class="block text-xs text-gray-500 mb-1">Jumlah</label>
+                                                <input type="number" wire:model="batchItems.{{ $index }}.quantity" min="1" value="1" placeholder="1"
+                                                       class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
                                             </div>
-                                            <div class="col-span-2">
-                                                <label class="form-label">Harga (Rp)</label>
-                                                <input type="number" wire:model="batchItems.{{ $index }}.price"
-                                                       min="0" class="form-input text-right" placeholder="0">
+                                            <div>
+                                                <label class="block text-xs text-gray-500 mb-1">Harga (Rp)</label>
+                                                <input type="number" wire:model="batchItems.{{ $index }}.price" min="0" placeholder="0"
+                                                       class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 text-right">
                                             </div>
                                         </div>
-                                        @if(isset($item['price']) && $item['price'] > 0 && isset($item['quantity']))
-                                            <div class="flex justify-end">
-                                                <span class="inline-flex items-center text-sm font-bold px-3 py-1.5 rounded-lg"
-                                                      style="background: {{ $themeColor }}15; color: {{ $themeColor }};">
-                                                    Rp {{ number_format($item['price'] * $item['quantity'], 0, ',', '.') }}
+
+                                        @php $subtotal = ($item['price'] ?? 0) * ($item['quantity'] ?? 1); @endphp
+                                        @if($subtotal > 0)
+                                            <div class="text-right">
+                                                <span class="text-sm font-semibold" style="color: {{ $themeColor }};">
+                                                    Rp {{ number_format($subtotal, 0, ',', '.') }}
                                                 </span>
                                             </div>
                                         @endif
@@ -738,59 +713,52 @@
                                 </div>
                             @endforeach
                         </div>
+                    </div>
 
-                        {{-- Total --}}
-                        @php
-                            $total = collect($batchItems)->sum(fn($item) => ($item['price'] ?? 0) * ($item['quantity'] ?? 1));
-                        @endphp
-                        <div class="flex items-center justify-between px-5 py-4 rounded-xl border"
-                             style="background: {{ $themeColor }}08; border-color: {{ $themeColor }}30;">
-                            <span class="text-sm font-semibold text-gray-600">Total Batch</span>
-                            <span class="text-xl font-bold" style="color: {{ $themeColor }};">
-                                Rp {{ number_format($total, 0, ',', '.') }}
-                            </span>
-                        </div>
+                    {{-- Total --}}
+                    @php $total = collect($batchItems)->sum(fn($item) => ($item['price'] ?? 0) * ($item['quantity'] ?? 1)); @endphp
+                    <div class="flex items-center justify-between py-4 px-5 rounded-xl" style="background: rgba(144,198,70,0.08);">
+                        <span class="text-sm font-medium text-gray-600">Total Batch</span>
+                        <span class="text-2xl font-bold" style="color: {{ $themeColor }};">
+                            Rp {{ number_format($total, 0, ',', '.') }}
+                        </span>
                     </div>
 
                     {{-- Notes --}}
                     <div>
-                        <label class="form-label">Catatan <span class="text-gray-400 font-normal">(opsional)</span></label>
-                        <textarea wire:model="batchNotes" rows="2" class="form-textarea"
-                                  placeholder="Tambahkan catatan untuk batch ini..."></textarea>
-                    </div>
-
-                    {{-- Footer --}}
-                    <div class="flex items-center justify-end gap-2 pt-4 border-t border-gray-100">
-                        <button type="button" wire:click="closeBatchModal" class="btn btn-ghost">Batal</button>
-                        <button type="submit" class="btn btn-primary">Simpan Batch</button>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Catatan</label>
+                        <textarea wire:model="batchNotes" rows="2" placeholder="Opsional - Tambahkan catatan jika perlu"
+                                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 resize-none"></textarea>
                     </div>
                 </form>
+
+                {{-- Footer --}}
+                <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+                    <button wire:click="closeBatchModal" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
+                        Batal
+                    </button>
+                    <button wire:click="saveBatch" class="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors" style="background: {{ $themeColor }};">
+                        Simpan Batch
+                    </button>
+                </div>
             </div>
         </div>
     @endif
 
 
-    {{-- ══════════════════════════════════════
-         MODAL: Return
-    ══════════════════════════════════════ --}}
+    {{-- MODAL: Return --}}
     @if($showReturnModal)
-        <div class="modal-overlay" wire:click.self="closeReturnModal">
-            <div class="modal-content" wire:click.stop style="max-width: 480px;">
+        <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" wire:click.self="closeReturnModal">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" wire:click.stop>
 
-                <div class="modal-header" style="background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-100 flex-shrink-0">
-                            <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 class="text-base font-bold text-gray-900">Proses Return</h2>
-                            <p class="text-xs text-gray-400">Upload bukti transfer / giro</p>
-                        </div>
+                {{-- Header --}}
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-amber-50/50">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">Proses Return</h2>
+                        <p class="text-sm text-gray-500 mt-0.5">Upload bukti transfer pengembalian</p>
                     </div>
-                    <button wire:click="closeReturnModal" class="btn-icon">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <button wire:click="closeReturnModal" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
                     </button>
@@ -799,43 +767,40 @@
                 <form wire:submit="processReturn" class="p-6 space-y-5">
                     {{-- Amount info --}}
                     <div class="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-200">
-                        <span class="text-sm font-semibold text-gray-700">Jumlah yang dikembalikan</span>
+                        <span class="text-sm font-medium text-gray-700">Jumlah dikembalikan</span>
                         <span class="text-xl font-bold text-amber-600">Rp {{ number_format($remaining, 0, ',', '.') }}</span>
                     </div>
 
                     {{-- File upload --}}
                     <div>
-                        <label class="form-label">Bukti Return</label>
-                        <div class="dropzone"
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Transfer</label>
+                        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors cursor-pointer"
                              x-data="{ isDragging: false }"
                              x-on:dragover.prevent="isDragging = true"
                              x-on:dragleave="isDragging = false"
                              x-on:drop.prevent="isDragging = false"
-                             :class="isDragging ? 'border-amber-400 bg-amber-50' : ''">
-                            <input type="file" wire:model="returnAttachment"
-                                   accept=".pdf,.jpg,.jpeg,.png"
-                                   class="hidden" id="return-upload">
-                            <label for="return-upload" class="cursor-pointer flex flex-col items-center justify-center gap-2">
-                                <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-gray-100 mb-1">
+                             :class="isDragging ? 'border-amber-400 bg-amber-50/50' : ''">
+                            <input type="file" wire:model="returnAttachment" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="return-upload">
+                            <label for="return-upload" class="cursor-pointer">
+                                <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
                                     <svg class="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                     </svg>
                                 </div>
-                                <p class="text-sm font-semibold text-gray-700">Seret file ke sini</p>
-                                <p class="text-xs text-gray-400">atau <span class="text-blue-600 font-semibold underline">pilih file</span></p>
-                                <p class="text-xs text-gray-400">PDF, JPG, PNG (maks 10MB)</p>
+                                <p class="text-sm font-medium text-gray-600">Klik untuk upload</p>
+                                <p class="text-xs text-gray-400 mt-1">PDF, JPG, PNG</p>
                             </label>
                         </div>
 
                         @if($returnAttachment)
-                            <div class="mt-3 flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-100">
-                                <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-white border border-green-200">
+                            <div class="mt-3 flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
+                                <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
                                     <svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-semibold text-gray-700 truncate">{{ $returnAttachment->getClientOriginalName() }}</p>
+                                    <p class="text-sm font-medium text-gray-700 truncate">{{ $returnAttachment->getClientOriginalName() }}</p>
                                     <p class="text-xs text-gray-400">{{ number_format($returnAttachment->getSize() / 1024, 0) }} KB</p>
                                 </div>
                             </div>
@@ -843,9 +808,11 @@
                     </div>
 
                     {{-- Footer --}}
-                    <div class="flex items-center justify-end gap-2 pt-4 border-t border-gray-100">
-                        <button type="button" wire:click="closeReturnModal" class="btn btn-ghost">Batal</button>
-                        <button type="submit" class="btn btn-warning" style="background: #f59e0b; color: white;">
+                    <div class="flex justify-end gap-3 pt-2">
+                        <button type="button" wire:click="closeReturnModal" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
+                            Batal
+                        </button>
+                        <button type="submit" class="px-5 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors">
                             Konfirmasi Return
                         </button>
                     </div>
