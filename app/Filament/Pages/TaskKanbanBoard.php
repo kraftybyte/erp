@@ -174,7 +174,7 @@ class TaskKanbanBoard extends KanbanBoard
                                 ->searchable()
                                 ->options(function () {
                                     return User::query()
-                                        ->orderBy('firstname')
+                                        ->orderByRaw("COALESCE(firstname, lastname, 'Unknown')")
                                         ->get()
                                         ->mapWithKeys(fn ($user) => [$user->id => $user->name])
                                         ->toArray();
