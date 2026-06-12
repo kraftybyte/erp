@@ -25,7 +25,9 @@ class ProjectTimelineBoard extends Page
 
     public static function canAccess(): bool
     {
-        return Auth::user()->can('view_page_project_timeline_board') || Auth::user()->hasRole('super_admin');
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        return Gate::allows('view_page_project_timeline_board') || $user->hasRole('super_admin');
     }
 
 
