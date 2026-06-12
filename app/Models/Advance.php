@@ -91,7 +91,21 @@ class Advance extends Model
 
     public function canRealisasi(): bool
     {
-        return $this->status === self::STATUS_DIBAYARKAN;
+        // Can realize if status is "Dibayarkan" (first batch)
+        // Or if status is "Sudah di-Realisasi User" and overrun is approved or not exceeded
+        if ($this->status === self::STATUS_DIBAYARKAN) {
+            return true;
+        }
+
+        if ($this->status === self::STATUS_REALIZED_USER) {
+            $totalRealisasi = $this->realizasis->sum(fn($r) => $r->items->sum('subtotal'));
+            $remaining = (float) $this->paid - $totalRealisasi;
+
+            // Can add more if not overrun, or if overrun is approved
+            return $remaining >= 0 || $this->overrun_approved_by;
+        }
+
+        return false;
     }
 
     public function isEditable(): bool

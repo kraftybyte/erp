@@ -66,9 +66,6 @@ class RealisasiService
             $newBatchTotal = $this->calculateItemsTotal($items);
             $newTotal = $currentTotal + $newBatchTotal;
 
-            // Validate total doesn't exceed paid amount
-            $this->validateTotalNotExceedingPaid($advance, $newTotal);
-
             // Check if this is the first batch - if so, update status to 'Sudah di-Realisasi User'
             $isFirstBatch = $advance->realizasis()->count() === 0;
 
@@ -119,13 +116,30 @@ class RealisasiService
      */
     public function validateAdvanceCanRealisasi(Advance $advance): void
     {
+        // Cannot realize if already completed
         if ($advance->status === Advance::STATUS_SELESAI) {
             throw new \InvalidArgumentException(self::ERROR_ADVANCE_COMPLETED);
         }
 
-        if (!$advance->canRealisasi()) {
-            throw new \InvalidArgumentException(self::ERROR_ADVANCE_NOT_PAYABLE);
+        // Can realize if status is "Dibayarkan" (first batch)
+        if ($advance->status === Advance::STATUS_DIBAYARKAN) {
+            return;
         }
+
+        // Can add more batches if status is "Sudah di-Realisasi User" and overrun is not active
+        if ($advance->status === Advance::STATUS_REALIZED_USER) {
+            // If overrun exists and not approved, cannot add more
+            $totalRealisasi = $this->getTotalRealisasi($advance);
+            $remaining = (float) $advance->paid - $totalRealisasi;
+
+            if ($remaining < 0 && !$advance->overrun_approved_by) {
+                throw new \InvalidArgumentException('Realisasi melebihi advance. Finance harus menyetujui overrun terlebih dahulu.');
+            }
+            return;
+        }
+
+        // Cannot realize in other statuses
+        throw new \InvalidArgumentException(self::ERROR_ADVANCE_NOT_PAYABLE);
     }
 
     /**
