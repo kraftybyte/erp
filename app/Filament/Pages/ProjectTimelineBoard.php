@@ -11,6 +11,7 @@ use Filament\Forms;
 use Filament\Actions\Action;
 use App\Models\Project;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Auth;
 
 class ProjectTimelineBoard extends Page
 {
@@ -24,7 +25,7 @@ class ProjectTimelineBoard extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->user()->can('view_page_project_timeline_board') || auth()->user()->hasRole('super_admin');
+        return Auth::user()->can('view_page_project_timeline_board') || Auth::user()->hasRole('super_admin');
     }
 
 
