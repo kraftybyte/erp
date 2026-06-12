@@ -18,7 +18,6 @@ class ProjectTimelineBoard extends Page
     protected static string $view = 'filament.pages.project-timeline-board';
     protected static ?string $navigationLabel = 'Board Project Timeline';
     protected static ?string $navigationGroup = 'Project';
-    protected static ?string $navigationParentItem = 'Projects';
     public ?string $lastHistoryText = null;
     public string $viewMode = 'board'; // board | list
     public ?string $lastUpdatedAt = null;

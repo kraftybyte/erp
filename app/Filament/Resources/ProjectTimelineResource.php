@@ -19,7 +19,6 @@ class ProjectTimelineResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
     protected static ?string $navigationLabel = 'List Project Timeline';
     protected static ?string $navigationGroup = 'Project';
-    protected static ?string $navigationParentItem = 'Projects';
     // ==============================
     // FORM (CREATE & EDIT)
     // ==============================
