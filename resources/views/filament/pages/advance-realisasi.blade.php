@@ -701,7 +701,7 @@
                             </div>
 
                             {{-- Scrollable items container --}}
-                            <div class="items-scroll-container max-h-56 overflow-y-auto pr-1">
+                            <div class="pr-1 {{ count($batchItems) >= 3 ? 'max-h-56 overflow-y-auto' : '' }}">
                                 @foreach($batchItems as $index => $item)
                                     <div wire:key="batch-item-{{ $index }}" class="bg-gray-50 rounded-xl p-3 mb-2">
                                         <div class="flex items-center justify-between mb-2">
