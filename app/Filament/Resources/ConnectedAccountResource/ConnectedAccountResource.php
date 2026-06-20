@@ -19,6 +19,11 @@ class ConnectedAccountResource extends Resource
     protected static ?string $navigationGroup = 'Tools';
     protected static ?int $navigationSort = 5;
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('connected_account', 'Connected Social Accounts');
+    }
+
     public static function getNavigationBadge(): ?string
     {
         return static::getModel()::active()->count() ?: null;

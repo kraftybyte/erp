@@ -46,7 +46,7 @@ class InvoiceStatusChart extends ChartWidget
 
     public static function canView(): bool
 {
-    return false;
+    return true;
 }
 
 

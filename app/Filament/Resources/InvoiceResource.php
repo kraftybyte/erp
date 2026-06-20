@@ -39,6 +39,11 @@ class InvoiceResource extends BaseInvoiceResource
 
     protected static ?int $navigationSort = 5;
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('invoice', 'Invoice');
+    }
+
     /**
      * Override pages to use custom ViewInvoice
      */

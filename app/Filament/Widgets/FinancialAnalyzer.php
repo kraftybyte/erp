@@ -19,7 +19,7 @@ class FinancialAnalyzer extends Widget
 
     public static function canView(): bool
     {
-        return false; // Disabled - tidak ditampilkan di dashboard
+        return true; // Enabled - AI Financial Analysis
     }
 
 

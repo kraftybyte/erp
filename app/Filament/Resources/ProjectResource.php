@@ -18,6 +18,11 @@ use Carbon\Carbon;
 class ProjectResource extends Resource
 {
     protected static ?string $navigationIcon = 'heroicon-o-rocket-launch';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('project', 'Project');
+    }
     protected static ?int $navigationSort = -3;
 
     protected static ?string $recordTitleAttribute = 'nama_project';

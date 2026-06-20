@@ -29,6 +29,11 @@ class AdvanceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('advance', 'Advance');
+    }
+
     protected static ?int $navigationSort = 2;
 
     public static function getNavigationGroup(): ?string

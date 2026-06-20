@@ -21,6 +21,11 @@ class EventResource extends Resource
 {
     protected static ?string $model = Event::class;
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('event', 'Event');
+    }
     protected static ?string $navigationLabel = 'Event';
     protected static ?int $navigationSort = -1;
 

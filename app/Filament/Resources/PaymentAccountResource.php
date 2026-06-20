@@ -17,6 +17,11 @@ class PaymentAccountResource extends Resource
     protected static ?string $model = PaymentAccount::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-credit-card';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('payment_account', 'Payment account');
+    }
     protected static ?int $navigationSort = 3;
     protected static ?string $navigationGroup = 'Finance';
     protected static ?string $navigationLabel = 'Rekening';

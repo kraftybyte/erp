@@ -19,7 +19,7 @@ class TopAdvancesChart extends ChartWidget
     // =========================
     public static function canView(): bool
     {
-        return false;
+        return true;
     }
 
     protected function getHeight(): string

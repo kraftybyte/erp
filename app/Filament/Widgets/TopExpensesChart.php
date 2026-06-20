@@ -17,7 +17,7 @@ class TopExpensesChart extends ChartWidget
 
     public static function canView(): bool
     {
-        return false;
+        return true;
     }
 
 

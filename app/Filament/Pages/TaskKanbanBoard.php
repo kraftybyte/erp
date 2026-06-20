@@ -7,6 +7,7 @@ use App\Models\Task;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Event;
+use App\Models\TaskStage;
 use App\Helpers\NotifHelper;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -36,6 +37,11 @@ class TaskKanbanBoard extends KanbanBoard
     protected static string $recordTitleAttribute = 'nama_task';
     protected static string $recordStatusAttribute = 'status';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('task_kanban', 'Task');
+    }
+
     protected bool $editModalSlideOver = true;
     public bool $disableEditModal = false;
 
@@ -57,7 +63,28 @@ class TaskKanbanBoard extends KanbanBoard
     }
 
     /**
-     * Load records
+     * Override statuses to use database stages instead of enum
+     */
+    protected function statuses(): \Illuminate\Support\Collection
+    {
+        $dbStages = TaskStage::getActiveStages();
+
+        if ($dbStages->isNotEmpty()) {
+            // Return database stages as array with 'id' and 'title' keys
+            return $dbStages->map(function ($stage) {
+                return [
+                    'id' => $stage->key,
+                    'title' => $stage->name,
+                ];
+            });
+        }
+
+        // Fallback to enum
+        return static::$statusEnum::statuses();
+    }
+
+    /**
+     * Load records with eager loading
      */
     protected function records(): Collection
     {
@@ -69,16 +96,16 @@ class TaskKanbanBoard extends KanbanBoard
         }
 
         if ($user->hasRole(['super_admin', 'Director'])) {
-            return Task::with(['users', 'project'])->get();
+            return Task::with(['users', 'project', 'stage'])->get();
         }
 
-        return Task::with(['users', 'project'])
+        return Task::with(['users', 'project', 'stage'])
             ->whereHas('users', fn ($q) => $q->where('user_id', $user->id))
             ->get();
     }
 
     /**
-     * HEADER ACTION
+     * HEADER ACTION - Create New Task
      */
     protected function getHeaderActions(): array
     {
@@ -98,8 +125,9 @@ class TaskKanbanBoard extends KanbanBoard
                         'project_id'   => $data['project_id'],
                         'nama_layanan' => $data['nama_layanan'],
                         'status'       => $data['status'],
+                        'stage_key'    => $data['status'], // Also set stage_key
                         'proritas'     => $data['proritas'],
-                        'detail_task'  => $data['detail_task'],
+                        'detail_task'  => $data['detail_task'] ?? null,
                         'mulai_task'   => $data['mulai_task'],
                         'selesai_task' => $data['selesai_task'],
                         'creator_id'   => $currentUser?->id,
@@ -138,16 +166,29 @@ class TaskKanbanBoard extends KanbanBoard
     }
 
     /**
-     * FORM CREATE
+     * FORM CREATE - Tabbed Form
      */
     protected function getCreateFormSchema(): array
     {
+        // Get stages from database (dynamic) or fallback to enum
+        $stageOptions = TaskStage::getOptions();
+
+        if (empty($stageOptions)) {
+            // Fallback to enum if no DB stages
+            $stageOptions = array_combine(
+                array_map(fn ($case) => $case->value, TaskStages::cases()),
+                array_map(fn ($case) => $case->label(), TaskStages::cases())
+            );
+        }
+
         return [
             Tabs::make('Task Form')
                 ->tabs([
                     Tabs\Tab::make('Informasi Dasar')
                         ->schema([
-                            TextInput::make('nama_task')->required(),
+                            TextInput::make('nama_task')
+                                ->required()
+                                ->placeholder('Nama task...'),
 
                             Select::make('project_id')
                                 ->label('Nama Klien')
@@ -164,10 +205,12 @@ class TaskKanbanBoard extends KanbanBoard
                                     }
                                 }),
 
-                            TextInput::make('nama_layanan')->required(),
+                            TextInput::make('nama_layanan')
+                                ->required()
+                                ->placeholder('Nama layanan...'),
                         ]),
 
-                    Tabs\Tab::make('Tim& Status')
+                    Tabs\Tab::make('Tim & Status')
                         ->schema([
                             Select::make('user_id')
                                 ->multiple()
@@ -181,51 +224,70 @@ class TaskKanbanBoard extends KanbanBoard
                                 ->required(),
 
                             Select::make('status')
-                                ->options($this->getEnumOptions(TaskStages::class))
+                                ->label('Stage')
+                                ->options($stageOptions)
                                 ->required(),
 
                             Select::make('proritas')
+                                ->label('Prioritas')
                                 ->options([
                                     'Urgent' => 'Urgent',
                                     'Normal' => 'Normal',
                                     'Low'    => 'Low',
                                 ])
+                                ->default('Normal')
                                 ->required(),
                         ]),
 
                     Tabs\Tab::make('Detail')
                         ->schema([
-                            RichEditor::make('detail_task')->required(),
+                            RichEditor::make('detail_task')
+                                ->placeholder('Detail task...'),
                         ]),
 
                     Tabs\Tab::make('Jadwal')
                         ->schema([
-                            DatePicker::make('mulai_task')->required(),
-                            DatePicker::make('selesai_task')->required(),
+                            DatePicker::make('mulai_task')
+                                ->required(),
+                            DatePicker::make('selesai_task')
+                                ->required(),
                         ]),
                 ]),
         ];
     }
 
     /**
-     * EDIT MODAL
+     * EDIT MODAL - View Only
      */
     protected function getEditModalFormSchema(string|int|null $recordId): array
     {
+        // Get dynamic stage options
+        $stageOptions = TaskStage::getOptions();
+
+        if (empty($stageOptions)) {
+            $stageOptions = array_combine(
+                array_map(fn ($case) => $case->value, TaskStages::cases()),
+                array_map(fn ($case) => $case->label(), TaskStages::cases())
+            );
+        }
+
         return [
             Tabs::make('Detail Task')
                 ->tabs([
                     Tabs\Tab::make('Informasi')
                         ->schema([
                             TextInput::make('nama_task')->disabled(),
-                            Select::make('project_id')->relationship('project', 'nama_perusahaan')->disabled(),
+                            Select::make('project_id')
+                                ->relationship('project', 'nama_perusahaan')
+                                ->disabled(),
                             TextInput::make('nama_layanan')->disabled(),
                         ]),
 
                     Tabs\Tab::make('Status')
                         ->schema([
                             Select::make('status')
-                                ->options($this->getEnumOptions(TaskStages::class))
+                                ->label('Stage')
+                                ->options($stageOptions)
                                 ->disabled(),
                             TextInput::make('proritas')->disabled(),
                         ]),
@@ -238,19 +300,53 @@ class TaskKanbanBoard extends KanbanBoard
                                 DatePicker::make('selesai_task')->disabled(),
                             ]),
                         ]),
+
+                    Tabs\Tab::make('Tim')
+                        ->schema([
+                            $this->getAssigneesField(),
+                        ]),
                 ]),
         ];
     }
 
     /**
-     * ENUM HELPER
+     * Get assignees field for edit modal
+     */
+    protected function getAssigneesField(): \Filament\Forms\Components\Placeholder
+    {
+        return \Filament\Forms\Components\Placeholder::make('assignees')
+            ->label('Tim')
+            ->content(function ($record) {
+                // Handle null record (should not happen but safety check)
+                if (!$record) {
+                    return 'Loading...';
+                }
+
+                $users = $record->users;
+                if ($users->isEmpty()) {
+                    return 'Tidak ada assignee';
+                }
+
+                $html = '<div style="display: flex; flex-wrap: wrap; gap: 6px;">';
+                foreach ($users as $user) {
+                    $initial = strtoupper(substr($user->firstname ?? 'U', 0, 1));
+                    $html .= '<span style="display: inline-flex; align-items: center; padding: 4px 10px; background: #f1f5f9; border-radius: 99px; font-size: 12px;">';
+                    $html .= '<span style="width: 20px; height: 20px; border-radius: 50%; background: #0891b2; color: white; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 6px;">' . $initial . '</span>';
+                    $html .= $user->name;
+                    $html .= '</span>';
+                }
+                $html .= '</div>';
+
+                return new \Illuminate\Support\HtmlString($html);
+            });
+    }
+
+    /**
+     * ENUM HELPER - Get options from TaskStages enum
      */
     protected function getEnumOptions(string $enumClass): array
     {
-        return array_combine(
-            array_map(fn ($case) => $case->value, $enumClass::cases()),
-            array_map(fn ($case) => $case->name, $enumClass::cases())
-        );
+        return TaskStage::getOptions();
     }
 
     /**
@@ -307,16 +403,34 @@ class TaskKanbanBoard extends KanbanBoard
 
     /**
      * Get event color based on task status
+     * Now uses database colors if available
      */
     protected function getEventColor(string $status): string
     {
+        // Try to get from database
+        $stage = TaskStage::getByKey($status);
+
+        if ($stage) {
+            return $stage->color;
+        }
+
+        // Fallback to hardcoded colors
         return match ($status) {
-            'Log' => '#94a3b8',
-            'Process' => '#3b82f6',
-            'Review' => '#f59e0b',
-            'Done' => '#22c55e',
-            'Hold' => '#ef4444',
+            'log' => '#f59e0b',
+            'process' => '#0891b2',
+            'review' => '#9333ea',
+            'done' => '#16a34a',
+            'hold' => '#ef4444',
             default => '#6366f1',
         };
+    }
+
+    /**
+     * Get stage colors for view
+     * Returns array of key => [color, background]
+     */
+    public function getStageColors(): array
+    {
+        return TaskStage::getColors();
     }
 }

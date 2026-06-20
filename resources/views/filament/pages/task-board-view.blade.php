@@ -46,7 +46,6 @@
     .kanban-scroll {
         overflow-x: auto;
         padding-bottom: 1rem;
-        /* Custom scrollbar */
         scrollbar-width: thin;
         scrollbar-color: #cbd5e1 transparent;
     }
@@ -131,13 +130,6 @@
         transition: box-shadow 0.18s, transform 0.18s, border-color 0.18s;
         position: relative;
         overflow: hidden;
-    }
-    .task-card::before {
-        content: '';
-        position: absolute;
-        left: 0; top: 0; bottom: 0;
-        width: 3px;
-        border-radius: 3px 0 0 3px;
     }
     .task-card:hover {
         box-shadow: 0 4px 20px rgba(0,0,0,0.08);
@@ -237,6 +229,16 @@
     }
     .empty-col svg { color: #cbd5e1; }
     .empty-col span { font-size: 12px; color: #94a3b8; font-weight: 500; }
+
+    /* Stage stage badge (small) */
+    .stage-badge {
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
 </style>
 
 <div class="ptb-wrap">
@@ -270,21 +272,28 @@
         <div class="kanban-columns">
             @foreach ($statuses as $status)
                 @php
-                    $statusRecords = $records->where('status', $status->value);
-                    $colColor = match($status->value) {
-                        'Todo'    => '#f59e0b',
-                        'Process' => '#0891b2',
-                        'Review'  => '#9333ea',
-                        'Done'    => '#16a34a',
-                        default   => '#94a3b8',
+                    $statusId = is_array($status) ? $status['id'] : $status->id;
+                    $statusTitle = is_array($status) ? $status['title'] : ($status->title ?? $status->name ?? $statusId);
+                    $statusRecords = $records->where('status', $statusId);
+
+                    // Get colors from database (dynamic) or use fallback
+                    $stageColors = $this->getStageColors();
+                    $colColor = $stageColors[$statusId]['color'] ?? match($statusId) {
+                        'log' => '#f59e0b',
+                        'process' => '#0891b2',
+                        'review' => '#9333ea',
+                        'done' => '#16a34a',
+                        'hold' => '#ef4444',
+                        default => '#94a3b8',
                     };
-                    $colBg = match($status->value) {
-                        'Todo'    => '#fffbeb',
-                        'Process' => '#ecfeff',
-                        'Review'  => '#faf5ff',
-                        'Done'    => '#f0fdf4',
-                        default   => '#f8fafc',
-                    };
+                    $colBg = $stageColors[$statusId]['background'] ?? '#f8fafc';
+
+                    // Get stage name from database or use status title
+                    $stageName = $statusTitle;
+                    $dbStage = \App\Models\TaskStage::getByKey($statusId);
+                    if ($dbStage) {
+                        $stageName = $dbStage->name;
+                    }
                 @endphp
 
                 <div class="kanban-col">
@@ -296,7 +305,7 @@
                     <div class="col-header">
                         <div class="col-header-left">
                             <span class="col-dot" style="background:{{ $colColor }};"></span>
-                            <span class="col-title">{{ $status->name }}</span>
+                            <span class="col-title">{{ $stageName }}</span>
                         </div>
                         <span class="col-count">{{ $statusRecords->count() }}</span>
                     </div>
@@ -319,9 +328,14 @@
                                 };
                                 $isOverdue = $record->selesai_task
                                     && \Carbon\Carbon::parse($record->selesai_task)->isPast()
-                                    && $record->status !== 'Done';
+                                    && $record->status !== 'done';
 
                                 $avatarColors = ['#0891b2','#7c3aed','#db2777','#ea580c','#16a34a'];
+
+                                // Get task's stage info if available
+                                $taskStage = $record->stage;
+                                $taskStageColor = $taskStage?->color ?? $colColor;
+                                $taskStageBg = $taskStage?->background_color ?? $colBg;
                             @endphp
 
                             <div class="task-card" style="--accent:{{ $colColor }};">

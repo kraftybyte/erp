@@ -25,6 +25,11 @@ class ManageGeneral extends SettingsPage
     protected static ?int $navigationSort = 99;
     protected static ?string $navigationIcon = 'fluentui-settings-20';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('general_settings', 'General Settings');
+    }
+
     /**
      * @var array<string, mixed> | null
      */
@@ -335,6 +340,160 @@ class ManageGeneral extends SettingsPage
                                         ->height('24rem')
                                 ])
                             ]),
+                        Forms\Components\Tabs\Tab::make('Navigation Labels')
+                            ->label('Navigation')
+                            ->icon('heroicon-o-bars-3')
+                            ->schema([
+                                Forms\Components\Section::make('CRM Navigation')
+                                    ->description('Custom label untuk menu CRM')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_leads')
+                                                ->label('Leads')
+                                                ->placeholder('Leads'),
+                                            Forms\Components\TextInput::make('nav_client')
+                                                ->label('Client')
+                                                ->placeholder('Client'),
+                                            Forms\Components\TextInput::make('nav_product')
+                                                ->label('Product')
+                                                ->placeholder('Product'),
+                                        ]),
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('nav_quotation')
+                                                ->label('Quotation')
+                                                ->placeholder('Quotation'),
+                                            Forms\Components\TextInput::make('nav_contract')
+                                                ->label('Contract')
+                                                ->placeholder('Contract'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Project Navigation')
+                                    ->description('Custom label untuk menu Project')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_project')
+                                                ->label('Project')
+                                                ->placeholder('Project'),
+                                            Forms\Components\TextInput::make('nav_task_kanban')
+                                                ->label('Task Kanban')
+                                                ->placeholder('Task Kanban'),
+                                            Forms\Components\TextInput::make('nav_task_list')
+                                                ->label('Task List')
+                                                ->placeholder('Task List'),
+                                        ]),
+                                        Forms\Components\TextInput::make('nav_timeline')
+                                            ->label('Timeline')
+                                            ->placeholder('Timeline')
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Finance Navigation')
+                                    ->description('Custom label untuk menu Finance')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_expense')
+                                                ->label('Expense')
+                                                ->placeholder('Expense'),
+                                            Forms\Components\TextInput::make('nav_advance')
+                                                ->label('Advance')
+                                                ->placeholder('Advance'),
+                                            Forms\Components\TextInput::make('nav_payment_account')
+                                                ->label('Payment Account')
+                                                ->placeholder('Payment Account'),
+                                        ]),
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('nav_invoice')
+                                                ->label('Invoice')
+                                                ->placeholder('Invoice'),
+                                            Forms\Components\TextInput::make('nav_analytics')
+                                                ->label('Analytics')
+                                                ->placeholder('Analytics'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('HR Navigation')
+                                    ->description('Custom label untuk menu HR')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_employee')
+                                                ->label('Employee')
+                                                ->placeholder('Employee'),
+                                            Forms\Components\TextInput::make('nav_absence')
+                                                ->label('Absence')
+                                                ->placeholder('Absence'),
+                                            Forms\Components\TextInput::make('nav_event')
+                                                ->label('Event')
+                                                ->placeholder('Event'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Tools Navigation')
+                                    ->description('Custom label untuk menu Tools')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_social_account')
+                                                ->label('Social Account')
+                                                ->placeholder('Social Account'),
+                                            Forms\Components\TextInput::make('nav_connected_account')
+                                                ->label('Connected Account')
+                                                ->placeholder('Connected Account'),
+                                            Forms\Components\TextInput::make('nav_meta_ad')
+                                                ->label('Meta Ad Account')
+                                                ->placeholder('Meta Ad Account'),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Access & Settings Navigation')
+                                    ->description('Custom label untuk menu Access dan Settings')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+                                            Forms\Components\TextInput::make('nav_user_management')
+                                                ->label('User Management')
+                                                ->placeholder('User Management'),
+                                            Forms\Components\TextInput::make('nav_general_settings')
+                                                ->label('General Settings')
+                                                ->placeholder('General Settings'),
+                                            Forms\Components\TextInput::make('nav_mail_settings')
+                                                ->label('Mail Settings')
+                                                ->placeholder('Mail Settings'),
+                                        ]),
+                                        Forms\Components\TextInput::make('nav_pwa_settings')
+                                            ->label('PWA Settings')
+                                            ->placeholder('PWA Settings'),
+                                    ]),
+                            ]),
+                        Forms\Components\Tabs\Tab::make('Footer')
+                            ->label('Footer')
+                            ->icon('heroicon-o-identification')
+                            ->schema([
+                                Forms\Components\Section::make('Footer Options')
+                                    ->description('Pengaturan tampilan footer aplikasi')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\Toggle::make('footer_show_brand')
+                                                ->label('Tampilkan Brand Name')
+                                                ->default(true),
+                                            Forms\Components\Toggle::make('footer_show_version')
+                                                ->label('Tampilkan Version')
+                                                ->default(true),
+                                            Forms\Components\Toggle::make('footer_show_copyright')
+                                                ->label('Tampilkan Copyright')
+                                                ->default(true),
+                                        ]),
+                                    ]),
+                                Forms\Components\Section::make('Custom Text')
+                                    ->description('Teks kustom untuk footer')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('footer_brand_text')
+                                            ->label('Brand Text Override')
+                                            ->placeholder('Kosongkan untuk gunakan app name default')
+                                            ->helperText('Teks yang ditampilkan di sisi kiri footer'),
+                                        Forms\Components\TextInput::make('footer_copyright_text')
+                                            ->label('Copyright Text')
+                                            ->placeholder('All Rights Reserved.')
+                                            ->helperText('Teks copyright di sisi kanan footer'),
+                                        Forms\Components\TextInput::make('footer_custom_text')
+                                            ->label('Custom Text')
+                                            ->placeholder('e.g. Developed by Team')
+                                            ->helperText('Teks tambahan di tengah footer'),
+                                    ]),
+                            ]),
                     ])
                     ->persistTabInQueryString()
                     ->columnSpanFull(),
@@ -370,11 +529,6 @@ class ManageGeneral extends SettingsPage
     public static function getNavigationGroup(): ?string
     {
         return __("menu.nav_group.settings");
-    }
-
-    public static function getNavigationLabel(): string
-    {
-        return __("page.general_settings.navigationLabel");
     }
 
     public function getTitle(): string|Htmlable

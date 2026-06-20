@@ -32,6 +32,11 @@ class UserResource extends Resource
     protected static ?int $navigationSort = -1;
     protected static ?string $navigationIcon = 'heroicon-s-users';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('user_management', 'User management');
+    }
+
     protected static ?string $recordTitleAttribute = 'name';
 
     public static function form(Form $form): Form

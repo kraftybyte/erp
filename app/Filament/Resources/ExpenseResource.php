@@ -29,6 +29,11 @@ class ExpenseResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-pointing-out';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('expense', 'Expense');
+    }
+
     protected static ?int $navigationSort = 2;
 
     public static function getNavigationGroup(): ?string

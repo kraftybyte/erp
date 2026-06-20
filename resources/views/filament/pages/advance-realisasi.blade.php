@@ -760,14 +760,24 @@
                 </div>
 
                 {{-- Footer (Fixed) --}}
-                <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                    <button wire:click="closeBatchModal" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
-                        Batal
-                    </button>
-                    <button type="submit" form="batchForm" class="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors" style="background: {{ $themeColor }};">
-                        Simpan
-                    </button>
-                </div>
+               <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+    <button
+        wire:click="closeBatchModal"
+        type="button"
+        class="h-10 px-4 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+    >
+        Batal
+    </button>
+
+    <button
+        type="submit"
+        form="batchForm"
+        class="h-10 px-4 text-sm font-medium text-white rounded-lg shadow-sm hover:opacity-90 transition-all"
+        style="background-color: {{ $themeColor }};"
+    >
+        Simpan
+    </button>
+</div>
             </div>
         </div>
     @endif

@@ -199,13 +199,58 @@ border-bottom: 1px solid #f1f5f9;
         .table-scroll-container::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
+
+        /* Primary stat card (gradient background) */
+        .stat-card-primary {
+            background-color: var(--color-primary);
+            border: none;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .stat-card-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+
+        /* Dynamic color utilities */
+        .bg-primary { background-color: var(--color-primary); }
+        .bg-success { background-color: var(--color-success); }
+        .bg-warning { background-color: var(--color-warning); }
+        .bg-danger { background-color: var(--color-danger); }
+        .bg-info { background-color: var(--color-info); }
+        .text-primary { color: var(--color-primary); }
+        .text-success { color: var(--color-success); }
+        .text-warning { color: var(--color-warning); }
+        .text-danger { color: var(--color-danger); }
+        .text-info { color: var(--color-info); }
+        .border-primary { border-color: var(--color-primary); }
+        .bg-primary-light { background-color: var(--color-primary-rgba); }
+        .bg-success-light { background-color: var(--color-success-rgba); }
+        .bg-warning-light { background-color: var(--color-warning-rgba); }
+        .bg-danger-light { background-color: var(--color-danger-rgba); }
+        .bg-info-light { background-color: var(--color-info-rgba); }
+
+        /* CSS Custom Properties for dynamic theming */
+        :root {
+            --color-primary: {{ $primaryColor }};
+            --color-secondary: {{ $secondaryColor }};
+            --color-success: {{ $successColor }};
+            --color-warning: {{ $warningColor }};
+            --color-danger: {{ $dangerColor }};
+            --color-info: {{ $infoColor }};
+            --color-primary-rgba: {{ $rgba($primaryColor, 0.1) }};
+            --color-success-rgba: {{ $rgba($successColor, 0.1) }};
+            --color-warning-rgba: {{ $rgba($warningColor, 0.1) }};
+            --color-danger-rgba: {{ $rgba($dangerColor, 0.1) }};
+            --color-info-rgba: {{ $rgba($infoColor, 0.1) }};
+        }
     </style>
 
     {{-- ── 4-Stat Header ──────────────────────────────────────────────────── --}}
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
 
         {{-- Total Saldo (Primary color) --}}
-        <div style="background-color: {{ $primaryColor }}; border: none; border-radius: 12px; padding: 20px;">
+        <div class="stat-card-primary">
             <div class="flex items-start justify-between">
                 <div class="flex-1">
                     <p class="text-white text-[10px] font-semibold uppercase tracking-widest mb-2">Total Saldo</p>
@@ -232,8 +277,8 @@ border-bottom: 1px solid #f1f5f9;
                     </p>
                     <p class="text-gray-400 text-[11px] mt-2">Bulan ini</p>
                 </div>
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style="background-color: {{ $rgba($successColor, 0.1) }};">
-                    <svg class="w-5 h-5" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-success-light">
+                    <svg class="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
                     </svg>
                 </div>
@@ -250,8 +295,8 @@ border-bottom: 1px solid #f1f5f9;
                     </p>
                     <p class="text-gray-400 text-[11px] mt-2">Bulan ini</p>
                 </div>
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style="background-color: {{ $rgba($dangerColor, 0.1) }};">
-                    <svg class="w-5 h-5" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-danger-light">
+                    <svg class="w-5 h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14"/>
                     </svg>
                 </div>
@@ -266,8 +311,8 @@ border-bottom: 1px solid #f1f5f9;
                     <p class="text-gray-900 text-lg font-extrabold leading-tight">{{ $pendingPayments }}</p>
                     <p class="text-gray-400 text-[11px] mt-2">Expense & Advance</p>
                 </div>
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style="background-color: {{ $rgba($warningColor, 0.1) }};">
-                    <svg class="w-5 h-5" style="color: {{ $warningColor }};" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-warning-light">
+                    <svg class="w-5 h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                     </svg>
                 </div>
@@ -283,14 +328,14 @@ border-bottom: 1px solid #f1f5f9;
         <div class="fi-section-inner-ctn">
             <div class="card-header">
                 <div class="card-header-title">
-                    <div class="card-header-icon" style="background: {{ $primaryColor }};">
+                    <div class="card-header-icon bg-primary">
                         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z"/>
                         </svg>
                     </div>
                     <span>Daftar Rekening</span>
                 </div>
-                <a href="{{ url('/admin/payment-accounts') }}" class="text-[11px] font-semibold hover:opacity-75 transition-opacity" style="color: {{ $primaryColor }};">
+                <a href="{{ url('/admin/payment-accounts') }}" class="text-[11px] font-semibold hover:opacity-75 transition-opacity text-primary">
                     Kelola →
                 </a>
             </div>
@@ -313,21 +358,21 @@ border-bottom: 1px solid #f1f5f9;
                         </div>
                         <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                             <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Saldo</span>
-                            <span class="text-sm font-bold" style="color: {{ $primaryColor }};">
+                            <span class="text-sm font-bold text-primary">
                                 Rp {{ number_format($account->available_balance, 0, ',', '.') }}
                             </span>
                         </div>
                     </div>
                 @empty
                     <div class="flex flex-col items-center justify-center py-12 text-center">
-                        <div class="w-14 h-14 rounded-[10px] flex items-center justify-center mb-4" style="background-color: {{ $rgba($primaryColor, 0.08) }};">
-                            <svg class="w-6 h-6" style="color: {{ $primaryColor }};" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <div class="w-14 h-14 rounded-[10px] flex items-center justify-center mb-4 bg-primary-light">
+                            <svg class="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
                             </svg>
                         </div>
                         <p class="text-sm text-gray-500 mb-4">Belum ada rekening</p>
                         <a href="{{ url('/admin/payment-accounts/create') }}"
-                           class="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-opacity" style="background-color: {{ $primaryColor }}; color: white;">
+                           class="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-opacity bg-primary text-white">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
                             </svg>
@@ -342,13 +387,13 @@ border-bottom: 1px solid #f1f5f9;
         <div class="lg:col-span-2 fi-section-inner-ctn flex flex-col h-full">
             <div class="card-header shrink-0">
                 <div class="card-header-title">
-                    <div class="card-header-icon" style="background: {{ $primaryColor }};">
+                    <div class="card-header-icon bg-primary">
                         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
                         </svg>
                     </div>
                     <span>Transaksi Terbaru</span>
-                    <span class="badge ml-2" style="background-color: {{ $rgba($primaryColor, 0.1) }}; color: {{ $primaryColor }};">
+                    <span class="badge ml-2 bg-primary-light text-primary">
                         {{ $totalTransactions }} transaksi
                     </span>
                 </div>
@@ -415,8 +460,7 @@ border-bottom: 1px solid #f1f5f9;
                     {{-- Refresh Button --}}
                     <button
                         wire:click="refreshData()"
-                        class="h-9 text-xs px-4 rounded-lg flex items-center gap-1.5 font-medium flex-shrink-0 whitespace-nowrap"
-                        style="background-color: {{ $primaryColor }}; color: white;">
+                        class="h-9 text-xs px-4 rounded-lg flex items-center gap-1.5 font-medium flex-shrink-0 whitespace-nowrap bg-primary text-white">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
@@ -443,14 +487,13 @@ border-bottom: 1px solid #f1f5f9;
                             <tr class="hover:bg-gray-50">
                                 {{-- Tipe --}}
                                 <td style="text-align: center; width: 50px;">
-                                    <div class="w-8 h-8 rounded-lg inline-flex items-center justify-center flex-shrink-0"
-                                        style="background-color: {{ $transaction->type === 'in' ? $rgba($successColor, 0.1) : $rgba($dangerColor, 0.1) }};">
+                                    <div class="w-8 h-8 rounded-lg inline-flex items-center justify-center flex-shrink-0 {{ $transaction->type === 'in' ? 'bg-success-light' : 'bg-danger-light' }}">
                                         @if($transaction->type === 'in')
-                                            <svg class="w-4 h-4" style="color: {{ $successColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                            <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
                                             </svg>
                                         @else
-                                            <svg class="w-4 h-4" style="color: {{ $dangerColor }};" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                            <svg class="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5"/>
                                             </svg>
                                         @endif
@@ -494,7 +537,7 @@ border-bottom: 1px solid #f1f5f9;
                                 </td>
                                 {{-- Jumlah --}}
                                 <td style="text-align: right; white-space: nowrap;">
-                                    <span class="text-xs font-semibold whitespace-nowrap" style="color: {{ $transaction->type === 'in' ? $successColor : $dangerColor }};">
+                                    <span class="text-xs font-semibold whitespace-nowrap {{ $transaction->type === 'in' ? 'text-success' : 'text-danger' }}">
                                         {{ $transaction->type === 'in' ? '+' : '-' }}Rp {{ number_format((float) $transaction->amount, 0, ',', '.') }}
                                     </span>
                                 </td>
@@ -521,8 +564,7 @@ border-bottom: 1px solid #f1f5f9;
                     <button
                         wire:click="loadMoreTransactions()"
                         wire:loading.attr="disabled"
-                        class="px-6 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
-                        style="background-color: {{ $primaryColor }}; color: white;">
+                        class="px-6 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all bg-primary text-white">
                         <span wire:loading.remove wire:target="loadMoreTransactions" class="flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -553,7 +595,7 @@ border-bottom: 1px solid #f1f5f9;
     <div class="fi-section-inner-ctn mb-6">
         <div class="card-header">
             <div class="card-header-title">
-                <div class="card-header-icon" style="background: {{ $infoColor }};">
+                <div class="card-header-icon bg-info">
                     <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/>
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/>
@@ -578,8 +620,8 @@ border-bottom: 1px solid #f1f5f9;
                         <tr>
                             <td>
                                 @if($index === 0)
-                                    <span class="badge" style="background-color: {{ $rgba($primaryColor, 0.1) }}; color: {{ $primaryColor }};">
-                                        <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ $primaryColor }};"></span>
+                                    <span class="badge bg-primary-light text-primary">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
                                         {{ $stat['month'] }}
                                     </span>
                                 @else
@@ -588,19 +630,19 @@ border-bottom: 1px solid #f1f5f9;
                                     </span>
                                 @endif
                             </td>
-                            <td style="text-align: right; font-weight: 600; color: {{ $successColor }};">
+                            <td style="text-align: right; font-weight: 600;" class="text-success">
                                 +Rp {{ number_format($stat['in'], 0, ',', '.') }}
                             </td>
-                            <td style="text-align: right; font-weight: 600; color: {{ $dangerColor }};">
+                            <td style="text-align: right; font-weight: 600;" class="text-danger">
                                 -Rp {{ number_format($stat['out'], 0, ',', '.') }}
                             </td>
                             <td style="text-align: right;">
                                 @if($stat['net'] >= 0)
-                                    <span class="badge" style="background-color: {{ $rgba($successColor, 0.1) }}; color: {{ $successColor }};">
+                                    <span class="badge bg-success-light text-success">
                                         +Rp {{ number_format($stat['net'], 0, ',', '.') }}
                                     </span>
                                 @else
-                                    <span class="badge" style="background-color: {{ $rgba($dangerColor, 0.1) }}; color: {{ $dangerColor }};">
+                                    <span class="badge bg-danger-light text-danger">
                                         -Rp {{ number_format(abs($stat['net']), 0, ',', '.') }}
                                     </span>
                                 @endif
@@ -617,7 +659,7 @@ border-bottom: 1px solid #f1f5f9;
 
         {{-- Tambah Rekening --}}
         <a href="{{ url('/admin/payment-accounts/create') }}"
-           class="quick-action" style="background: {{ $primaryColor }};">
+           class="quick-action bg-primary">
             <div class="quick-action-icon">
                 <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
@@ -631,7 +673,7 @@ border-bottom: 1px solid #f1f5f9;
 
         {{-- Bayar Expense --}}
         <a href="{{ url('/admin/expenses') }}"
-           class="quick-action" style="background-color: {{ $dangerColor }};">
+           class="quick-action bg-danger">
             <div class="quick-action-icon">
                 <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"/>
@@ -644,7 +686,7 @@ border-bottom: 1px solid #f1f5f9;
                 </p>
             </div>
             @if($pendingExpense > 0)
-                <span class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold" style="background: rgba(255,255,255,0.2);">
+                <span class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold bg-white/20">
                     {{ $pendingExpense }}
                 </span>
             @endif
@@ -652,7 +694,7 @@ border-bottom: 1px solid #f1f5f9;
 
         {{-- Bayar Advance --}}
         <a href="{{ url('/admin/advances') }}"
-           class="quick-action" style="background-color: {{ $warningColor }};">
+           class="quick-action bg-warning">
             <div class="quick-action-icon">
                 <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
@@ -665,7 +707,7 @@ border-bottom: 1px solid #f1f5f9;
                 </p>
             </div>
             @if($pendingAdvance > 0)
-                <span class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold" style="background: rgba(255,255,255,0.2);">
+                <span class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold bg-white/20">
                     {{ $pendingAdvance }}
                 </span>
             @endif

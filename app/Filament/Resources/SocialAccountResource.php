@@ -21,6 +21,11 @@ class SocialAccountResource extends Resource
 {
     protected static ?string $model = SocialAccount::class;
     protected static ?string $navigationIcon = 'heroicon-o-photo';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('social_account', 'Social account');
+    }
     protected static ?string $navigationLabel = 'Social Accounts';
     protected static ?string $navigationGroup = 'Tools';
 

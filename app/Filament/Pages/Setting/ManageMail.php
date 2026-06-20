@@ -24,6 +24,11 @@ class ManageMail extends SettingsPage
     protected static ?int $navigationSort = 99;
     protected static ?string $navigationIcon = 'fluentui-mail-settings-20';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('mail_settings', 'Mail Settings');
+    }
+
     /**
      * @var array<string, mixed> | null
      */
@@ -191,11 +196,6 @@ class ManageMail extends SettingsPage
     public static function getNavigationGroup(): ?string
     {
         return __("menu.nav_group.settings");
-    }
-
-    public static function getNavigationLabel(): string
-    {
-        return __("page.mail_settings.navigationLabel");
     }
 
     public function getTitle(): string|Htmlable

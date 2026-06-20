@@ -17,6 +17,11 @@ class MetaAdAccountResource extends Resource
 {
     protected static ?string $model = MetaAdAccount::class;
     protected static ?string $navigationIcon = 'heroicon-o-megaphone';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('meta_ad', 'Meta ad');
+    }
     protected static ?string $navigationLabel = 'Meta Ads Accounts';
     protected static ?string $navigationGroup = 'Tools';
 

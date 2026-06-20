@@ -24,6 +24,11 @@ class ProjectTimelineBoard extends Page
     public string $viewMode = 'board'; // board | list
     public ?string $lastUpdatedAt = null;
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('timeline', 'Board Project Timeline');
+    }
+
     public static function canAccess(): bool
     {
         /** @var \App\Models\User $user */

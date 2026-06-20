@@ -7,6 +7,7 @@ use App\Helpers\ColorHelper;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Project;
+use App\Models\TaskStage;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Carbon\Carbon;
 use Filament\Forms;
@@ -30,6 +31,11 @@ class TaskResource extends Resource implements HasShieldPermissions
     protected static ?string $navigationLabel = 'List Task';
     protected static bool $shouldRegisterNavigation = false;
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('task_list', 'List Task');
+    }
+
     public static function getPermissionPrefixes(): array
     {
         return [
@@ -52,6 +58,8 @@ class TaskResource extends Resource implements HasShieldPermissions
                             Forms\Components\Hidden::make('creator_id')
                                 ->required()
                                 ->default(fn() => auth()->id()),
+                            Forms\Components\Hidden::make('stage_key')
+                                ->default(fn(callable $get) => $get('status')),
                             Forms\Components\TextInput::make('nama_task')
                                 ->label('Judul Task')
                                 ->required()
@@ -111,14 +119,25 @@ class TaskResource extends Resource implements HasShieldPermissions
                                 }),
                             Forms\Components\Select::make('status')
                                 ->label('Status')
-                                ->options([
-                                    'Log' => 'Log',
-                                    'Process' => 'Process',
-                                    'Review' => 'Review',
-                                    'Done' => 'Done',
-                                    'Hold' => 'Hold',
-                                ])
-                                ->required(),
+                                ->options(function () {
+                                    $options = TaskStage::getOptions();
+                                    if (empty($options)) {
+                                        return [
+                                            'log' => 'Log',
+                                            'process' => 'Process',
+                                            'review' => 'Review',
+                                            'done' => 'Done',
+                                            'hold' => 'Hold',
+                                        ];
+                                    }
+                                    return $options;
+                                })
+                                ->required()
+                                ->reactive()
+                                ->afterStateUpdated(function ($state, callable $set) {
+                                    // Also update stage_key when status changes
+                                    $set('stage_key', $state);
+                                }),
                             Forms\Components\Select::make('proritas')
                                 ->label('Proritas')
                                 ->required()

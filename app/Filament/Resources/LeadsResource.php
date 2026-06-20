@@ -26,6 +26,11 @@ class LeadsResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'nama_pic';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('leads', 'Leads');
+    }
+
     public static function form(Form $form): Form
     {
         return $form

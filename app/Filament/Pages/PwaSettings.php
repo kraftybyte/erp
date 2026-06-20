@@ -21,6 +21,11 @@ class PwaSettings extends Page
 
     protected static string $view = 'filament.pages.pwa-settings';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('pwa_settings', 'PWA & Notifications');
+    }
+
     public array $pushSettings = [];
     public bool $isSubscribed = false;
     public ?string $pushStatus = null;

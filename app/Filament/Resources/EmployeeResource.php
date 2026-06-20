@@ -16,6 +16,11 @@ class EmployeeResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('employee', 'Employee');
+    }
+
     protected static ?string $navigationLabel = 'Employee';
     protected static ?int $navigationSort = -0;
     

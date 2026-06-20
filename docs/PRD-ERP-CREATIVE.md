@@ -1,8 +1,8 @@
 # PRD - ERP Creative
 ## Product Requirements Document for Digital Agency Management System
 
-**Version**: 3.0
-**Last Updated**: 2026-06-11
+**Version**: 3.1
+**Last Updated**: 2026-06-20
 **Company**: ERP Creative
 **Type**: Business Management ERP for Digital Marketing Agency
 
@@ -156,14 +156,33 @@
   - Client info auto-populate
 
 #### 3.2.2 Task
-- **Fields**: nama_task, project_id, deal_id, detail_task, mulai_task, selesai_task, status, proritas, nama_layanan, creator_id, users (many-to-many)
-- **Status (TaskStages Enum)**: Log, Process, Review, Done, Hold
+- **Fields**: nama_task, project_id, deal_id, detail_task, mulai_task, selesai_task, status, stage_key, proritas, nama_layanan, creator_id, users (many-to-many)
+- **Status (TaskStages)**: Database-backed configuration dengan TaskStage model
+  - Default stages: Log, Process, Review, Done, Hold
+  - Each stage has: key, name, color, background_color, sort_order, is_active
 - **Priority**: Urgent, Normal, Low
 - **Fitur**:
   - Kanban Board (Mokhosh/FilamentKanban)
+  - **Dynamic Task Stages** - Admin bisa tambah, edit, hapus, reorder stages via UI
   - Multi-user assignment
   - Notification on assignment (TaskObserver)
   - Performance tracking
+
+#### 3.2.3 TaskStages (Database Configuration)
+- **Table**: `task_stages`
+- **Fields**:
+  - `key` - Unique identifier (e.g., log, process, review)
+  - `name` - Display name in UI (customizable)
+  - `color` - Hex color for accent/header
+  - `background_color` - Hex color for column background
+  - `sort_order` - Order in kanban board
+  - `is_active` - Enable/disable stage
+- **Access**: Settings → Task Stages
+- **Fitur**:
+  - CRUD operations via Filament Resource
+  - Drag-drop reorder
+  - Delete protection (can't delete if tasks assigned)
+  - Cache-backed for performance
 
 ### 3.3 Finance Module
 
@@ -396,6 +415,7 @@ Task::whereHas('users', fn($q) => $q->where('user_id', $user->id))
 | TrendEngine | Historical trends & forecasting |
 | FunnelIntelligenceEngine | CRM funnel metrics |
 | FileService | Secure file operations |
+| NavigationHelper | Dynamic navigation label helper |
 
 ---
 
@@ -427,10 +447,49 @@ Task::whereHas('users', fn($q) => $q->where('user_id', $user->id))
 - inv_bank_name, inv_bank_account, inv_bank_account_name
 - inv_signature_name, inv_signature_image
 
+// Navigation Labels (v3.1)
+- nav_leads, nav_client, nav_product, nav_quotation, nav_contract
+- nav_project, nav_task_kanban, nav_task_list, nav_timeline
+- nav_expense, nav_advance, nav_payment_account, nav_invoice, nav_analytics
+- nav_employee, nav_absence, nav_event
+- nav_social_account, nav_connected_account, nav_meta_ad
+- nav_user_management, nav_general_settings, nav_mail_settings, nav_pwa_settings
+
+// Footer Settings (v3.1)
+- footer_show_brand, footer_brand_text
+- footer_show_version, footer_show_copyright
+- footer_copyright_text, footer_custom_text
+
 // PWA
 - pwa_name, pwa_short_name, pwa_background_color, pwa_theme_color
 - vapid_public_key, vapid_private_key
 ```
+
+### 7.2 Navigation Labels [v3.1]
+
+Admin dapat custom nama menu di sidebar melalui **Settings → General Settings → Tab Navigation**.
+
+| Section | Menu Items |
+|---------|------------|
+| **CRM** | Leads, Client, Product, Quotation, Contract |
+| **Project** | Project, Task Kanban, Task List, Timeline |
+| **Finance** | Expense, Advance, Payment Account, Invoice, Analytics |
+| **HR** | Employee, Absence, Event |
+| **Tools** | Social Account, Connected Account, Meta Ad Account |
+| **Access & Settings** | User Management, General Settings, Mail Settings, PWA Settings |
+
+### 7.3 Footer Settings [v3.1]
+
+Admin dapat customize footer aplikasi melalui **Settings → General Settings → Tab Footer**.
+
+| Setting | Description |
+|---------|-------------|
+| `footer_show_brand` | Toggle menampilkan brand name |
+| `footer_brand_text` | Override teks brand (kosong = app name) |
+| `footer_show_version` | Toggle menampilkan versi app |
+| `footer_show_copyright` | Toggle menampilkan copyright |
+| `footer_copyright_text` | Teks copyright (default: All Rights Reserved.) |
+| `footer_custom_text` | Teks tambahan di tengah footer |
 
 ---
 
@@ -482,6 +541,8 @@ background: #f8fafc;
 
 ## 9. Navigation Structure
 
+> **Note**: Menu labels can be customized via **Settings → General Settings → Navigation Tab** [v3.1]
+
 ```
 CRM
 ├── Leads
@@ -519,6 +580,7 @@ Settings
 ├── General Settings
 ├── Mail Settings
 ├── PWA Settings
+├── Task Stages [v3.1]
 ```
 
 ---
@@ -633,10 +695,12 @@ php artisan test
 | PDF not showing | `php artisan view:clear && php artisan cache:clear` |
 | Token errors | Check APP_KEY in .env (re-encrypt tokens if changed) |
 | Widget not loading | Check widget class extends correctly |
-| Kanban not working | Verify TaskStages enum has all status values |
+| Kanban not working | Verify TaskStages database has data, run seeder if needed |
+| Task Stages not showing | Run `php artisan db:seed --class=TaskStageSeeder` |
 | Quotation UUID duplicates | Check generateUuid() logic, add unique index |
 | Push notifications not working | Check VAPID keys, user push_subscription |
 | Announcement table blank | Use `modifyQueryUsing` instead of `query` |
+| Navigation labels not updating | Clear cache: `php artisan cache:clear && php artisan filament:clear-cached-components` |
 
 ---
 
@@ -665,6 +729,33 @@ public static function table(Table $table): Table
 ---
 
 ## 15. Changelog
+
+### v3.1 (2026-06-20)
+- **Dynamic Task Stages**
+  - TaskStage model - Database-backed configuration for Kanban stages
+  - TaskStageResource - Filament resource for CRUD operations
+  - Default stages: Log, Process, Review, Done, Hold
+  - Each stage has customizable: name, color, background_color, sort_order
+  - Cache-backed for performance
+  - Admin can add, edit, delete, reorder stages via UI
+  - Access: Settings → Task Stages
+
+- **Customizable Navigation Labels**
+  - NavigationHelper class - Helper for dynamic navigation labels
+  - 25+ menu labels configurable via General Settings
+  - Sections: CRM, Project, Finance, HR, Tools, Access, Settings
+  - Access: Settings → General Settings → Navigation Tab
+
+- **Customizable Footer**
+  - footer_show_brand, footer_show_version, footer_show_copyright toggles
+  - footer_brand_text, footer_copyright_text, footer_custom_text customization
+  - Access: Settings → General Settings → Footer Tab
+
+- **PRD Documentation Update**
+  - Added TaskStages database configuration
+  - Added Navigation Labels settings
+  - Added Footer Settings
+  - Updated navigation structure
 
 ### v2.2 (2026-06-02)
 - **Budget to PaymentAccount Restructuring**

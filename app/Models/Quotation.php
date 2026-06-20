@@ -49,4 +49,14 @@ class Quotation extends Model
         return $this->hasMany(QuotationItem::class);
     }
 
+    public function deal()
+    {
+        return $this->belongsTo(Deal::class, 'nama_perusahaan', 'nama_perusahaan');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
 }

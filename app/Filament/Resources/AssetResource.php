@@ -88,24 +88,23 @@ class AssetResource extends Resource
             Forms\Components\FileUpload::make('bon_invoice')
                 ->label('Bon / Invoice')
                 ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
-                ->maxSize(5120) // 5MB
+                ->maxSize(2048) // 2MB (sesuaikan dengan PHP limit)
                 ->directory('asset/invoice/' . now()->format('Y/m/d'))
                 ->nullable()
                 ->validationMessages([
-                    'max' => 'Ukuran file maksimal 5MB.',
+                    'max' => 'Ukuran file maksimal 2MB.',
                     'mimes' => 'Format file harus JPG, PNG, WebP, atau PDF.',
                 ]),
 
             Forms\Components\FileUpload::make('foto')
                 ->label('Foto Barang')
                 ->image()
-                ->imageResizeMaxWidth(1920)
-                ->imageResizeMaxHeight(1920)
-                ->maxSize(5120) // 5MB
+                ->maxSize(2048) // 2MB (sesuaikan dengan PHP limit)
                 ->directory('assets')
                 ->nullable()
+                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                 ->validationMessages([
-                    'max' => 'Ukuran file maksimal 5MB.',
+                    'max' => 'Ukuran file maksimal 2MB.',
                     'image' => 'File harus berupa gambar.',
                 ]),
 

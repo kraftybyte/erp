@@ -52,6 +52,40 @@ class GeneralSettings extends Settings
     public mixed $quotation_prefix = 'DG';
     public mixed $invoice_prefix = 'INV';
 
+    // Navigation Label Settings
+    public mixed $nav_leads = 'Leads';
+    public mixed $nav_client = 'Client';
+    public mixed $nav_product = 'Product';
+    public mixed $nav_quotation = 'Quotation';
+    public mixed $nav_contract = 'Contract';
+    public mixed $nav_project = 'Project';
+    public mixed $nav_task_kanban = 'Task Kanban';
+    public mixed $nav_task_list = 'Task List';
+    public mixed $nav_timeline = 'Timeline';
+    public mixed $nav_expense = 'Expense';
+    public mixed $nav_advance = 'Advance';
+    public mixed $nav_payment_account = 'Payment Account';
+    public mixed $nav_invoice = 'Invoice';
+    public mixed $nav_analytics = 'Analytics';
+    public mixed $nav_employee = 'Employee';
+    public mixed $nav_absence = 'Absence';
+    public mixed $nav_event = 'Event';
+    public mixed $nav_social_account = 'Social Account';
+    public mixed $nav_connected_account = 'Connected Account';
+    public mixed $nav_meta_ad = 'Meta Ad Account';
+    public mixed $nav_user_management = 'User Management';
+    public mixed $nav_general_settings = 'General Settings';
+    public mixed $nav_mail_settings = 'Mail Settings';
+    public mixed $nav_pwa_settings = 'PWA Settings';
+
+    // Footer Settings
+    public mixed $footer_show_brand = true;
+    public mixed $footer_brand_text = '';
+    public mixed $footer_show_version = true;
+    public mixed $footer_show_copyright = true;
+    public mixed $footer_copyright_text = '';
+    public mixed $footer_custom_text = '';
+
     public static function group(): string
     {
         return 'general';
@@ -97,6 +131,38 @@ class GeneralSettings extends Settings
             // ID Prefix Settings
             'quotation_prefix' => 'DG',
             'invoice_prefix' => 'INV',
+            // Navigation Labels
+            'nav_leads' => 'Leads',
+            'nav_client' => 'Client',
+            'nav_product' => 'Product',
+            'nav_quotation' => 'Quotation',
+            'nav_contract' => 'Contract',
+            'nav_project' => 'Project',
+            'nav_task_kanban' => 'Task Kanban',
+            'nav_task_list' => 'Task List',
+            'nav_timeline' => 'Timeline',
+            'nav_expense' => 'Expense',
+            'nav_advance' => 'Advance',
+            'nav_payment_account' => 'Payment Account',
+            'nav_invoice' => 'Invoice',
+            'nav_analytics' => 'Analytics',
+            'nav_employee' => 'Employee',
+            'nav_absence' => 'Absence',
+            'nav_event' => 'Event',
+            'nav_social_account' => 'Social Account',
+            'nav_connected_account' => 'Connected Account',
+            'nav_meta_ad' => 'Meta Ad Account',
+            'nav_user_management' => 'User Management',
+            'nav_general_settings' => 'General Settings',
+            'nav_mail_settings' => 'Mail Settings',
+            'nav_pwa_settings' => 'PWA Settings',
+            // Footer Settings
+            'footer_show_brand' => true,
+            'footer_brand_text' => '',
+            'footer_show_version' => true,
+            'footer_show_copyright' => true,
+            'footer_copyright_text' => 'All Rights Reserved.',
+            'footer_custom_text' => '',
         ];
     }
 
@@ -181,5 +247,89 @@ class GeneralSettings extends Settings
             $labels[$cat['color']] = $cat['label'];
         }
         return $labels;
+    }
+
+    /**
+     * Get navigation label by key
+     *
+     * @param string $key The navigation key (e.g., 'leads', 'client', 'expense')
+     * @return string The custom label or default
+     */
+    public static function getNavigationLabel(string $key): string
+    {
+        $settings = app(self::class);
+        $property = 'nav_' . $key;
+
+        return $settings->{$property} ?? self::getDefaultNavigationLabel($key);
+    }
+
+    /**
+     * Get default navigation label
+     */
+    private static function getDefaultNavigationLabel(string $key): string
+    {
+        $defaults = [
+            'leads' => 'Leads',
+            'client' => 'Client',
+            'product' => 'Product',
+            'quotation' => 'Quotation',
+            'contract' => 'Contract',
+            'project' => 'Project',
+            'task_kanban' => 'Task Kanban',
+            'task_list' => 'Task List',
+            'timeline' => 'Timeline',
+            'expense' => 'Expense',
+            'advance' => 'Advance',
+            'payment_account' => 'Payment Account',
+            'invoice' => 'Invoice',
+            'analytics' => 'Analytics',
+            'employee' => 'Employee',
+            'absence' => 'Absence',
+            'event' => 'Event',
+            'social_account' => 'Social Account',
+            'connected_account' => 'Connected Account',
+            'meta_ad' => 'Meta Ad Account',
+            'user_management' => 'User Management',
+            'general_settings' => 'General Settings',
+            'mail_settings' => 'Mail Settings',
+            'pwa_settings' => 'PWA Settings',
+        ];
+
+        return $defaults[$key] ?? ucfirst(str_replace('_', ' ', $key));
+    }
+
+    /**
+     * Get all navigation labels as array
+     */
+    public static function getNavigationLabels(): array
+    {
+        $settings = app(self::class);
+
+        return [
+            'leads' => $settings->nav_leads,
+            'client' => $settings->nav_client,
+            'product' => $settings->nav_product,
+            'quotation' => $settings->nav_quotation,
+            'contract' => $settings->nav_contract,
+            'project' => $settings->nav_project,
+            'task_kanban' => $settings->nav_task_kanban,
+            'task_list' => $settings->nav_task_list,
+            'timeline' => $settings->nav_timeline,
+            'expense' => $settings->nav_expense,
+            'advance' => $settings->nav_advance,
+            'payment_account' => $settings->nav_payment_account,
+            'invoice' => $settings->nav_invoice,
+            'analytics' => $settings->nav_analytics,
+            'employee' => $settings->nav_employee,
+            'absence' => $settings->nav_absence,
+            'event' => $settings->nav_event,
+            'social_account' => $settings->nav_social_account,
+            'connected_account' => $settings->nav_connected_account,
+            'meta_ad' => $settings->nav_meta_ad,
+            'user_management' => $settings->nav_user_management,
+            'general_settings' => $settings->nav_general_settings,
+            'mail_settings' => $settings->nav_mail_settings,
+            'pwa_settings' => $settings->nav_pwa_settings,
+        ];
     }
 }

@@ -78,7 +78,7 @@ class InvoiceStatsOverview extends BaseWidget
 
     public static function canView(): bool
     {
-        return false;
+        return true;
     }
 
     // =========================

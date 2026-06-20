@@ -16,6 +16,11 @@ class ProductResource extends Resource
 {
     protected static ?string $model = Product::class;
     protected static ?string $navigationIcon = 'heroicon-o-cube-transparent';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('product', 'Product');
+    }
     protected static ?int $navigationSort = -4;
 
     protected static ?string $recordTitleAttribute = 'nama_layanan';

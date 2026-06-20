@@ -27,6 +27,11 @@ class AbsenceResource extends Resource
 {
     protected static ?string $model = Absence::class;
     protected static ?string $navigationIcon = 'heroicon-o-clock';
+
+    public static function getNavigationLabel(): string
+    {
+        return \App\Helpers\NavigationHelper::getLabel('absence', 'Absence');
+    }
     protected static ?int $navigationSort = 2;
     protected static ?string $navigationLabel = 'Absence';
 

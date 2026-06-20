@@ -55,4 +55,12 @@ class Task extends Model
     {
         return $this->hasOne(Event::class);
     }
+
+    /**
+     * Get the stage (TaskStage) for this task
+     */
+    public function stage()
+    {
+        return $this->belongsTo(TaskStage::class, 'stage_key', 'key');
+    }
 }

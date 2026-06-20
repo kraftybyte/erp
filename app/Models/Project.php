@@ -19,6 +19,12 @@ class Project extends Model
         'alamat',
         'nama_pic',
         'notes',
+        'status',
+    ];
+
+    protected $casts = [
+        'timeline_mulai' => 'date',
+        'timeline_selesai' => 'date',
     ];
 
     public function Deal()
