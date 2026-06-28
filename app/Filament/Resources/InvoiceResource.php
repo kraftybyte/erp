@@ -21,6 +21,7 @@ use Filament\Forms\Form;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Request;
 
 /**
  * Extended InvoiceResource with PaymentAccount integration
@@ -83,12 +84,12 @@ class InvoiceResource extends BaseInvoiceResource
                 Forms\Components\TextInput::make('uuid')
                     ->unique(ignoreRecord: true)
                     ->label('UUID')
-                    ->default(fn() => self::generateUuid(request()->input('type', 'invoice')))
+                    ->default(fn() => InvoiceResource::generateUuid(Request::input('type', 'invoice')))
                     ->readOnly()
                     ->columnSpanFull()
                     ->maxLength(255)
                     ->reactive()
-                    ->afterStateUpdated(fn(Forms\Set $set, $state) => $set('uuid', self::generateUuid($state))),
+                    ->afterStateUpdated(fn(Forms\Set $set, $state) => $set('uuid', InvoiceResource::generateUuid($state))),
 
                 Forms\Components\Grid::make(['sm' => 1, 'lg' => 2])->schema([
                     // Customer Data Section
