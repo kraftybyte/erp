@@ -134,9 +134,10 @@ class RealisasiAdvance extends Page
 
         if (empty($validItems)) {
             Notification::make()
-                ->title('Gagal menyimpan')
-                ->body('Minimal harus ada 1 item dengan nama dan harga.')
-                ->danger()
+                ->title('⚠️ Item Kosong')
+                ->body('Minimal harus ada 1 item dengan nama dan harga yang valid.')
+                ->warning()
+                ->icon('heroicon-o-exclamation-circle')
                 ->send();
             return;
         }
@@ -179,20 +180,35 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('Batch berhasil ditambahkan')
+                ->title('✅ Batch Berhasil Ditambahkan')
+                ->body('Batch realization baru telah ditambahkan.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal menyimpan batch')
+                ->title('❌ Gagal Menyimpan Batch')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }
 
     public function deleteBatch(int $batchId): void
     {
+        // Check permission - only Finance, Director, Super Admin can delete
+        $user = auth()->user();
+        if (!$user->hasRole(['super_admin', 'Finance', 'Director'])) {
+            Notification::make()
+                ->title('⚠️ Tidak Memiliki Izin')
+                ->body('Hanya Finance, Director, atau Super Admin yang dapat menghapus batch.')
+                ->danger()
+                ->icon('heroicon-o-shield-exclamation')
+                ->send();
+            return;
+        }
+
         try {
             $batch = Realisasi::find($batchId);
             $service = new RealisasiService();
@@ -200,14 +216,17 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('Batch berhasil dihapus')
+                ->title('✅ Batch Berhasil Dihapus')
+                ->body('Batch realization berhasil dihapus dan data sudah diperbarui.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal menghapus batch')
+                ->title('❌ Gagal Menghapus Batch')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }
@@ -217,8 +236,9 @@ class RealisasiAdvance extends Page
         if (!$this->returnAttachment) {
             Notification::make()
                 ->title('Gagal')
-                ->body('Bukti return harus diunggah.')
-                ->danger()
+                ->body('⚠️ Bukti return harus diunggah terlebih dahulu.')
+                ->warning()
+                ->icon('heroicon-o-exclamation-circle')
                 ->send();
             return;
         }
@@ -234,18 +254,20 @@ class RealisasiAdvance extends Page
             $service->processReturn($this->record, $attachmentPath);
 
             Notification::make()
-                ->title('Return berhasil')
-                ->body('Rp ' . number_format($this->remaining, 0, ',', '.') . ' telah dicatat sebagai return.')
+                ->title('✅ Return Berhasil Dicatat')
+                ->body('Rp ' . number_format($this->remaining, 0, ',', '.') . ' telah dicatat sebagai return dan saldo sudah dikembalikan.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
 
             $this->closeReturnModal();
             $this->refreshStats();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal memproses return')
+                ->title('❌ Gagal Memproses Return')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }
@@ -259,14 +281,17 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('Overrun disetujui')
+                ->title('✅ Overrun Disetujui')
+                ->body('Kelebihan amount sudah disetujui. User dapat menambah batch lagi.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal menyetujui overrun')
+                ->title('❌ Gagal Menyetujui Overrun')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }
@@ -280,16 +305,19 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('Advance diselesaikan')
+                ->title('✅ Advance Diselesaikan')
+                ->body('Advance berhasil diselesaikan. Status berubah menjadi Selesai.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
 
             $this->redirect('/admin/advances', navigate: true);
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal menyelesaikan advance')
+                ->title('❌ Gagal Menyelesaikan Advance')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }
@@ -329,14 +357,17 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('Item berhasil diupdate')
+                ->title('✅ Item Berhasil Diupdate')
+                ->body('Item realization telah diperbarui.')
                 ->success()
+                ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('Gagal mengupdate item')
+                ->title('❌ Gagal Mengupdate Item')
                 ->body($e->getMessage())
                 ->danger()
+                ->icon('heroicon-o-x-circle')
                 ->send();
         }
     }

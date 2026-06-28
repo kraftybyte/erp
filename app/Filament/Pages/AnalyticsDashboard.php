@@ -2,22 +2,24 @@
 
 namespace App\Filament\Pages;
 
-use Filament\Pages\Page;
-use App\Models\Leads;
-use App\Models\Deal;
-use App\Models\Quotation;
-use App\Models\Expense;
 use App\Models\Advance;
-use App\Models\Transaction;
-use App\Models\PaymentAccount;
-use App\Models\Task;
 use App\Models\Asset;
+use App\Models\Deal;
+use App\Models\Expense;
+use App\Models\Leads;
+use App\Models\PaymentAccount;
 use App\Models\Project;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Quotation;
+use App\Models\Realisasi;
+use App\Models\RealisasiItem;
+use App\Models\Task;
+use App\Models\Transaction;
 use Carbon\Carbon;
-use BezhanSalleh\FilamentShield\Traits\HasPageShield;
+use Filament\Pages\Page;
 use Livewire\Attributes\Url;
 use Livewire\WithPagination;
+use TomatoPHP\FilamentInvoices\Models\Invoice;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 
 class AnalyticsDashboard extends Page
 {
@@ -487,9 +489,79 @@ class AnalyticsDashboard extends Page
             'expenses' => ['label' => 'Expenses', 'icon' => 'credit-card'],
             'advances' => ['label' => 'Advances', 'icon' => 'banknotes'],
             'transactions' => ['label' => 'Transactions', 'icon' => 'arrows-right-left'],
+            'advance_analysis' => ['label' => 'Analisis Advance', 'icon' => 'chart-bar-square'],
             'pipeline' => ['label' => 'Pipeline', 'icon' => 'funnel'],
             'assets' => ['label' => 'Assets', 'icon' => 'cube'],
             'projects' => ['label' => 'Projects', 'icon' => 'folder'],
+        ];
+    }
+
+    // ============================================
+    // ADVANCE ANALYSIS DATA (By Project & Items)
+    // ============================================
+    public function getAdvanceAnalysisData(): array
+    {
+        $startDate = $this->dateFrom ? Carbon::parse($this->dateFrom)->startOfDay() : Carbon::now()->startOfMonth();
+        $endDate = $this->dateTo ? Carbon::parse($this->dateTo)->endOfDay() : Carbon::now()->endOfDay();
+
+        // Get advances with relations
+        $advances = Advance::with(['project.deal', 'user', 'realizasis.items'])
+            ->whereBetween('submission_date', [$startDate, $endDate])
+            ->get();
+
+        // Summary
+        $paidAdvances = $advances->whereIn('status', ['Disetujui', 'Dibayarkan', 'Selesai']);
+        $totalPaid = $paidAdvances->sum('paid');
+        $totalRealisasi = $advances->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal'));
+        $pendingAdvances = $advances->where('status', 'Pending');
+        $pendingCount = $pendingAdvances->count();
+        $pendingAmount = $pendingAdvances->sum('amount');
+
+        // By Project
+        $byProject = $advances->filter(fn($a) => $a->project_id)
+            ->groupBy('project_id')
+            ->map(fn($items, $id) => [
+                'project_id' => $id,
+                'project_name' => $items->first()->project?->nama_project ?? 'Tanpa Project',
+                'client_name' => $items->first()->project?->deal?->nama_perusahaan ?? '-',
+                'total_paid' => $items->sum('paid'),
+                'total_realisasi' => $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
+                'sisa' => $items->sum('paid') - $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
+                'count' => $items->count(),
+                'is_overrun' => $items->sum('paid') < $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
+            ])
+            ->sortByDesc('total_paid')
+            ->take(20)
+            ->values();
+
+        // Top Items
+        $allItems = RealisasiItem::whereHas('realizasi.advance', fn($q) => $q->whereBetween('submission_date', [$startDate, $endDate]))
+            ->with('realizasi.advance.project.deal')
+            ->get();
+
+        $topItems = $allItems->groupBy('name')
+            ->map(fn($items) => [
+                'name' => $items->first()->name,
+                'total_qty' => $items->sum('quantity'),
+                'total_amount' => $items->sum('subtotal'),
+                'avg_price' => $items->avg('price'),
+                'count' => $items->count(),
+            ])
+            ->sortByDesc('total_amount')
+            ->take(15)
+            ->values();
+
+        return [
+            'summary' => [
+                'total_paid' => $totalPaid,
+                'total_realisasi' => $totalRealisasi,
+                'sisa' => $totalPaid - $totalRealisasi,
+                'pending_count' => $pendingCount,
+                'pending_amount' => $pendingAmount,
+                'project_count' => $byProject->count(),
+            ],
+            'by_project' => $byProject,
+            'top_items' => $topItems,
         ];
     }
 }

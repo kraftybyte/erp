@@ -93,10 +93,9 @@
         }
         .tab-container {
             display: flex;
-            justify-content: center;
+            flex-wrap: wrap;
             gap: 0.5rem;
             margin-bottom: 2rem;
-            overflow-x: auto;
             padding-bottom: 0.5rem;
         }
         .tab-btn {
@@ -455,7 +454,7 @@
         </div>
 
         {{-- TABS NAVIGATION --}}
-        <div class="tab-container">
+        <div class="tab-container" style="flex-wrap: wrap; justify-content: flex-start;">
             @foreach($this->getTabs() as $tabKey => $tab)
                 <button wire:click="$set('activeTab', '{{ $tabKey }}')" class="tab-btn @if($activeTab === $tabKey) active @endif">
                     {{ $tab['label'] }}
@@ -1454,6 +1453,117 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        @elseif($activeTab === 'advance_analysis')
+            @php $data = $this->getAdvanceAnalysisData(); @endphp
+
+            {{-- Summary Cards --}}
+            <div class="top-stats-grid">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mini-stat">
+                            <span class="mini-stat-label">Total Paid</span>
+                            <span class="stat-value text-primary">Rp {{ number_format($data['summary']['total_paid'] / 1000000, 1) }}M</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mini-stat">
+                            <span class="mini-stat-label">Total Realisasi</span>
+                            <span class="stat-value text-success">Rp {{ number_format($data['summary']['total_realisasi'] / 1000000, 1) }}M</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mini-stat">
+                            <span class="mini-stat-label">Project Count</span>
+                            <span class="stat-value">{{ $data['summary']['project_count'] }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mini-stat">
+                            <span class="mini-stat-label">Pending Approval</span>
+                            <span class="stat-value text-warning">{{ $data['summary']['pending_count'] }} ({{ number_format($data['summary']['pending_amount'] / 1000000, 1) }}M)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Content Grid --}}
+            <div class="grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                {{-- Left: By Project --}}
+                <div class="card">
+                    <div class="card-body">
+                        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem;">Top Project by Advance</h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Project</th>
+                                    <th>Client</th>
+                                    <th style="text-align: right;">Paid</th>
+                                    <th style="text-align: right;">Realisasi</th>
+                                    <th style="text-align: right;">Sisa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($data['by_project'] as $project)
+                                    <tr>
+                                        <td>{{ $project['project_name'] }}</td>
+                                        <td>{{ $project['client_name'] }}</td>
+                                        <td style="text-align: right;">Rp {{ number_format($project['total_paid'], 0, ',', '.') }}</td>
+                                        <td style="text-align: right;">Rp {{ number_format($project['total_realisasi'], 0, ',', '.') }}</td>
+                                        <td style="text-align: right;">
+                                            @if($project['sisa'] < 0)
+                                                <span class="text-danger">Rp {{ number_format(abs($project['sisa']), 0, ',', '.') }}</span>
+                                            @else
+                                                <span class="text-success">Rp {{ number_format($project['sisa'], 0, ',', '.') }}</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="text-center text-gray-400">No project data</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {{-- Right: Top Items --}}
+                <div class="card">
+                    <div class="card-body">
+                        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem;">Top Item Realisasi</h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Item Name</th>
+                                    <th style="text-align: center;">Qty</th>
+                                    <th style="text-align: right;">Total</th>
+                                    <th style="text-align: right;">Avg</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($data['top_items'] as $item)
+                                    <tr>
+                                        <td>{{ $item['name'] }}</td>
+                                        <td style="text-align: center;">{{ $item['total_qty'] }}</td>
+                                        <td style="text-align: right;">Rp {{ number_format($item['total_amount'], 0, ',', '.') }}</td>
+                                        <td style="text-align: right;">Rp {{ number_format($item['avg_price'], 0, ',', '.') }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                    <td colspan="4" class="text-center text-gray-400">No items found</td>
+                                </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

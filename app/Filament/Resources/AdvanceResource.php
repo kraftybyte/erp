@@ -99,11 +99,11 @@ class AdvanceResource extends Resource
 
             // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
             if ($currentUser?->hasRole(['Director','Finance', 'super_admin'])) {
-                return $query->with(['user', 'paidBy', 'project', 'paymentAccount', 'realizasis.items']);
+                return $query->with(['user', 'paidBy', 'project', 'project.deal', 'paymentAccount', 'realizasis.items']);
             }
 
             // Jika bukan, hanya tampilkan data miliknya sendiri
-            return $query->with(['user', 'paidBy', 'project', 'paymentAccount', 'realizasis.items'])->where('user_id', $currentUser?->id);
+            return $query->with(['user', 'paidBy', 'project', 'project.deal', 'paymentAccount', 'realizasis.items'])->where('user_id', $currentUser?->id);
         })
 
             ->columns([
@@ -119,11 +119,11 @@ class AdvanceResource extends Resource
                     ->sortable()
                     ->wrap(),
 
-                Tables\Columns\TextColumn::make('keterangan_advance')
-                    ->label('Keterangan')
+                Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
+                    ->label('Project')
                     ->sortable()
                     ->wrap()
-                    ->limit(40),
+                    ->formatStateUsing(fn ($record) => $record->project?->deal?->nama_perusahaan ?? '-'),
 
                 Tables\Columns\TextColumn::make('paid')
                     ->label('Dibayarkan')

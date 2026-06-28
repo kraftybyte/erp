@@ -548,7 +548,7 @@
                             <span class="text-base font-bold" style="color: {{ $themeColor }};">
                                 Rp {{ number_format($batch['total_amount'], 0, ',', '.') }}
                             </span>
-                            @if($record->isEditable() && $record->canRealisasi())
+                            @if(($record->isEditable() && $record->canRealisasi()) || auth()->user()->hasRole(['super_admin', 'Finance', 'Director']))
                                 <button wire:click="deleteBatch({{ $batch['id'] }})"
                                         wire:confirm="Yakin hapus batch ini?"
                                         class="btn-icon">
