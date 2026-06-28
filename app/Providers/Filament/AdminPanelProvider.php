@@ -109,7 +109,7 @@ class AdminPanelProvider extends PanelProvider
             ->plugins([
                 FilamentFullCalendarPlugin::make(),
                 \BezhanSalleh\FilamentShield\FilamentShieldPlugin::make(),
-                \TomatoPHP\FilamentInvoices\FilamentInvoicesPlugin::make(),
+                // \TomatoPHP\FilamentInvoices\FilamentInvoicesPlugin::make(), // Disabled - using custom InvoiceResource
                 \Jeffgreco13\FilamentBreezy\BreezyCore::make()
                     ->myProfile(
                         shouldRegisterUserMenu: true,
