@@ -3,13 +3,17 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProjectResource\Pages;
+use App\Filament\Resources\ProjectResource\Pages\PackingSlip;
 use App\Helpers\ColorHelper;
+use App\Models\Deal;
 use App\Models\Project;
+use App\Settings\GeneralSettings;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Actions;
 use Illuminate\Database\Eloquent\Builder;
 use Carbon\Carbon;
 
@@ -27,6 +31,49 @@ class ProjectResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'nama_project';
 
+    // Get project category options from settings
+    public static function getProjectCategoryOptions(): array
+    {
+        $settings = app(GeneralSettings::class);
+        $categories = $settings->project_categories ?? [];
+
+        // Default categories if not set
+        $defaultCategories = [
+            'Social Media Management' => 'Social Media Management',
+            'Video Production' => 'Video Production',
+            'SEO' => 'SEO',
+            'Tiktok Handling' => 'Tiktok Handling',
+            'Website Development' => 'Website Development',
+            'Live Tiktok' => 'Live Tiktok',
+            'Photo Product' => 'Photo Product',
+            'Lain-lain' => 'Lain-lain',
+        ];
+
+        // If settings is empty, return defaults
+        if (empty($categories) || !is_array($categories)) {
+            return $defaultCategories;
+        }
+
+        // Handle Repeater format: [{category_name: 'xxx'}, ...]
+        $result = [];
+        foreach ($categories as $cat) {
+            if (is_array($cat) && isset($cat['category_name']) && !empty($cat['category_name'])) {
+                $name = $cat['category_name'];
+                $result[$name] = $name;
+            } elseif (is_string($cat) && !empty($cat)) {
+                // Simple array format: ['xxx', 'yyy']
+                $result[$cat] = $cat;
+            }
+        }
+
+        // If no valid categories found, return defaults
+        if (empty($result)) {
+            return $defaultCategories;
+        }
+
+        return $result;
+    }
+
     public static function form(Form $form): Form
         {
             return $form
@@ -37,7 +84,8 @@ class ProjectResource extends Resource
                             Forms\Components\Select::make('deal_id')
                         ->label('Nama Klien')
                         ->relationship('deal', 'nama_perusahaan')
-                        ->searchable()
+                        ->searchable(['nama_perusahaan', 'nama_pic', 'telephone'])
+                        ->getOptionLabelFromRecordUsing(fn (Deal $record) => "{$record->nama_perusahaan} ({$record->nama_pic})")
                         ->required()
                         ->reactive()
                         ->afterStateUpdated(function ($state, callable $set) {
@@ -54,16 +102,9 @@ class ProjectResource extends Resource
                             Forms\Components\Select::make('nama_project')
                                 ->label('Kategori Project')
                                 ->required()
-                                ->options([
-                                    'Social Media Management' => 'Social Media Management',
-                                    'Video Production' => 'Video Production',
-                                    'SEO' => 'SEO',
-                                    'Tiktok Handling' => 'Tiktok Handling',
-                                    'Website Development' => 'Website Development',
-                                    'Live Tiktok' => 'Live Tiktok',
-                                    'Photo Product' => 'Photo Product',
-                                    'Lain-lain' => 'Lain-lain',
-                                ]),
+                                ->options(function () {
+                                    return self::getProjectCategoryOptions();
+                                }),
                             Forms\Components\MarkdownEditor::make('detail_project')
                                 ->label('Detail Project')
                                 ->helperText('Tulis dengan detail.')
@@ -206,6 +247,12 @@ class ProjectResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                Tables\Actions\Action::make('packingSlip')
+                    ->label('Packing Slip')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('warning')
+                    ->tooltip('Packing Slip')
+                    ->url(fn (Project $record) => PackingSlip::getUrl([$record->id])),
                 Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
             ])
             ->bulkActions([
@@ -233,7 +280,8 @@ class ProjectResource extends Resource
             'index' => Pages\ListProjects::route('/'),
             'create' => Pages\CreateProject::route('/create'),
             'edit' => Pages\EditProject::route('/{record}/edit'),
-            'view' => Pages\ViewProject::route('/{record}'), // tambahkan ini
+            'view' => Pages\ViewProject::route('/{record}'),
+            'packing-slip' => Pages\PackingSlip::route('/{record}/packing-slip'),
         ];
     }
 

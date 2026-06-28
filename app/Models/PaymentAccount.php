@@ -19,14 +19,12 @@ class PaymentAccount extends Model
         'account_holder',
         'initial_balance',
         'current_balance',
-        'amount',
         'is_active',
         'notes',
     ];
 
     protected $attributes = [
         'current_balance' => 0,
-        'amount' => 0,
         'initial_balance' => 0,
         'is_active' => true,
     ];
@@ -36,15 +34,9 @@ class PaymentAccount extends Model
         parent::boot();
 
         static::creating(function ($account) {
+            // Set initial balance to current_balance if empty
             if (empty($account->current_balance)) {
                 $account->current_balance = $account->initial_balance ?? 0;
-            }
-            $account->amount = $account->current_balance;
-        });
-
-        static::updating(function ($account) {
-            if (isset($account->current_balance)) {
-                $account->amount = $account->current_balance;
             }
         });
     }
@@ -52,7 +44,6 @@ class PaymentAccount extends Model
     protected $casts = [
         'initial_balance' => 'decimal:2',
         'current_balance' => 'decimal:2',
-        'amount' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 
@@ -83,22 +74,37 @@ class PaymentAccount extends Model
         return (float) $this->transactions()->where('type', 'out')->sum('amount');
     }
 
+    /**
+     * Get the available balance - calculates from transactions
+     */
     public function getAvailableBalance(): float
     {
-        // Calculate from transactions for accurate balance
-        return $this->initial_balance + $this->getTotalIn() - $this->getTotalOut();
+        return (float) ($this->initial_balance ?? 0) + $this->getTotalIn() - $this->getTotalOut();
     }
 
     /**
-     * Sync current_balance and amount from transactions
+     * Get the current balance - uses stored field or calculates from transactions
+     */
+    public function getBalance(): float
+    {
+        // Try stored current_balance first
+        if ($this->current_balance !== null) {
+            return (float) $this->current_balance;
+        }
+        // Fall back to calculated
+        return $this->getAvailableBalance();
+    }
+
+    /**
+     * Sync current_balance from transactions
      */
     public function syncBalanceFromTransactions(): void
     {
-        $calculatedBalance = $this->initial_balance + $this->getTotalIn() - $this->getTotalOut();
-        $this->update([
+        $calculatedBalance = $this->getAvailableBalance();
+        $this->updateQuietly([
             'current_balance' => $calculatedBalance,
-            'amount' => $calculatedBalance,
         ]);
+        $this->refresh();
     }
 
     /**
@@ -111,6 +117,7 @@ class PaymentAccount extends Model
         }
     }
 
+    // Scopes
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -121,6 +128,12 @@ class PaymentAccount extends Model
         return $query->where('is_active', false);
     }
 
+    public function scopeHasBalance($query)
+    {
+        return $query->where('current_balance', '>', 0);
+    }
+
+    // Check methods
     public function isBank(): bool
     {
         return !empty($this->bank_name);
@@ -137,5 +150,13 @@ class PaymentAccount extends Model
             return "{$this->bank_name} - {$this->account_number}";
         }
         return $this->name;
+    }
+
+    /**
+     * Format balance for display
+     */
+    public function getFormattedBalance(): string
+    {
+        return 'Rp ' . number_format($this->getBalance(), 0, ',', '.');
     }
 }

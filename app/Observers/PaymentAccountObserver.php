@@ -10,53 +10,23 @@ class PaymentAccountObserver
 {
     /**
      * Handle the PaymentAccount "created" event.
+     * initial_balance sudah otomatis diset saat created, tidak perlu buat transaksi
      */
     public function created(PaymentAccount $account): void
     {
-        // Create initial deposit transaction if initial_balance > 0
-        if ($account->initial_balance > 0) {
-            Transaction::create([
-                'payment_account_id' => $account->id,
-                'created_by' => Auth::id(),
-                'type' => 'in',
-                'amount' => $account->initial_balance,
-                'description' => 'Saldo Awal',
-                'reference_type' => 'manual',
-                'transaction_date' => now()->toDateString(),
-                'category' => 'deposit',
-            ]);
-        }
+        // Jangan buat transaksi untuk saldo awal
+        // Saldo awal sudah tercatat di field initial_balance
+        // Balance dihitung: initial_balance + total_in - total_out
     }
 
     /**
      * Handle the PaymentAccount "updated" event.
+     * Hanya sync balance, tidak buat transaksi
      */
     public function updated(PaymentAccount $account): void
     {
-        // Only trigger if initial_balance specifically changed
-        // Ignore changes to current_balance, amount, etc from syncBalanceFromTransactions
-        if (!$account->isDirty('initial_balance')) {
-            return;
-        }
-
-        $originalInitial = $account->getOriginal('initial_balance') ?? 0;
-        $newInitial = $account->initial_balance ?? 0;
-        $change = $newInitial - $originalInitial;
-
-        // Only create transaction if there's an actual change
-        if ($change == 0) {
-            return;
-        }
-
-        Transaction::create([
-            'payment_account_id' => $account->id,
-            'created_by' => Auth::id(),
-            'type' => $change > 0 ? 'in' : 'out',
-            'amount' => abs($change),
-            'description' => "Perubahan saldo awal: {$account->name}",
-            'reference_type' => 'manual',
-            'transaction_date' => now()->toDateString(),
-            'category' => $change > 0 ? 'deposit' : 'withdrawal',
-        ]);
+        // Jangan buat transaksi saat initial_balance berubah
+        // Sync balance dari transactions yang ada saja
+        // Jika ingin catat perubahan saldo awal, buat manual
     }
 }

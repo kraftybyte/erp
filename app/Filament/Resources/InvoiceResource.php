@@ -193,7 +193,7 @@ class InvoiceResource extends BaseInvoiceResource
                     ->schema([
                         Forms\Components\Select::make('payment_account_id')
                             ->label('Rekening')
-                            ->options(PaymentAccount::where('is_active', true)->pluck('name', 'id')->toArray())
+                            ->options(fn () => PaymentAccount::active()->pluck('name', 'id')->toArray())
                             ->searchable(),
                     ]),
 

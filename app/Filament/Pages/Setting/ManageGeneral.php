@@ -328,6 +328,37 @@ class ManageGeneral extends SettingsPage
                                         ]),
                                     ]),
                             ]),
+                        Forms\Components\Tabs\Tab::make('Project Categories')
+                            ->label('Project Categories')
+                            ->icon('heroicon-o-folder')
+                            ->schema([
+                                Forms\Components\Section::make('Kategori Project')
+                                    ->description('Atur kategori/project type yang tersedia saat membuat project')
+                                    ->schema([
+                                        Forms\Components\Repeater::make('project_categories')
+                                            ->label('')
+                                            ->schema([
+                                                Forms\Components\TextInput::make('category_name')
+                                                    ->label('Nama Kategori')
+                                                    ->required(),
+                                            ])
+                                            ->defaultItems(8)
+                                            ->minItems(1)
+                                            ->addActionLabel('Tambah Kategori'),
+                                    ]),
+                                Forms\Components\Section::make('Packing Slip')
+                                    ->description('Pengaturan untuk print packing slip thermal')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('packing_title')
+                                            ->label('Judul Packing Slip')
+                                            ->placeholder('PACKING SLIP')
+                                            ->helperText('Judul yang muncul di print thermal'),
+                                        Forms\Components\TextInput::make('packing_qr_url_prefix')
+                                            ->label('URL Prefix QR Code')
+                                            ->placeholder('https://erp.example.com/admin')
+                                            ->helperText('QR akan mengarah ke /projects/{id}'),
+                                    ]),
+                            ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')
                             ->schema([
                                 Forms\Components\Grid::make()->schema([

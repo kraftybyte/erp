@@ -307,8 +307,8 @@ class ExpenseResource extends Resource
                                 ]);
                             }
 
-                            // Check balance using current_balance field (already synced)
-                            $availableBalance = (float) ($account->current_balance ?? 0);
+                            // Check balance using getBalance() method
+                            $availableBalance = $account->getBalance();
                             if ($availableBalance < (float) $data['paid']) {
                                 throw ValidationException::withMessages([
                                     'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
@@ -371,11 +371,11 @@ class ExpenseResource extends Resource
                             ]),
                         Forms\Components\Select::make('payment_account_id')
                             ->label('Pilih Rekening')
-                            ->options(fn () => cache()->remember('payment_accounts_list', 300, fn () =>
+                            ->options(fn () =>
                                 PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
-                                    [$account->id => "{$account->name} - Rp " . number_format((float) ($account->current_balance ?? 0), 0, ',', '.')]
-                                )->toArray()
-                            ))
+                                    [$account->id => "{$account->name} ({$account->bank_name}) - {$account->getFormattedBalance()}"]
+                                )
+                            )
                             ->required()
                             ->reactive(),
                         ])

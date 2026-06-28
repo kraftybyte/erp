@@ -9,6 +9,7 @@ use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\Auth\InstagramConnectController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
+use App\Http\Controllers\ThermalPrintController;
 use Filament\Notifications\Notification;
 
 
@@ -67,6 +68,14 @@ Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
             . now()->format('d F Y, H:i')
     ]);
 })->middleware(['auth', 'throttle:timeline'])->name('timeline.update');
+
+// Thermal Print Routes (protected with auth)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/thermal/{projectId}/print', [ThermalPrintController::class, 'print'])
+        ->name('thermal.print');
+    Route::get('/thermal/{projectId}/pdf', [ThermalPrintController::class, 'downloadPdf'])
+        ->name('thermal.pdf');
+});
 
 // WhatsApp Message Route
 Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');

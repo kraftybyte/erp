@@ -2,54 +2,61 @@
 
 namespace App\Providers;
 
+use App\Models\Activity;
+use App\Models\Advance;
+use App\Models\Announcement;
+use App\Models\Asset;
+use App\Models\Contract;
+use App\Models\Deal;
+use App\Models\Event;
+use App\Models\Expense;
+use App\Models\Invoice;
+use App\Models\Leads;
+use App\Models\PaymentAccount;
+use App\Models\Product;
+use App\Models\Project;
+use App\Models\PurchaseRequest;
+use App\Models\Quotation;
+use App\Models\SocialAccount;
+use App\Models\Task;
+use App\Models\TaskStage;
+use App\Models\Company;
+use App\Models\Account;
+use App\Policies\AdvancePolicy;
+use App\Policies\AnnouncementPolicy;
+use App\Policies\AssetPolicy;
+use App\Policies\ContractPolicy;
+use App\Policies\DealPolicy;
+use App\Policies\EventPolicy;
+use App\Policies\ExpensePolicy;
+use App\Policies\InvoicePolicy;
+use App\Policies\LeadsPolicy;
+use App\Policies\PaymentAccountPolicy;
+use App\Policies\ProductPolicy;
+use App\Policies\ProjectPolicy;
+use App\Policies\PurchaseRequestPolicy;
+use App\Policies\QuotationPolicy;
+use App\Policies\TaskPolicy;
+use App\Policies\TaskStagePolicy;
+use App\Observers\AnnouncementObserver;
+use App\Observers\ContractObserver;
+use App\Observers\DealObserver;
+use App\Observers\InvoiceObserver;
+use App\Observers\PaymentAccountObserver;
+use App\Observers\SocialAccountObserver;
+use App\Observers\TaskObserver;
 use Filament\Tables\Table;
-use App\Models\Permission;
-use App\Models\Role;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Opcodes\LogViewer\Facades\LogViewer;
 use TomatoPHP\FilamentInvoices\Facades\FilamentInvoices;
+use TomatoPHP\FilamentInvoices\Models\Invoice as TomatoInvoice;
 use TomatoPHP\FilamentInvoices\Services\Contracts\InvoiceFor;
 use TomatoPHP\FilamentInvoices\Services\Contracts\InvoiceFrom;
-use App\Models\Task;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Gate;
-use App\Models\PaymentAccount;
-use App\Models\Company;
-use App\Models\Account;
-use App\Models\Invoice;
-use TomatoPHP\FilamentInvoices\Models\Invoice as TomatoInvoice;
-use App\Policies\InvoicePolicy;
-use App\Policies\ContractPolicy;
-use App\Policies\ProjectPolicy;
-use App\Policies\DealPolicy;
-use App\Policies\LeadsPolicy;
-use App\Policies\QuotationPolicy;
-use App\Policies\PurchaseRequestPolicy;
-use App\Policies\AnnouncementPolicy;
-use App\Policies\EventPolicy;
-use App\Policies\AssetPolicy;
-use App\Models\Contract;
-use App\Models\Project;
-use App\Models\Deal;
-use App\Models\Leads;
-use App\Models\Quotation;
-use App\Models\PurchaseRequest;
-use App\Models\Announcement;
-use App\Models\Event;
-use App\Models\Asset;
-use App\Models\SocialAccount;
-use App\Observers\TaskObserver;
-use App\Observers\AnnouncementObserver;
-use App\Observers\PaymentAccountObserver;
-use App\Observers\ContractObserver;
-use App\Observers\DealObserver;
-use App\Observers\SocialAccountObserver;
-use App\Observers\InvoiceObserver;
-
-
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -58,7 +65,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        
+        //
     }
 
     /**
@@ -66,17 +73,24 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Gate::policy(Invoice::class, InvoicePolicy::class);
-        Gate::policy(Activity::class, ActivityPolicy::class);
-        Gate::policy(Contract::class, ContractPolicy::class);
-        Gate::policy(Project::class, ProjectPolicy::class);
-        Gate::policy(Deal::class, DealPolicy::class);
-        Gate::policy(Leads::class, LeadsPolicy::class);
-        Gate::policy(Quotation::class, QuotationPolicy::class);
-        Gate::policy(PurchaseRequest::class, PurchaseRequestPolicy::class);
+        // Register Policies with Gate
+        Gate::policy(Activity::class, \App\Policies\ActivityPolicy::class);
+        Gate::policy(Advance::class, AdvancePolicy::class);
         Gate::policy(Announcement::class, AnnouncementPolicy::class);
-        Gate::policy(Event::class, EventPolicy::class);
         Gate::policy(Asset::class, AssetPolicy::class);
+        Gate::policy(Contract::class, ContractPolicy::class);
+        Gate::policy(Deal::class, DealPolicy::class);
+        Gate::policy(Event::class, EventPolicy::class);
+        Gate::policy(Expense::class, ExpensePolicy::class);
+        Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(Leads::class, LeadsPolicy::class);
+        Gate::policy(PaymentAccount::class, PaymentAccountPolicy::class);
+        Gate::policy(Product::class, ProductPolicy::class);
+        Gate::policy(Project::class, ProjectPolicy::class);
+        Gate::policy(PurchaseRequest::class, PurchaseRequestPolicy::class);
+        Gate::policy(Quotation::class, QuotationPolicy::class);
+        Gate::policy(Task::class, TaskPolicy::class);
+        Gate::policy(TaskStage::class, TaskStagePolicy::class);
 
         // Register Observers
         PaymentAccount::observe(PaymentAccountObserver::class);
@@ -86,7 +100,6 @@ class AppServiceProvider extends ServiceProvider
         Task::observe(TaskObserver::class);
         Announcement::observe(AnnouncementObserver::class);
         Invoice::observe(InvoiceObserver::class);
-        TomatoInvoice::observe(InvoiceObserver::class);
 
         // Dark Mode Configuration
         try {
@@ -95,7 +108,6 @@ class AppServiceProvider extends ServiceProvider
                 return $this->getDarkModeStyles($darkModeEnabled);
             });
         } catch (\Exception $e) {
-            // Settings loading failed, skip dark mode
             FilamentView::registerRenderHook('styles.before', function () {
                 return '';
             });
@@ -125,8 +137,6 @@ class AppServiceProvider extends ServiceProvider
             return $role == config('filament-shield.super_admin.name');
         });
 
-
-
         // # Hooks
         FilamentView::registerRenderHook(
             PanelsRenderHook::FOOTER,
@@ -136,8 +146,6 @@ class AppServiceProvider extends ServiceProvider
             PanelsRenderHook::USER_MENU_BEFORE,
             fn (): View => view('filament.components.button-website'),
         );
-
-
     }
 
     private function getDarkModeStyles(bool $enabled): string

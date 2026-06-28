@@ -20,6 +20,14 @@ class Project extends Model
         'nama_pic',
         'notes',
         'status',
+        // Sender Information
+        'sender_name',
+        'sender_address',
+        'sender_phone',
+        // Recipient Information
+        'recipient_name',
+        'recipient_address',
+        'recipient_phone',
     ];
 
     protected $casts = [

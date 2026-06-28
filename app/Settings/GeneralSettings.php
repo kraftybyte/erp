@@ -35,6 +35,8 @@ class GeneralSettings extends Settings
     public mixed $quot_signature_title = 'Director';
     public mixed $quot_signature_image = null;
     public mixed $quot_terms = '';
+    public mixed $quot_currency = 'IDR';
+    public mixed $quot_currency_symbol = 'Rp';
 
     // Invoice Template Settings - Individual Properties
     public mixed $inv_theme_color = '#f04f29';
@@ -47,6 +49,15 @@ class GeneralSettings extends Settings
     public mixed $inv_bank_account_name = 'PT DIGITAL CATHA';
     public mixed $inv_signature_name = 'Madita Heidy';
     public mixed $inv_signature_image = null;
+    public mixed $inv_currency = 'IDR';
+    public mixed $inv_currency_symbol = 'Rp';
+
+    // Packing Slip Settings
+    public mixed $packing_title = 'PACKING SLIP'; // Custom title for packing slip print
+    public mixed $packing_qr_url_prefix = null; // Custom URL prefix for QR code (e.g., https://track.example.com/project/)
+
+    // Project Categories
+    public mixed $project_categories = [];
 
     // ID Prefix Settings
     public mixed $quotation_prefix = 'DG';
@@ -117,6 +128,8 @@ class GeneralSettings extends Settings
             'quot_signature_title' => 'Director',
             'quot_signature_image' => null,
             'quot_terms' => "Price above is NET.\nThis quotation is valid for 14 (fourteen) days from the quotation date.\nTerm of Payment: Full payment before project starts, or two terms (50-50) for minimum 30 million.",
+            'quot_currency' => 'IDR',
+            'quot_currency_symbol' => 'Rp',
             // Invoice Settings Defaults
             'inv_theme_color' => '#f04f29',
             'inv_logo' => null,
@@ -128,6 +141,22 @@ class GeneralSettings extends Settings
             'inv_bank_account_name' => 'PT DIGITAL CATHA',
             'inv_signature_name' => 'Madita Heidy',
             'inv_signature_image' => null,
+            'inv_currency' => 'IDR',
+            'inv_currency_symbol' => 'Rp',
+            // Packing Slip Defaults
+            'packing_title' => 'PACKING SLIP',
+            'packing_qr_url_prefix' => null,
+            // Project Categories
+            'project_categories' => [
+                'Social Media Management',
+                'Video Production',
+                'SEO',
+                'Tiktok Handling',
+                'Website Development',
+                'Live Tiktok',
+                'Photo Product',
+                'Lain-lain',
+            ],
             // ID Prefix Settings
             'quotation_prefix' => 'DG',
             'invoice_prefix' => 'INV',

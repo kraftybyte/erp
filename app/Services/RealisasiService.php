@@ -437,7 +437,7 @@ class RealisasiService
         $advance->update([
             'overrun_approved_by' => Auth::user()?->id,
             'overrun_approved_at' => now(),
-            'status' => Advance::STATUS_READY_TO_CLOSE,
+            'status' => Advance::STATUS_REALIZED_USER,
         ]);
     }
 

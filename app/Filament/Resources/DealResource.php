@@ -77,8 +77,7 @@ class DealResource extends Resource
                         ->label('Layanan')
                         ->relationship('product', 'nama_layanan')
                         ->searchable()
-                        ->multiple()
-                        ->required(),
+                        ->multiple(),
 
                     Forms\Components\Select::make('source')
                         ->required()

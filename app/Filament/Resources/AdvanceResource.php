@@ -56,8 +56,21 @@ class AdvanceResource extends Resource
 
                 Forms\Components\Select::make('project_id')
                     ->label('Pilih Project')
-                    ->options(fn () => cache()->remember('projects_list', 300, fn () => Project::all()->pluck('nama_perusahaan', 'id')))
                     ->searchable()
+                    ->getOptionLabelFromRecordUsing(fn (Project $record): string => $record->deal?->nama_perusahaan . ' - ' . $record->nama_project)
+                    ->getSearchResultsUsing(fn (string $search): array => Project::with('deal')
+                        ->whereHas('deal', fn ($q) => $q->where('nama_perusahaan', 'like', '%' . $search . '%'))
+                        ->orWhereHas('deal', fn ($q) => $q->where('nama_pic', 'like', '%' . $search . '%'))
+                        ->orWhere('nama_project', 'like', '%' . $search . '%')
+                        ->limit(20)
+                        ->get()
+                        ->mapWithKeys(fn ($project) => [$project->id => $project->deal?->nama_perusahaan . ' - ' . $project->nama_project])
+                        ->toArray()
+                    )
+                    ->options(fn (): array => Project::with('deal')->latest()->limit(50)->get()
+                        ->mapWithKeys(fn ($project) => [$project->id => $project->deal?->nama_perusahaan . ' - ' . $project->nama_project])
+                        ->toArray()
+                    )
                     ->required(),
 
                 Forms\Components\Textarea::make('keterangan_advance')
@@ -178,11 +191,14 @@ class AdvanceResource extends Resource
                         'Disetujui' => 'Disetujui',
                         'Ditolak' => 'Ditolak',
                         'Dibayarkan' => 'Dibayarkan',
+                        'Sedang di-Realisasi' => 'Sedang di-Realisasi',
+                        'Sedang di-Realisasi User' => 'Sedang di-Realisasi User',
+                        'Siap Diselesaikan' => 'Siap Diselesaikan',
                         'Selesai' => 'Selesai',
                     ]),
                 Tables\Filters\SelectFilter::make('payment_account_id')
                     ->label('Rekening')
-                    ->options(fn () => \App\Models\PaymentAccount::active()->pluck('name', 'id')),
+                    ->options(fn () => PaymentAccount::active()->get()->mapWithKeys(fn ($account) => [$account->id => $account->name])),
             ])
             ->actions([
                 Tables\Actions\Action::make('realisasi')
@@ -192,7 +208,7 @@ class AdvanceResource extends Resource
                 ->color('gray')
                 ->label('Realisasi')
                 ->url(fn ($record) => '/admin/advances/' . $record->id . '/realisasi')
-                ->visible(fn ($record) => in_array($record->status, ['Dibayarkan', 'Sudah di-Realisasi User'])),
+                ->visible(fn ($record) => in_array($record->status, ['Dibayarkan', 'Sedang di-Realisasi User'])),
 
                 Tables\Actions\Action::make('convert_to_pay')
                     ->button()
@@ -212,8 +228,8 @@ class AdvanceResource extends Resource
                                 ]);
                             }
 
-                            // Check balance using current_balance field (already synced)
-                            $availableBalance = (float) ($account->current_balance ?? 0);
+                            // Check balance using getBalance() method
+                            $availableBalance = $account->getBalance();
                             if ($availableBalance < (float) $data['paid']) {
                                 throw ValidationException::withMessages([
                                     'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
@@ -273,10 +289,9 @@ class AdvanceResource extends Resource
                             ]),
                         Forms\Components\Select::make('payment_account_id')
                             ->label('Pilih Rekening')
-                            ->options(fn () => cache()->remember('payment_accounts_list', 300, fn () =>
-                                PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
-                                    [$account->id => "{$account->name} - Rp " . number_format((float) ($account->current_balance ?? 0), 0, ',', '.')]
-                                )->toArray()
+                            ->searchable()
+                            ->options(fn () => PaymentAccount::active()->get()->mapWithKeys(fn ($account) =>
+                                [$account->id => "{$account->name} ({$account->bank_name}) - {$account->getFormattedBalance()}"]
                             ))
                             ->required(),
                         ])
@@ -322,6 +337,22 @@ class AdvanceResource extends Resource
                     in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Selesai'])
                 ),
 
+                // Action untuk menyetujui overrun
+                Tables\Actions\Action::make('approveOverrun')
+                    ->label('Setujui Overrun')
+                    ->action(function ($record) {
+                        $service = new \App\Services\RealisasiService();
+                        $service->approveOverrun($record);
+                    })
+                    ->requiresConfirmation()
+                    ->color('warning')
+                    ->icon('heroicon-o-check-circle')
+                    ->hidden(fn($record) =>
+                    !Auth::user()?->can('restore_advance') ||
+                    $record->overrun_approved_by !== null ||
+                    !in_array($record->status, ['Sedang di-Realisasi User'])
+                ),
+
 
                 Tables\Actions\Action::make('selesai')
                     ->label('Selesaikan Advance')
@@ -348,7 +379,7 @@ class AdvanceResource extends Resource
                     ->icon('heroicon-o-check-circle')
                     ->hidden(fn($record) =>
                     !Auth::user()?->can('restore_advance') ||
-                    !in_array($record->status, ['Sudah di-Realisasi User'])
+                    !in_array($record->status, ['Sedang di-Realisasi User'])
                 ),
 
                 Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),

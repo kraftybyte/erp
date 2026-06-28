@@ -25,7 +25,9 @@ class Advance extends Model
     public const STATUS_SELESAI = 'Selesai';
     public const STATUS_DITOLAK = 'Ditolak';
     public const STATUS_DISETUJUI = 'Disetujui';
-    public const STATUS_REALIZED_USER = 'Sudah di-Realisasi User';
+    public const STATUS_REALIZING = 'Sedang di-Realisasi';
+    public const STATUS_REALIZED_USER = 'Sedang di-Realisasi User';
+    public const STATUS_READY_TO_CLOSE = 'Siap Diselesaikan';
 
     protected $fillable = [
         'user_id',

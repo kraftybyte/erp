@@ -81,11 +81,11 @@ class PaymentDashboard extends Page
 
     public function loadData()
     {
-        // Accounts with balance
+        // Accounts with balance - use getBalance() for accurate calculation
         $this->accounts = PaymentAccount::active()
             ->get()
             ->map(function ($account) {
-                $account->available_balance = (float) ($account->current_balance ?? 0);
+                $account->available_balance = $account->getBalance();
                 return $account;
             })
             ->sortByDesc('available_balance');
