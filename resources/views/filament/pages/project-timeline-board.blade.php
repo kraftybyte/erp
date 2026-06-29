@@ -1,19 +1,22 @@
 <x-filament-panels::page>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
 
-<div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+<div>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
 
-    <div id="historyBadge" class="tl-history">
-        <span class="tl-history-dot"></span>
-        <span id="historyText">{{ $lastHistoryText ?? 'Belum ada perubahan' }}</span>
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+
+        <div id="historyBadge" class="tl-history">
+            <span class="tl-history-dot"></span>
+            <span id="historyText">{{ $lastHistoryText ?? 'Belum ada perubahan' }}</span>
+        </div>
+
+        <div wire:ignore>
+            <div id="calendar"></div>
+        </div>
+
     </div>
-
-    <div wire:ignore>
-        <div id="calendar"></div>
-    </div>
-
 </div>
 
 <style>
@@ -375,5 +378,7 @@
 
 })();
 </script>
+
+</div>
 
 </x-filament::page>
