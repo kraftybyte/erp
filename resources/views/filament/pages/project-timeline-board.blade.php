@@ -15,6 +15,9 @@
     </div>
 </div>
 
+</x-filament-panels::page>
+
+@push('styles')
 <style>
     body, .fc { font-family: 'Sora', sans-serif; }
     #calendar { height: 550px; }
@@ -103,7 +106,6 @@
         background: #2563eb;
     }
 
-    /* Stage Badge Styles */
     .fc-event-inner {
         display: flex;
         flex-direction: column;
@@ -136,10 +138,12 @@
     .stage-done { background: rgba(22, 163, 74, 0.2); color: #15803d; }
     .stage-hold { background: rgba(239, 68, 68, 0.2); color: #dc2626; }
 </style>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
+@endpush
+
+@push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.js"></script>
 <script>
 (function () {
@@ -149,7 +153,6 @@
     const UPDATE_URL = "{{ route('timeline.update') }}";
     const CSRF = "{{ csrf_token() }}";
 
-    // Stage label helper
     function getStageLabel(status) {
         const labels = {
             'log': 'To Do',
@@ -161,7 +164,6 @@
         return labels[status?.toLowerCase()] || status || '';
     }
 
-    // ── Filter: sembunyikan event yang end-nya sudah lewat hari ini ──────────
     function filterActive(resources, events) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -169,13 +171,8 @@
         const activeEvents = events.filter(ev => {
             const endRaw = ev.end || ev.start;
             if (!endRaw) return true;
-
             const endDate = new Date(endRaw);
-
-            if (isNaN(endDate.getTime())) {
-                return true;
-            }
-
+            if (isNaN(endDate.getTime())) return true;
             return endDate >= today;
         });
 
@@ -193,134 +190,83 @@
         });
 
         const activeResources = resources.filter(r => {
-            if (!r.parentId) {
-                return activeParentIds.has(String(r.id));
-            }
+            if (!r.parentId) return activeParentIds.has(String(r.id));
             return activeChildIds.has(String(r.id));
         });
 
         const finalResources = activeResources.length > 0 ? activeResources : resources;
-
         return { activeResources: finalResources, activeEvents };
     }
 
     const { activeResources, activeEvents } = filterActive(ALL_RESOURCES, ALL_EVENTS);
-
     let cal = null;
 
-    // ── Fix toolbar via inline style ──────────────────────────────────────────
     function fixToolbar() {
         const toolbar = document.querySelector('.fc-toolbar');
         if (!toolbar) return;
-
-        toolbar.style.cssText = [
-            'display: flex',
-            'flex-direction: row',
-            'align-items: center',
-            'justify-content: space-between',
-            'flex-wrap: wrap',
-            'gap: 8px',
-        ].join(' !important;') + ' !important;';
-
+        toolbar.style.cssText = 'display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: space-between !important; flex-wrap: wrap !important; gap: 8px !important;';
         document.querySelectorAll('.fc-toolbar-chunk').forEach(chunk => {
-            chunk.style.cssText = [
-                'display: flex',
-                'flex-direction: row',
-                'align-items: center',
-                'gap: 6px',
-            ].join(' !important;') + ' !important;';
+            chunk.style.cssText = 'display: flex !important; flex-direction: row !important; align-items: center !important; gap: 6px !important;';
         });
     }
 
-    // ── Init ──────────────────────────────────────────────────────────────────
     function initCalendar() {
         const el = document.getElementById('calendar');
         if (!el) return;
-
-        if (cal) {
-            try { cal.destroy(); } catch (_) {}
-            cal = null;
-        }
+        if (cal) { try { cal.destroy(); } catch (_) {} cal = null; }
 
         cal = new FullCalendar.Calendar(el, {
             schedulerLicenseKey: 'GPL-My-Project-Is-Open-Source',
             locale: 'id',
             initialView: 'resourceTimelineMonth',
-
             headerToolbar: {
                 left:   'prev,next today',
                 center: 'title',
                 right:  'resourceTimelineMonth,resourceTimelineWeek'
             },
-
-            buttonText: {
-                today: 'Hari Ini',
-                month: 'Bulan',
-                week:  'Minggu'
-            },
-
+            buttonText: { today: 'Hari Ini', month: 'Bulan', week: 'Minggu' },
             resources: activeResources,
             events:    activeEvents,
-
             editable: true,
             eventResourceEditable: false,
             resourceAreaHeaderContent: 'Nama Client',
-
             eventContent: function(arg) {
                 const event = arg.event;
                 const stage = event.extendedProps.stage || '';
                 const stageLabel = getStageLabel(stage);
                 const stageBadge = stage ? `<span class="stage-badge stage-${stage}">${stageLabel}</span>` : '';
                 return {
-                    html: `<div class="fc-event-inner">
-                        <div class="fc-event-title">${event.title}</div>
-                        ${stageBadge}
-                    </div>`
+                    html: `<div class="fc-event-inner"><div class="fc-event-title">${event.title}</div>${stageBadge}</div>`
                 };
             },
-
             slotDuration: { days: 1 },
             slotLabelFormat: { weekday: 'short', day: '2-digit' },
-
-            datesSet: function () {
-                requestAnimationFrame(fixToolbar);
-            },
-
+            datesSet: function () { requestAnimationFrame(fixToolbar); },
             slotLaneDidMount: function (info) {
                 const d = info.date.getDay();
                 if (d === 0 || d === 6) info.el.style.backgroundColor = '#fff1f1';
             },
-
             slotLabelDidMount: function (info) {
                 const d = info.date.getDay();
-                if (d === 0 || d === 6) {
-                    info.el.style.color      = '#dc2626';
-                    info.el.style.fontWeight = '600';
-                }
+                if (d === 0 || d === 6) { info.el.style.color = '#dc2626'; info.el.style.fontWeight = '600'; }
             },
-
             resourceLabelDidMount: function (info) {
                 const rid = info.resource.id;
-
                 if (rid.startsWith('project-')) {
-                    info.el.style.fontWeight      = '600';
+                    info.el.style.fontWeight = '600';
                     info.el.style.backgroundColor = '#f9fafb';
                     return;
                 }
-
                 info.el.style.cursor = 'pointer';
                 info.el.addEventListener('click', function () {
                     if (!cal) return;
-                    const ev = cal.getEvents().find(e =>
-                        e.getResources().some(r => r.id === rid)
-                    );
+                    const ev = cal.getEvents().find(e => e.getResources().some(r => r.id === rid));
                     if (!ev) return;
                     cal.gotoDate(ev.start);
                     ev.setProp('classNames', ['ring-highlight']);
                     setTimeout(() => ev.setProp('classNames', []), 1500);
                 });
             },
-
             eventDrop:   i => doUpdate(i.event),
             eventResize: i => doUpdate(i.event),
         });
@@ -329,7 +275,6 @@
         requestAnimationFrame(fixToolbar);
     }
 
-    // ── Update drag/resize ────────────────────────────────────────────────────
     function doUpdate(event) {
         fetch(UPDATE_URL, {
             method: 'POST',
@@ -338,13 +283,9 @@
         })
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(d => { if (d.success) flashHistory(d.message); })
-        .catch(e => {
-            console.error('[Timeline] Update gagal:', e);
-            flashHistory('Gagal menyimpan perubahan');
- });
+        .catch(e => { console.error('[Timeline] Update gagal:', e); flashHistory('Gagal menyimpan perubahan'); });
     }
 
-    // ── History flash ─────────────────────────────────────────────────────────
     function flashHistory(text) {
         const badge = document.getElementById('historyBadge');
         const label = document.getElementById('historyText');
@@ -354,7 +295,6 @@
         setTimeout(() => badge.classList.remove('updated'), 800);
     }
 
-    // ── Boot ──────────────────────────────────────────────────────────────────
     function boot() {
         if (typeof FullCalendar === 'undefined') { setTimeout(boot, 80); return; }
         initCalendar();
@@ -366,16 +306,11 @@
         boot();
     }
 
-    // ── Re-init calendar saat balik dari navigasi Livewire (cancel form, dll) ─
     document.addEventListener('livewire:navigated', () => { cal = null; boot(); });
-
     document.addEventListener('livewire:init', () => {
-        Livewire.on('timeline-created', () => {
-            window.location.reload();
-        });
+        Livewire.on('timeline-created', () => { window.location.reload(); });
     });
 
 })();
 </script>
-
-</x-filament::page>
+@endpush
