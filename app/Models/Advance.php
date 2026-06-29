@@ -36,7 +36,7 @@ class Advance extends Model
         'keterangan_advance',
         'amount',
         'attachment',
-        'reference',
+        'reference_number',
         'status',
         'rejection_reason',
         'attachment_pay',
@@ -49,6 +49,7 @@ class Advance extends Model
         'realisasi_by',
         'overrun_approved_by',
         'overrun_approved_at',
+        'paid_at',
     ];
 
     protected $casts = [
@@ -57,6 +58,7 @@ class Advance extends Model
         'paid' => 'decimal:2',
         'submission_date' => 'date',
         'deleted_at' => 'datetime',
+        'paid_at' => 'datetime',
     ];
 
     protected $dates = ['deleted_at'];

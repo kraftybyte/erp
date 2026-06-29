@@ -245,7 +245,7 @@ class AdvanceResource extends Resource
                                 'description' => "Advance: {$record->keterangan_advance}",
                                 'reference_type' => 'advance',
                                 'reference_id' => $record->id,
-                                'transaction_date' => now()->toDateString(),
+                                'transaction_date' => $data['paid_at'] ?? now()->toDateString(),
                                 'category' => 'operational',
                             ]);
 
@@ -258,14 +258,19 @@ class AdvanceResource extends Resource
                                 'paid_by' => $currentUser?->id,
                                 'paid' => $data['paid'],
                                 'payment_account_id' => $account->id,
-                                'reference' => $data['reference'],
+                                'reference_number' => $data['reference_number'] ?? null,
                                 'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
                                     ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
                                     : $data['attachment_pay'],
+                                'paid_at' => $data['paid_at'] ?? now(),
                             ]);
                         });
                     })
                     ->form([
+                        Forms\Components\DatePicker::make('paid_at')
+                            ->label('Tanggal Pembayaran')
+                            ->default(now())
+                            ->required(),
                         Forms\Components\TextInput::make('paid')
                             ->label('Nominal yang Dibayarkan')
                             ->numeric()
@@ -276,17 +281,14 @@ class AdvanceResource extends Resource
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
                             ]),
-                        Forms\Components\TextInput::make('reference')
+                        Forms\Components\TextInput::make('reference_number')
                             ->label('Nomor Referensi')
-                            ->required(),
+                            ->placeholder('Opsional'),
                         Forms\Components\FileUpload::make('attachment_pay')
                             ->label('Bukti Pembayaran')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->directory('advance/payments/' . now()->format('Y/m/d'))
-                            ->required()
-                            ->validationMessages([
-                                'required' => 'Bukti pembayaran harus diunggah.',
-                            ]),
+                            ->placeholder('Opsional - Upload bukti pembayaran'),
                         Forms\Components\Select::make('payment_account_id')
                             ->label('Pilih Rekening')
                             ->searchable()
@@ -294,7 +296,7 @@ class AdvanceResource extends Resource
                                 [$account->id => "{$account->name} ({$account->bank_name}) - {$account->getFormattedBalance()}"]
                             ))
                             ->required(),
-                        ])
+                    ])
                         ->requiresConfirmation()
                         ->color('success')
                         ->icon('heroicon-o-credit-card')
