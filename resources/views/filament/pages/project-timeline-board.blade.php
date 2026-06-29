@@ -1,10 +1,6 @@
 <x-filament-panels::page>
 
 <div>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
-
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
 
         <div id="historyBadge" class="tl-history">
@@ -141,6 +137,9 @@
     .stage-hold { background: rgba(239, 68, 68, 0.2); color: #dc2626; }
 </style>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.js"></script>
 <script>
 (function () {
@@ -378,7 +377,5 @@
 
 })();
 </script>
-
-</div>
 
 </x-filament::page>
