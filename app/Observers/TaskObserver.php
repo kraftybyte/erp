@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Task;
+use App\Models\Event;
 use App\Helpers\NotifHelper;
 use App\Services\WablasService;
 use Carbon\Carbon;
@@ -12,15 +13,18 @@ use Illuminate\Support\Facades\Cache;
 class TaskObserver
 {
     /**
-     * ❌ JANGAN dipakai untuk notif (users belum ada)
+     * Auto-create Event when task is created
      */
     public function created(Task $task): void
     {
         Log::info('Task created (no notif here)', ['task_id' => $task->id]);
+
+        // Auto-create Event for timeline
+        $this->syncTaskToEvent($task);
     }
 
     /**
-     * 🔄 Update task (status / deadline / WA)
+     * Sync task to Event when dates or title change
      */
     public function updated(Task $task): void
     {
@@ -30,6 +34,11 @@ class TaskObserver
         $cacheKey = "task_notif_{$task->id}";
         if (Cache::has($cacheKey)) return;
         Cache::put($cacheKey, true, now()->addSeconds(3));
+
+        // Sync to Event if dates or title changed
+        if ($task->wasChanged(['mulai_task', 'selesai_task', 'nama_task', 'status'])) {
+            $this->syncTaskToEvent($task);
+        }
 
         if (!$task->wasChanged(['status', 'proritas', 'selesai_task'])) return;
 
@@ -125,5 +134,37 @@ class TaskObserver
         }
 
         Log::info("Task {$task->id} notif update selesai");
+    }
+
+    /**
+     * Sync task to Event (create or update)
+     */
+    protected function syncTaskToEvent(Task $task): void
+    {
+        // Only sync if task has dates
+        if (!$task->mulai_task) {
+            Log::info('Task has no start date, skipping Event sync', ['task_id' => $task->id]);
+            return;
+        }
+
+        $eventData = [
+            'title' => $task->nama_task,
+            'description' => $task->detail_task ?? '',
+            'start_time' => $task->mulai_task,
+            'end_time' => $task->selesai_task ?? $task->mulai_task,
+            'task_id' => $task->id,
+        ];
+
+        $existingEvent = Event::where('task_id', $task->id)->first();
+
+        if ($existingEvent) {
+            // Update existing event
+            $existingEvent->update($eventData);
+            Log::info('Event updated for task', ['task_id' => $task->id, 'event_id' => $existingEvent->id]);
+        } else {
+            // Create new event
+            Event::create($eventData);
+            Log::info('Event created for task', ['task_id' => $task->id]);
+        }
     }
 }
