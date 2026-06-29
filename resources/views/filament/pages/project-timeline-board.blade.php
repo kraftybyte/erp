@@ -103,6 +103,39 @@
         transform: scale(1.6);
         background: #2563eb;
     }
+
+    /* Stage Badge Styles */
+    .fc-event-inner {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 2px 0;
+    }
+
+    .fc-event-title {
+        font-size: 0.82rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .stage-badge {
+        display: inline-block;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        width: fit-content;
+    }
+
+    .stage-log, .stage-todo { background: rgba(245, 158, 11, 0.2); color: #d97706; }
+    .stage-process, .stage-progress { background: rgba(8, 145, 178, 0.2); color: #0891b2; }
+    .stage-review { background: rgba(147, 51, 234, 0.2); color: #7c3aed; }
+    .stage-done { background: rgba(22, 163, 74, 0.2); color: #15803d; }
+    .stage-hold { background: rgba(239, 68, 68, 0.2); color: #dc2626; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.js"></script>
@@ -113,6 +146,18 @@
     const ALL_EVENTS = @json($events);
     const UPDATE_URL = "{{ route('timeline.update') }}";
     const CSRF = "{{ csrf_token() }}";
+
+    // Stage label helper
+    function getStageLabel(status) {
+        const labels = {
+            'log': 'To Do',
+            'process': 'Progress',
+            'review': 'Review',
+            'done': 'Done',
+            'hold': 'Hold'
+        };
+        return labels[status?.toLowerCase()] || status || '';
+    }
 
     // ── Filter: sembunyikan event yang end-nya sudah lewat hari ini ──────────
     function filterActive(resources, events) {
@@ -218,6 +263,19 @@
             editable: true,
             eventResourceEditable: false,
             resourceAreaHeaderContent: 'Nama Client',
+
+            eventContent: function(arg) {
+                const event = arg.event;
+                const stage = event.extendedProps.stage || '';
+                const stageLabel = getStageLabel(stage);
+                const stageBadge = stage ? `<span class="stage-badge stage-${stage}">${stageLabel}</span>` : '';
+                return {
+                    html: `<div class="fc-event-inner">
+                        <div class="fc-event-title">${event.title}</div>
+                        ${stageBadge}
+                    </div>`
+                };
+            },
 
             slotDuration: { days: 1 },
             slotLabelFormat: { weekday: 'short', day: '2-digit' },

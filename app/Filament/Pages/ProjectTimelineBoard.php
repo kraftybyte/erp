@@ -93,7 +93,7 @@ class ProjectTimelineBoard extends Page
 
     // Task-based events (from kanban sync)
     $taskEvents = Event::whereNotNull('task_id')
-        ->with('task.project')
+        ->with('task.project', 'task.stage')
         ->get()
         ->map(function ($event) {
             $task = $event->task;
@@ -103,9 +103,10 @@ class ProjectTimelineBoard extends Page
                 'id' => 'task-' . $event->id,
                 'resourceId' => 'project-' . $task->project_id,
                 'title' => $task->nama_task,
+                'stage' => $task->status ?? 'log',
                 'start' => $task->mulai_task ? Carbon::parse($task->mulai_task)->format('Y-m-d') : null,
                 'end' => $task->selesai_task ? Carbon::parse($task->selesai_task)->format('Y-m-d') : null,
-                'backgroundColor' => $event->color ?? '#6366f1',
+                'backgroundColor' => $event->color ?? $this->getEventColor($task->status),
             ];
         })
         ->filter()
@@ -215,6 +216,36 @@ protected function getHeaderActions(): array
 
         }),
     ];
+}
+
+/**
+ * Get event color based on task status
+ */
+protected function getEventColor(string $status): string
+{
+    return match (strtolower($status)) {
+        'log' => '#f59e0b',
+        'process' => '#0891b2',
+        'review' => '#9333ea',
+        'done' => '#16a34a',
+        'hold' => '#ef4444',
+        default => '#6366f1',
+    };
+}
+
+/**
+ * Get stage label for display
+ */
+protected function getStageLabel(string $status): string
+{
+    return match (strtolower($status)) {
+        'log' => 'To Do',
+        'process' => 'Progress',
+        'review' => 'Review',
+        'done' => 'Done',
+        'hold' => 'Hold',
+        default => ucfirst($status),
+    };
 }
 
 }
