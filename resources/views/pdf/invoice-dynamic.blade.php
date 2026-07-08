@@ -216,8 +216,8 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                     <td style="width: 50%; vertical-align: top; text-align: left;">
-                        <strong style="margin-bottom: 10px; display:block; font-size: 14px;">From:</strong>
-                        <p style="font-size: 12px; text-align: left;">
+                        <strong style="margin-bottom: 10px; display:block; font-size: 10px;">From:</strong>
+                        <p style="font-size: 11px; text-align: left;">
                             {{ $settings['company_info']['name'] ?? 'Company Name' }}
                             <br>
                             {{ $settings['company_info']['address'] ?? '' }}
@@ -226,8 +226,8 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                         </p>
                     </td>
                     <td style="width: 50%; vertical-align: top;">
-                        <strong style="margin-bottom: 10px; display:block; font-size: 14px; text-align: right;">To:</strong>
-                        <p style="font-size: 12px; text-align: right;">
+                        <strong style="margin-bottom: 10px; display:block; font-size: 11px; text-align: right;">To:</strong>
+                        <p style="font-size: 10px; text-align: right;">
                             {{ $invoice->nama_perusahaan }}
                             <br>
                             {{ $invoice->alamat }}
@@ -238,7 +238,7 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                 </tr>
                 <tr>
                     <td style="width: 50%; vertical-align: top; text-align: left;">
-                        <p style="font-size: 12px; text-align: left;">
+                        <p style="font-size: 10px; text-align: left;">
                         <br>
                         <b>Number:</b> {{ $invoice->uuid }}
                         <br>
@@ -273,26 +273,26 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
             <tbody>
                 @foreach ($invoice->invoicesItems ?? [] as $item)
                 <tr>
-                    <td style="text-align: center; font-size: 11px;">Service</td>
-                    <td style="text-align: left; font-size: 11px;">
+                    <td style="text-align: center; font-size: 10px;">Service</td>
+                    <td style="text-align: left; font-size: 10px;">
                         {{ $item->item }}<br><br>
                         <span style="font-size: 9px;">{!! $item->description !!}</span>
                     </td>
-                    <td style="text-align: center; font-size: 11px;">{{ $item->qty }} Month</td>
-                    <td style="text-align: center; font-size: 11px;">Rp{{ number_format($item->price, 0, ',', '.') }}</td>
-                    <td style="text-align: center; font-size: 11px;">{{ $item->discount == 0 ? '-' : 'Rp' . number_format($item->discount, 0, ',', '.') }}</td>
-                    <td style="text-align: center; font-size: 11px;">Rp{{ number_format($item->price * $item->qty, 0, ',', '.') }}</td>
+                    <td style="text-align: center; font-size: 10px;">{{ $item->qty }} Month</td>
+                    <td style="text-align: center; font-size: 10px;">Rp{{ number_format($item->price, 0, ',', '.') }}</td>
+                    <td style="text-align: center; font-size: 10px;">{{ $item->discount == 0 ? '-' : 'Rp' . number_format($item->discount, 0, ',', '.') }}</td>
+                    <td style="text-align: center; font-size: 10px;">Rp{{ number_format($item->price * $item->qty, 0, ',', '.') }}</td>
                 </tr>
                 @endforeach
                 <tr>
-                    <td colspan="5" style="text-align: right; font-size: 11px;"><strong></strong></td>
-                    <td style="text-align: center; font-size: 11px;"></td>
+                    <td colspan="5" style="text-align: right; font-size: 10px;"><strong></strong></td>
+                    <td style="text-align: center; font-size: 10px;"></td>
                 </tr>
             </tbody>
         </table>
 
         <div class="summary-box">
-            <div class="invoice-footer" style="font-size: 12px;">
+            <div class="invoice-footer" style="font-size: 10px;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
                         <td style="text-align: left; width: 50%;">
@@ -324,7 +324,7 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                 $sigData = base64_encode(file_get_contents(public_path('storage/' . $sigPath)));
             }
         ?>
-        <div class="invoice-footer" style="font-size: 11px; margin-top: 20px;">
+        <div class="invoice-footer" style="font-size: 10px; margin-top: 20px;">
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                     <td style="text-align: left; width: 50%;">
@@ -332,7 +332,7 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                     </td>
                     <td style="width: 50%; text-align: right;">
                         <div style="display: inline-block; text-align: center;">
-                            <p>Sincerely Yours,</p>
+                            <p>Sincerely Yours,</p><br>
                             @if($sigData)
                                 <img class="invoice-sign" src="data:image/png;base64,{{ $sigData }}" alt="Signature" style="display: block; margin: 10px auto; height: 60px;">
                             @elseif($sigPath)
@@ -340,7 +340,7 @@ if ($logoPath && file_exists(public_path('storage/' . $logoPath))) {
                             @else
                                 <img class="invoice-sign" src="{{ public_path('storage/sites/heidy-stamp.png') }}" alt="Signature" style="display: block; margin: 10px auto; height: 60px;">
                             @endif
-                            <p>{{ $settings['signature_name'] ?? 'Madita Heidy' }}</p>
+                            <br><br><p>{{ $settings['signature_name'] ?? 'Madita Heidy' }}</p>
                         </div>
                     </td>
                 </tr>

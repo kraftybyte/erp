@@ -105,6 +105,12 @@ class ContractResource extends Resource
                 Forms\Components\Section::make('Tipe Kontrak')
                     ->icon('heroicon-o-document')
                     ->schema([
+                        TextInput::make('contract_number')
+                            ->label('Nomor Kontrak')
+                            ->default(fn () => Contract::generateContractNumber())
+                            ->readonly()
+                            ->helperText('Otomatis generated. Ubah jika perlu.'),
+
                         Select::make('type')
                             ->label('Format Kontrak')
                             ->options([
@@ -116,15 +122,59 @@ class ContractResource extends Resource
                             ->live(),
                     ]),
 
-                // Section 4: Services (auto-filled from products)
+                // Section 4: Scope of Work (Table Format)
                 Forms\Components\Section::make('Ruang Lingkup Pekerjaan')
                     ->icon('heroicon-o-sparkles')
-                    ->description('Otomatis terisi dari produk yang dipilih di Deal')
+                    ->description('Tabel rincian ruang lingkup pekerjaan')
                     ->schema([
-                        Textarea::make('scope_of_work')
-                            ->label('Detail Layanan')
-                            ->rows(5)
-                            ->helperText('Akan otomatis terisi dari produk deal. Bisa diedit manual jika perlu.'),
+                        Textarea::make('project_description')
+                            ->label('Deskripsi Project')
+                            ->rows(2)
+                            ->placeholder('Deskripsi singkat project yang akan dikerjakan')
+                            ->helperText('Contoh: Digital Ads Management Funnel untuk meningkatkan brand awareness')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('sow_placeholder')
+                            ->label('Tabel Ruang Lingkup')
+                            ->content('Klik tombol "+ Tambah" untuk menambah item SOW')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Repeater::make('sow_items')
+                            ->label('Ruang Lingkup (SOW)')
+                            ->relationship('sowItems')
+                            ->defaultItems(0)
+                            ->schema([
+                                TextInput::make('item')
+                                    ->label('Nama Layanan')
+                                    ->columnSpan(2),
+
+                                Textarea::make('description')
+                                    ->label('Deskripsi / Rincian')
+                                    ->rows(3)
+                                    ->columnSpanFull(),
+
+                                Grid::make(4)
+                                    ->schema([
+                                        TextInput::make('quantity')
+                                            ->label('Qty')
+                                            ->numeric()
+                                            ->default(1),
+
+                                        TextInput::make('unit')
+                                            ->label('Unit')
+                                            ->placeholder('per bulan, per item, dll'),
+
+                                        TextInput::make('amount')
+                                            ->label('Harga')
+                                            ->numeric()
+                                            ->prefix('Rp '),
+
+                                        Textarea::make('notes')
+                                            ->label('Catatan')
+                                            ->rows(1),
+                                    ]),
+                            ])
+                            ->columns(2),
                     ]),
 
                 // Section 5: Details
@@ -240,14 +290,104 @@ class ContractResource extends Resource
                             ]),
                     ]),
 
-                // Section 8: Notes
-                Forms\Components\Section::make('Catatan Tambahan')
+                // Section 8: Lampiran - Table Items
+                Forms\Components\Section::make('Lampiran - Rincian Biaya')
+                    ->icon('heroicon-o-table-cells')
+                    ->schema([
+                        TextInput::make('lampiran_title')
+                            ->label('Judul Lampiran')
+                            ->default('Lampiran 1 — Rincian Biaya Jasa')
+                            ->columnSpanFull(),
+
+                        // Tabel A - Fee Items
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('table_a_title')
+                                    ->label('Judul Tabel A')
+                                    ->default('Tabel A'),
+
+                                TextInput::make('table_b_title')
+                                    ->label('Judul Tabel a')
+                                    ->default('Tabel a'),
+                            ]),
+
+                        // Tabel A - Fee Items
+                        Forms\Components\Placeholder::make('table_a_placeholder')
+                            ->label('Tabel A - Biaya Jasa')
+                            ->content('Klik tombol "+ Tambah" untuk menambah item biaya')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Repeater::make('fee_items')
+                            ->label('Item Biaya (Tabel A)')
+                            ->relationship('feeItems')
+                            ->schema([
+                                TextInput::make('item')
+                                    ->label('Nama Item')
+                                    ->required(),
+                                TextInput::make('amount')
+                                    ->label('Jumlah')
+                                    ->numeric()
+                                    ->prefix('Rp '),
+                                TextInput::make('due_date')
+                                    ->label('Jatuh Tempo'),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(1),
+
+                        // Tabel a - Third Party
+                        Forms\Components\Placeholder::make('table_b_placeholder')
+                            ->label('Tabel a - Biaya Pihak Ketiga')
+                            ->content('Klik tombol "+ Tambah" untuk menambah item pihak ketiga')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Repeater::make('third_party_items')
+                            ->label('Item Pihak Ketiga (Tabel a)')
+                            ->relationship('thirdPartyItems')
+                            ->schema([
+                                TextInput::make('item')
+                                    ->label('Nama Item'),
+                                TextInput::make('amount')
+                                    ->label('Jumlah')
+                                    ->numeric()
+                                    ->prefix('Rp '),
+                                Textarea::make('notes')
+                                    ->label('Keterangan')
+                                    ->rows(2),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0),
+                    ]),
+
+                // Section 9: Additional Terms
+                Forms\Components\Section::make('Ketentuan Tambahan')
                     ->icon('heroicon-o-document-text')
                     ->collapsed()
                     ->schema([
                         MarkdownEditor::make('content')
                             ->label('Klausul / Catatan Tambahan')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->helperText('Ketentuan tambahan yang akan muncul di Pasal 11'),
+
+                        Forms\Components\Toggle::make('force_majeure_extended')
+                            ->label('Force Majeure Extended')
+                            ->default(false)
+                            ->helperText('Aktifkan untuk menambahkan klausul Force Majeure yang lebih detail'),
+
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('termination_notice_days')
+                                    ->label('Hari Pemberitahuan Terminasi')
+                                    ->numeric()
+                                    ->default(30)
+                                    ->suffix('hari')
+                                    ->helperText('Jumlah hari pemberitahuan sebelum terminasi'),
+
+                                Textarea::make('penalty_clause')
+                                    ->label('Klausul Denda')
+                                    ->rows(2)
+                                    ->placeholder('Ketentuan denda jika melanggar perjanjian')
+                                    ->helperText('Contoh: Denda 5% dari total kontrak per hari keterlambatan'),
+                            ]),
                     ]),
 
                 // Section 9: Signature

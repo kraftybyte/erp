@@ -6,6 +6,7 @@ use Spatie\LaravelSettings\Settings;
 
 class GeneralSettings extends Settings
 {
+    public mixed $app_name = 'ERP Digitalk';
     public mixed $brand_name;
     public mixed $brand_logo = null;
     public mixed $brand_logoHeight;
@@ -56,6 +57,21 @@ class GeneralSettings extends Settings
     public mixed $packing_title = 'PACKING SLIP'; // Custom title for packing slip print
     public mixed $packing_qr_url_prefix = null; // Custom URL prefix for QR code (e.g., https://track.example.com/project/)
 
+    // Contract Template Settings
+    public mixed $contract_logo = null;
+    public mixed $contract_company_name = 'PT. Nama Perusahaan';
+    public mixed $contract_company_address = '';
+    public mixed $contract_company_phone = '';
+    public mixed $contract_company_email = '';
+    public mixed $contract_bank_name = 'Bank';
+    public mixed $contract_bank_account = '';
+    public mixed $contract_bank_account_name = '';
+    public mixed $contract_signature_name = '';
+    public mixed $contract_signature_title = '';
+    public mixed $contract_signature_image = null;
+    public mixed $contract_font_size = '11pt';
+    public mixed $contract_line_height = '1.6';
+
     // Project Categories
     public mixed $project_categories = [];
 
@@ -105,6 +121,7 @@ class GeneralSettings extends Settings
     public static function defaults(): array
     {
         return [
+            'app_name' => 'ERP Digitalk',
             'dark_mode_enabled' => false,
             'primary_gradient_from' => '#90c646',
             'primary_gradient_to' => '#6fa335',
@@ -146,6 +163,20 @@ class GeneralSettings extends Settings
             // Packing Slip Defaults
             'packing_title' => 'PACKING SLIP',
             'packing_qr_url_prefix' => null,
+            // Contract Template Defaults
+            'contract_logo' => null,
+            'contract_company_name' => 'PT. Nama Perusahaan',
+            'contract_company_address' => '',
+            'contract_company_phone' => '',
+            'contract_company_email' => '',
+            'contract_bank_name' => 'Bank',
+            'contract_bank_account' => '',
+            'contract_bank_account_name' => '',
+            'contract_signature_name' => '',
+            'contract_signature_title' => '',
+            'contract_signature_image' => null,
+            'contract_font_size' => '11pt',
+            'contract_line_height' => '1.6',
             // Project Categories
             'project_categories' => [
                 'Social Media Management',

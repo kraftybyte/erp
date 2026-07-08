@@ -12,8 +12,10 @@ use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
 class Invoice extends BaseInvoice
 {
     protected $fillable = [
+        // === PaymentAccount integration ===
         'payment_account_id',
-        // Keep original fillable fields
+
+        // === Bank fields ===
         'bank_account',
         'bank_account_owner',
         'bank_iban',
@@ -24,6 +26,8 @@ class Invoice extends BaseInvoice
         'bank_city',
         'bank_country',
         'is_bank_transfer',
+
+        // === Core invoice fields ===
         'currency_id',
         'user_id',
         'uuid',
@@ -52,12 +56,24 @@ class Invoice extends BaseInvoice
         'type_payment',
         'po_number',
         'faktur',
-        'nama_perusahaan',
-        'telephone',
-        'alamat',
-        'subtotal',
-        'total_discount',
-        'total_vat',
+
+        // === Missing fields from base model ===
+        'is_activated',
+        'is_offer',
+        'send_email',
+        'notes',
+        'order_id',
+        'category_id',
+        'shipping',
+    ];
+
+    protected $casts = [
+        'due_date' => 'datetime',
+        'date' => 'datetime',
+        'is_offer' => 'bool',
+        'is_activated' => 'bool',
+        'send_email' => 'bool',
+        'is_bank_transfer' => 'bool',
     ];
 
     /**

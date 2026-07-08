@@ -310,28 +310,28 @@ class QuotationResource extends Resource
 
                         /* ========= GENERATE PROFORMA UUID ========= */
                         $settings = app(GeneralSettings::class);
-                        $prefix = ($settings->invoice_prefix ?? 'INV');
                         $datePart = now()->format('ym'); // Format: YYMM
 
-                        // Get highest sequence number across ALL invoices (continue sequence)
-                        $allInvoices = Invoice::where('uuid', 'like', '#%/%/%')->get();
+                        // Determine prefix based on type
+                        $invoiceType = 'estimate';
+                        $prefix = match ($invoiceType) {
+                            'estimate' => 'PI',
+                            'sale' => $settings->invoice_prefix ?? 'INV',
+                            default => $settings->invoice_prefix ?? 'INV',
+                        };
 
-                        $highestSeq = 0;
-                        foreach ($allInvoices as $inv) {
-                            $seq = intval(substr($inv->uuid, -5));
-                            if ($seq > $highestSeq) {
-                                $highestSeq = $seq;
-                            }
-                        }
+                        // Get highest sequence number by TYPE and MONTH
+                        // Format: #PREFIX/013YYMM/XXXXX
+                        // Filter by prefix (type) AND current month
+                        $monthPattern = $prefix . '/013' . $datePart . '/%';
 
-                        $newNumber = str_pad(
-                            $highestSeq + 1,
-                            5,
-                            '0',
-                            STR_PAD_LEFT
-                        );
+                        $highestSeq = Invoice::where('uuid', 'like', $monthPattern)
+                            ->get()
+                            ->map(fn($inv) => intval(substr($inv->uuid, -5)))
+                            ->max() ?? 0;
 
-                        $uuid = '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
+                        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
+                        $uuid = '#' . $monthPattern . $newNumber;
 
                         /* ========= DB TRANSACTION ========= */
                         \DB::transaction(function () use ($record, $uuid, $deal) {
@@ -362,15 +362,15 @@ class QuotationResource extends Resource
                             /* ========= COPY ITEMS ========= */
                             foreach ($record->items as $item) {
                                 InvoicesItem::create([
-                                    'invoice_id'     => $invoice->id,
-                                    'item'           => $item->item,
-                                    'description'    => $item->Description,
-                                    'qty'            => $item->qty,
-                                    'price'          => $item->price,
-                                    'discount'       => $item->discount,
-                                    'vat'            => $item->vat,
+                                    'invoice_id'  => $invoice->id,
+                                    'item'        => $item->item,
+                                    'description' => $item->Description,
+                                    'qty'         => $item->qty,
+                                    'price'       => $item->price,
+                                    'discount'    => $item->discount,
+                                    'vat'         => $item->vat,
                                     'vat_percentage' => $item->vat_percentage,
-                                    'total'          => $item->total,
+                                    'total'       => $item->total,
                                 ]);
                             }
 

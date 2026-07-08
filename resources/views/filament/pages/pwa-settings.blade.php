@@ -85,7 +85,7 @@
 
                     <x-filament::section>
                         <x-slot name="heading">Install Aplikasi</x-slot>
-                        <x-slot name="description">Pasang ERP Krafty di perangkat Anda untuk pengalaman terbaik</x-slot>
+                        <x-slot name="description">Pasang ERP di perangkat Anda untuk pengalaman terbaik</x-slot>
 
                         <div class="grid md:grid-cols-3 gap-4">
                             <div class="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4 border border-blue-200 dark:border-blue-700">

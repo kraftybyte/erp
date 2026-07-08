@@ -1,283 +1,206 @@
-<div>
-    <x-filament-panels::page>
-        <x-filament::section>
-            <div class="space-y-8">
-                <!-- Header Section -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <!-- Left Column - Company & Client Info -->
-                    <div class="space-y-6">
-                        <!-- Logo -->
-                        <div class="mb-6">
-                            @php
-                                $logo = \TomatoPHP\FilamentSettings\Settings\General::get('site_logo') ?? setting('site_logo');
- @endphp
-                            @if($logo)
-                                <img src="{{ url('storage/' . $logo) }}" alt="{{ setting('site_name') }}" class="h-16 w-auto">
-                            @else
-                                <div class="text-2xl font-bold text-primary-600">{{ setting('site_name', 'ERP Creative') }}</div>
-                            @endif
-                        </div>
+    <div>
+        <x-filament-panels::page>
 
-                        <!-- Bill From -->
+            <x-filament::section>
+                <div class="space-y-12">
+
+                    {{-- ================= HEADER ================= --}}
+                    <div class="grid grid-cols-2 gap-16">
+
+                        {{-- BILL TO --}}
                         <div>
-                            <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                                {{ trans('filament-invoices::messages.invoices.view.bill_from') }}
+                            <div class="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-3">
+                                Bill To
                             </div>
-                            <div class="space-y-1">
-                               <div class="text-lg font-bold text-gray-900 dark:text-white">
-                                    {{ $this->getRecord()->billedFrom?->name ?? setting('general.quot_company_name', 'PT Digital Catha Sangkara') }}
-                                </div>
-<div class="text-sm text-gray-600 dark:text-gray-300">
-                                    {{ $this->getRecord()->billedFrom?->phone ?? setting('general.quot_company_phone', '085186028747') }}
-                                </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-300">
-                                    {{ $this->getRecord()->billedFrom?->address ?? setting('general.inv_company_address', '-') }}
-                                </div>
+
+                            <div class="text-sm font-bold">
+                                {{ $this->getRecord()->nama_perusahaan ?? 'N/A' }}
+                            </div>
+
+                            <div class="mt-3 text-sm text-gray-600">
+                                {{ $this->getRecord()->alamat ?? 'N/A' }}
+                            </div>
+
+                            <div class="mt-2 text-sm text-gray-600">
+                                {{ $this->getRecord()->telephone ?? 'N/A' }}
                             </div>
                         </div>
 
-                        <!-- Bill To -->
-                        <div>
-                            <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                                {{ trans('filament-invoices::messages.invoices.view.bill_to') }}
+                        {{-- INVOICE META --}}
+                        <div class="text-right">
+                            <div class="text-3xl font-bold uppercase">
+                                {{ type_of($this->getRecord()->type, 'invoices', 'type')->name }}
                             </div>
-                            <div class="space-y-1">
-                                <div class="text-lg font-bold text-gray-900 dark:text-white">
-                                    {{ $this->getRecord()->billedFor?->name ?? $this->getRecord()->name ?? $this->getRecord()->nama_perusahaan ?? '-' }}
+
+                            <div class="mt-2 text-sm text-gray-500">
+                                {{ $this->getRecord()->uuid }}
+                            </div>
+
+                            <div class="mt-8 space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Issue Date</span>
+                                    <span class="font-medium">
+                                        {{ $this->getRecord()->created_at->toDateString() }}
+                                    </span>
                                 </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-300">
-                                    {{ $this->getRecord()->billedFor?->email ?? '-' }}
+
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Due Date</span>
+                                    <span class="font-medium">
+                                        {{ $this->getRecord()->due_date->toDateString() }}
+                                    </span>
                                 </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-300">
-                                    {{ $this->getRecord()->billedFor?->phone ?? $this->getRecord()->phone ?? $this->getRecord()->telephone ?? '-' }}
-                                </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-300">
-                                    {{ $this->getRecord()->billedFor?->address ?? $this->getRecord()->address ?? $this->getRecord()->alamat ?? '-' }}
+
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Status</span>
+                                    <span class="font-semibold">
+                                        {{ type_of($this->getRecord()->status, 'invoices', 'status')->name }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
+
                     </div>
 
-                    <!-- Right Column - Invoice Details -->
-                    <div class="space-y-6 lg:text-right">
-                        <div>
-                            <h1 class="text-4xl font-bold text-gray-900 dark:text-white uppercase tracking-tight">
-                                {{ trans('filament-invoices::messages.invoices.view.invoice') }}
-                            </h1>
-                            <div class="text-lg text-gray-500 dark:text-gray-400 mt-1">
-                                #{{ $this->getRecord()->uuid }}
-                            </div>
+
+                    {{-- ================= ITEMS ================= --}}
+                    <div class="border rounded-2xl overflow-hidden">
+
+                        <div class="grid grid-cols-5 bg-gray-50 text-xs uppercase tracking-wide text-gray-500 font-semibold p-4">
+                            <div class="col-span-2">Item</div>
+                            <div class="text-right">Price</div>
+                            <div class="text-right">Qty</div>
+                            <div class="text-right">Total</div>
                         </div>
 
-                        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6 space-y-3">
-                            <div class="flex justify-between lg:justify-end gap-8">
-                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                    {{ trans('filament-invoices::messages.invoices.view.issue_date') }}:
-                                </span>
-                                <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                                    {{ $this->getRecord()->date?->toDateString() ?? $this->getRecord()->created_at?->toDateString() ?? '-' }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between lg:justify-end gap-8">
-                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                    {{ trans('filament-invoices::messages.invoices.view.due_date') }}:
-                                </span>
-                                <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                                    {{ $this->getRecord()->due_date?->toDateString() ?? '-' }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between lg:justify-end gap-8">
-                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                    {{ trans('filament-invoices::messages.invoices.view.status') }}:
-                                </span>
-                                <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                                    @php
-                                        try {
-                                            echo \Spatie\Enum\Enum::make($this->getRecord()->status)->label();
-                                        } catch (\Throwable $e) {
-                                            echo ucfirst($this->getRecord()->status ?? '-');
-                                        }
-                                    @endphp
-                                </span>
-                            </div>
-                            <div class="flex justify-between lg:justify-end gap-8">
-                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                    {{ trans('filament-invoices::messages.invoices.view.type') }}:
-                                </span>
-                                <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                                    @php
-                                        try {
-                                            echo \Spatie\Enum\Enum::make($this->getRecord()->type)->label();
-                                        } catch (\Throwable $e) {
-                                            echo ucfirst($this->getRecord()->type ?? '-');
-                                        }
-                                    @endphp
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        @foreach($this->getRecord()->invoicesitems as $item)
+                            <div class="grid grid-cols-5 p-4 border-t text-sm items-start">
 
-                <!-- Items Table -->
-                <div class="overflow-hidden border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <!-- Table Header -->
-                    <div class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                        <div class="grid grid-cols-2 gap-4 px-6 py-4">
-                            <div class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                                Item
-                            </div>
-                            <div class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide text-right">
-                                Total
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Table Body -->
-                    <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                        @forelse($this->getRecord()->invoicesitems as $item)
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 py-5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
-                                <!-- Item Details -->
-                                <div class="space-y-2">
-                                    <div class="text-base font-semibold text-gray-900 dark:text-white">
-                                        {{ $item->item ?? '-' }}
+                                <div class="col-span-2">
+                                    <div class="font-semibold text-gray-900">
+                                        {{ $item->item }}
                                     </div>
+
                                     @if($item->description)
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">
-                                            {{ $item->description }}
+                                        <div class="text-gray-400 text-xs mt-1">
+                                            {!! $item->description !!}
                                         </div>
                                     @endif
                                 </div>
 
-                                <!-- Item Pricing -->
-                                <div class="space-y-2 lg:text-right">
-                                    <div class="flex justify-between lg:justify-end gap-8">
-                                        <span class="text-sm text-gray-500 dark:text-gray-400">Price:</span>
-                                        <span class="text-sm font-medium text-gray-900 dark:text-white">
-                                            Rp {{ number_format($item->price ?? 0, 0) }}
-                                        </span>
-                                    </div>
-                                    <div class="flex justify-between lg:justify-end gap-8">
-                                        <span class="text-sm text-gray-500 dark:text-gray-400">Qty:</span>
-                                        <span class="text-sm font-medium text-gray-900 dark:text-white">
-                                            {{ $item->qty ?? 0 }}
-                                        </span>
-                                    </div>
-<div class="flex justify-between lg:justify-end gap-8">
-                                        <span class="text-sm text-gray-500 dark:text-gray-400">Tax:</span>
-                                        <span class="text-sm font-medium text-gray-900 dark:text-white">
-                                            Rp {{ number_format($item->tax ?? 0, 0) }}
-                                        </span>
-                                    </div>
-                                    <div class="flex justify-between lg:justify-end gap-8">
-                                        <span class="text-sm text-gray-500 dark:text-gray-400">Discount:</span>
-                                        <span class="text-sm font-medium text-gray-900 dark:text-white">
-                                            Rp {{ number_format($item->discount ?? 0, 0) }}
-</span>
-                                    </div>
-                                    <div class="flex justify-between lg:justify-end gap-8 pt-2 border-t border-gray-200 dark:border-gray-700">
-                                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Total:</span>
-                                        <span class="text-base font-bold text-gray-900 dark:text-white">
-                                            Rp {{ number_format($item->total ?? 0, 0) }}
-                                        </span>
-                                    </div>
+                                <div class="text-right">
+                                    <small class="text-xs text-gray-400">
+                                        {{ $this->getRecord()->currency?->iso }}
+                                    </small>
+                                    {{ number_format($item->price, 2) }}
                                 </div>
-                            </div>
-                        @empty
-                            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                                No items found
-                            </div>
-                        @endforelse
-                    </div>
-                </div>
 
-                <!-- Summary Section -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <!-- Left Column - Bank Info -->
-                    <div class="space-y-6">
-                        @if($this->getRecord()->is_bank_transfer)
-                            <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6">
-                                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">
-                                    Bank Transfer Info
-                                </h3>
-                                <div class="space-y-2 text-sm">
-                                    <div class="flex gap-2">
-                                        <span class="text-gray-500 dark:text-gray-400 min-w-[80px]">Bank:</span>
-                                        <span class="font-semibold text-gray-900 dark:text-white">
-                                            {{ $this->getRecord()->bank_name ?? '-' }}
-                                        </span>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <span class="text-gray-500 dark:text-gray-400 min-w-[80px]">Account:</span>
-                                        <span class="font-semibold text-gray-900 dark:text-white">
-                                            {{ $this->getRecord()->bank_account ?? '-' }}
-                                        </span>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <span class="text-gray-500 dark:text-gray-400 min-w-[80px]">Atas Nama:</span>
-                                        <span class="font-semibold text-gray-900 dark:text-white">
-                                            {{ $this->getRecord()->bank_account_owner ?? '-' }}
-                                        </span>
-                                    </div>
+                                <div class="text-right">
+                                    {{ $item->qty }}
                                 </div>
+
+                                <div class="text-right font-semibold">
+                                    <small class="text-xs text-gray-400">
+                                        {{ $this->getRecord()->currency?->iso }}
+                                    </small>
+                                    {{ number_format($item->total, 2) }}
+                                </div>
+
                             </div>
+                        @endforeach
+
+                    </div>
+
+
+                    {{-- ================= TOTAL ================= --}}
+                    <div class="flex justify-end">
+
+                        <div class="w-96 space-y-3">
+
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Subtotal</span>
+                                <span class="font-medium">
+                                    {{ $this->getRecord()->currency?->iso }}
+                                    {{ number_format(($this->getRecord()->grand_total + $this->getRecord()->total_discount) - ($this->getRecord()->total_vat + $this->getRecord()->shipping), 2) }}
+                                </span>
+                            </div>
+
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Tax</span>
+                                <span>
+                                    {{ $this->getRecord()->currency?->iso }}
+                                    {{ number_format($this->getRecord()->total_vat, 2) }}
+                                </span>
+                            </div>
+
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Discount</span>
+                                <span>
+                                    {{ $this->getRecord()->currency?->iso }}
+                                    {{ number_format($this->getRecord()->total_discount, 2) }}
+                                </span>
+                            </div>
+
+                            <div class="border-t pt-3 flex justify-between text-lg font-bold">
+                                <span>Total</span>
+                                <span>
+                                    {{ $this->getRecord()->currency?->iso }}
+                                    {{ number_format($this->getRecord()->grand_total, 2) }}
+                                </span>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    {{-- ================= NOTES ================= --}}
+                    @if($this->getRecord()->notes)
+                        <div class="pt-8 border-t">
+                            <div class="text-sm uppercase tracking-wide text-gray-400 font-semibold mb-2">
+                                Notes
+                            </div>
+
+                            <div class="text-sm text-gray-600">
+                                {!! $this->getRecord()->notes !!}
+                            </div>
+                        </div>
+                    @endif
+
+                </div>
+            </x-filament::section>
+
+
+            {{-- ================= RELATION MANAGERS (TETAP ADA) ================= --}}
+            <div class="no-print">
+                @php
+                    $relationManagers = $this->getRelationManagers();
+                    $hasCombinedRelationManagerTabsWithContent = $this->hasCombinedRelationManagerTabsWithContent();
+                @endphp
+
+                @if (count($relationManagers))
+                    <x-filament-panels::resources.relation-managers
+                        :active-locale="isset($activeLocale) ? $activeLocale : null"
+                        :active-manager="$this->activeRelationManager ?? ($hasCombinedRelationManagerTabsWithContent ? null : array_key_first($relationManagers))"
+                        :content-tab-label="$this->getContentTabLabel()"
+                        :content-tab-icon="$this->getContentTabIcon()"
+                        :content-tab-position="$this->getContentTabPosition()"
+                        :managers="$relationManagers"
+                        :owner-record="$record"
+                        :page-class="static::class"
+                    >
+                        @if ($hasCombinedRelationManagerTabsWithContent)
+                            <x-slot name="content">
+                                @if ($this->hasInfolist())
+                                    {{ $this->infolist }}
+                                @else
+                                    {{ $this->form }}
+                                @endif
+                            </x-slot>
                         @endif
-                    </div>
-
-                    <!-- Right Column - Total Summary -->
-                    <div>
-                        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6 space-y-4">
-                            <div class="flex justify-between text-sm">
-                                <span class="font-medium text-gray-600 dark:text-gray-300">Subtotal</span>
-                                <span class="font-semibold text-gray-900 dark:text-white">
-                                    Rp {{ number_format($this->getRecord()->total ?? 0, 0) }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="font-medium text-gray-600 dark:text-gray-300">Tax (VAT)</span>
-                                <span class="font-semibold text-gray-900 dark:text-white">
-                                    Rp {{ number_format($this->getRecord()->vat ?? 0, 0) }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="font-medium text-gray-600 dark:text-gray-300">Discount</span>
-                                <span class="font-semibold text-gray-900 dark:text-white">
-                                    Rp {{ number_format($this->getRecord()->discount ?? 0, 0) }}
-                                </span>
-                            </div>
-                            <div class="border-t-2 border-gray-300 dark:border-gray-600 pt-4 mt-4">
-                                <div class="flex justify-between">
-                                    <span class="text-xl font-bold text-gray-900 dark:text-white">Total</span>
-                                    <span class="text-2xl font-bold text-primary-600 dark:text-primary-400">
-                                        Rp {{ number_format($this->getRecord()->grand_total ?? $this->getRecord()->total ?? 0, 0) }}
-                                    </span>
-                                </div>
-                            </div>
-<div class="flex justify-between text-sm border-t pt-2">
-                                <span class="font-medium text-gray-600 dark:text-gray-300">Paid</span>
-                                <span class="font-semibold text-green-600 dark:text-green-400">
-                                    Rp {{ number_format($this->getRecord()->paid ?? 0, 0) }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="font-medium text-gray-600 dark:text-gray-300">Remaining</span>
-                                <span class="font-semibold text-red-600 dark:text-red-400">
-                                    Rp {{ number_format(($this->getRecord()->grand_total ?? $this->getRecord()->total ?? 0) - ($this->getRecord()->paid ?? 0), 0) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Notes Section -->
-                @if($this->getRecord()->notes)
-                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-3">Notes</h3>
-                        <div class="text-sm text-gray-700 dark:text-gray-300">
-                            {!! $this->getRecord()->notes !!}
-                        </div>
-                    </div>
+                    </x-filament-panels::resources.relation-managers>
                 @endif
             </div>
-        </x-filament::section>
-    </x-filament-panels::page>
-</div>
+
+        </x-filament-panels::page>
+    </div>

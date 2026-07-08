@@ -105,7 +105,7 @@ class ManageGeneral extends SettingsPage
                                 ->directory('sites')
                                 ->visibility('public')
                                 ->moveFiles()
-                                ->required(),
+                                ->nullable(),
 
                             FileUpload::make('site_favicon')
                                 ->label(fn () => __('page.general_settings.fields.site_favicon'))
@@ -114,7 +114,7 @@ class ManageGeneral extends SettingsPage
                                 ->visibility('public')
                                 ->acceptedFileTypes(['image/x-icon', 'image/vnd.microsoft.icon'])
                                 ->moveFiles()
-                                ->required(),
+                                ->nullable(),
                             ]),
                         ])->columns(4),
                     ]),
