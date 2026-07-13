@@ -25,4 +25,12 @@ class ViewInvoice extends ViewRecord
                 ->openUrlInNewTab(),
         ];
     }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // Eager load invoicesItems relationship for view
+        $this->record->load('invoicesItems');
+
+        return $data;
+    }
 }

@@ -3,14 +3,17 @@
 namespace App\Models;
 
 use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Extended Invoice model with PaymentAccount support
+ * Extended Invoice model with PaymentAccount support and SoftDeletes
  *
  * @property int|null $payment_account_id
  */
 class Invoice extends BaseInvoice
 {
+    use SoftDeletes;
+
     protected $fillable = [
         // === PaymentAccount integration ===
         'payment_account_id',
@@ -82,5 +85,35 @@ class Invoice extends BaseInvoice
     public function paymentAccount()
     {
         return $this->belongsTo(PaymentAccount::class);
+    }
+
+    /**
+     * Generate UUID based on type and reset per month
+     * Format: #DG/0132607/XXXXX or #PI/0132607/XXXXX
+     */
+    public static function generateUuid(string $type = 'sale'): string
+    {
+        $prefix = match ($type) {
+            'estimate' => 'PI',
+            'sale' => 'DG',
+            default => 'DG',
+        };
+
+        // Format: 013YYMM (e.g., 0132607 for July 2026)
+        $datePart = now()->format('ym');
+
+        // Pattern to match: #PREFIX/013YYMM/XXXXX
+        $pattern = '#' . $prefix . '/013' . $datePart . '/%';
+
+        // Find highest sequence for this month (including soft-deleted)
+        $highestSeq = self::withTrashed()
+            ->where('uuid', 'like', $pattern)
+            ->get()
+            ->map(fn($inv) => intval(substr($inv->uuid, -5)))
+            ->max() ?? 0;
+
+        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
+
+        return '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
     }
 }

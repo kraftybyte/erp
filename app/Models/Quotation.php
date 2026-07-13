@@ -4,9 +4,12 @@ namespace App\Models;
 use App\Settings\GeneralSettings;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Quotation extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'nama_perusahaan',
         'telephone',
