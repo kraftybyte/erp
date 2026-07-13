@@ -29,4 +29,19 @@ class ViewContract extends ViewRecord
             Actions\EditAction::make(),
         ];
     }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // Eager load all relationships for view
+        $this->record->load([
+            'feeItems',
+            'thirdPartyItems',
+            'sowCategories' => function ($query) {
+                $query->with('children')->orderBy('sort_order');
+            },
+            'deal',
+        ]);
+
+        return $data;
+    }
 }

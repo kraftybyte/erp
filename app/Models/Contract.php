@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Contract extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'deal_id',
         'contract_number',
@@ -82,6 +84,18 @@ class Contract extends Model
     public function sowItems(): HasMany
     {
         return $this->hasMany(ContractItem::class)->where('type', 'sow')->orderBy('sort_order');
+    }
+
+    /**
+     * SOW Categories - Parent level items with children loaded
+     */
+    public function sowCategories(): HasMany
+    {
+        return $this->hasMany(ContractItem::class)
+            ->where('type', 'sow')
+            ->whereNull('parent_id')
+            ->with('children')
+            ->orderBy('sort_order');
     }
 
     /**

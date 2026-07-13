@@ -703,9 +703,13 @@ class ContractTemplateService
 
     private function buildSowTable(Contract $contract): string
     {
-        $items = $contract->sowItems ?? collect();
+        // Get hierarchical SOW categories with children
+        $categories = $contract->sowCategories ?? collect();
 
-        if ($items->isEmpty()) {
+        // Also check for legacy flat sowItems
+        $flatItems = $contract->sowItems ?? collect();
+
+        if ($categories->isEmpty() && $flatItems->isEmpty()) {
             return '';
         }
 
@@ -724,23 +728,67 @@ class ContractTemplateService
       </thead>
       <tbody>';
 
-        foreach ($items as $index => $item) {
-            $html .= '
+        // Render hierarchical categories
+        if ($categories->isNotEmpty()) {
+            $rowNum = 1;
+            foreach ($categories as $category) {
+                // Category header row (merged, bold)
+                $categoryName = htmlspecialchars($category->item ?? 'Layanan');
+                $children = $category->children ?? collect();
+
+                $html .= '
+        <tr style="background-color: #f0f0f0;">
+          <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top; font-weight: bold;">' . $rowNum . '</td>
+          <td colspan="4" style="border: 1px solid #000; padding: 6px; font-weight: bold; vertical-align: top;">' . $categoryName . '</td>
+        </tr>';
+
+                // Sub-items (children)
+                $childNum = 1;
+                foreach ($children as $child) {
+                    $childItem = htmlspecialchars($child->item ?? '-');
+                    $childDesc = nl2br(htmlspecialchars($child->description ?? '-'));
+                    $childQty = $child->quantity ?? '-';
+                    $childUnit = htmlspecialchars($child->unit ?? '-');
+
+                    $html .= '
+        <tr>
+          <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top;">' . $rowNum . '.' . $childNum . '</td>
+          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; padding-left: 20px;">' . $childItem . '</td>
+          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; line-height: 1.4;">' . $childDesc . '</td>
+          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $childQty . '</td>
+          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $childUnit . '</td>
+        </tr>';
+                    $childNum++;
+                }
+
+                $rowNum++;
+            }
+        }
+        // Legacy flat items (no hierarchy)
+        elseif ($flatItems->isNotEmpty()) {
+            foreach ($flatItems as $index => $item) {
+                $itemName = htmlspecialchars($item->item ?? '-');
+                $itemDesc = nl2br(htmlspecialchars($item->description ?? '-'));
+                $itemQty = $item->quantity ?? '-';
+                $itemUnit = htmlspecialchars($item->unit ?? '-');
+
+                $html .= '
         <tr>
           <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top;">' . ($index + 1) . '</td>
-          <td style="border: 1px solid #000; padding: 6px; font-weight: bold; vertical-align: top;">' . htmlspecialchars($item->item ?? '-') . '</td>
-          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; line-height: 1.4;">' . nl2br(htmlspecialchars($item->description ?? '-')) . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . ($item->quantity ?? '-') . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . htmlspecialchars($item->unit ?? '-') . '</td>
+          <td style="border: 1px solid #000; padding: 6px; font-weight: bold; vertical-align: top;">' . $itemName . '</td>
+          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; line-height: 1.4;">' . $itemDesc . '</td>
+          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $itemQty . '</td>
+          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $itemUnit . '</td>
         </tr>';
+            }
         }
 
         $html .= '
       </tbody>
     </table>';
 
-        // Notes if any
-        $notes = $items->whereNotNull('notes')->where('notes', '!=', '')->pluck('notes')->filter();
+        // Notes from all items (legacy support)
+        $notes = $flatItems->whereNotNull('notes')->where('notes', '!=', '')->pluck('notes')->filter();
         if ($notes->isNotEmpty()) {
             $html .= '
     <div style="margin-top: 0.15cm; font-size: 9pt;">

@@ -122,10 +122,10 @@ class ContractResource extends Resource
                             ->live(),
                     ]),
 
-                // Section 4: Scope of Work (Table Format)
+                // Section 4: Scope of Work (Hierarchical)
                 Forms\Components\Section::make('Ruang Lingkup Pekerjaan')
                     ->icon('heroicon-o-sparkles')
-                    ->description('Tabel rincian ruang lingkup pekerjaan')
+                    ->description('Tabel rincian ruang lingkup pekerjaan dengan kategori dan sub-item')
                     ->schema([
                         Textarea::make('project_description')
                             ->label('Deskripsi Project')
@@ -134,47 +134,62 @@ class ContractResource extends Resource
                             ->helperText('Contoh: Digital Ads Management Funnel untuk meningkatkan brand awareness')
                             ->columnSpanFull(),
 
-                        Forms\Components\Placeholder::make('sow_placeholder')
-                            ->label('Tabel Ruang Lingkup')
-                            ->content('Klik tombol "+ Tambah" untuk menambah item SOW')
-                            ->columnSpanFull(),
-
-                        Forms\Components\Repeater::make('sow_items')
-                            ->label('Ruang Lingkup (SOW)')
-                            ->relationship('sowItems')
+                        // Main SOW Categories Repeater
+                        Forms\Components\Repeater::make('sow_categories')
+                            ->label('Kategori Ruang Lingkup')
                             ->defaultItems(0)
-                            ->schema([
-                                TextInput::make('item')
-                                    ->label('Nama Layanan')
-                                    ->columnSpan(2),
+                            ->collapsible()
+                            ->collapsed(false)
+                            ->mutateRelationshipDataBeforeFillUsing(function (Model $record, callable $get): array {
+                                // Load sowCategories with children if not already loaded
+                                if (!$record->relationLoaded('sowCategories')) {
+                                    $record->load(['sowCategories' => function ($query) {
+                                        $query->with('children')->orderBy('sort_order');
+                                    }]);
+                                }
 
-                                Textarea::make('description')
-                                    ->label('Deskripsi / Rincian')
-                                    ->rows(3)
+                                // Convert to repeater format
+                                return $record->sowCategories->map(function ($category) {
+                                    return [
+                                        'item' => $category->item,
+                                        'children' => $category->children->map(function ($child) {
+                                            return [
+                                                'item' => $child->item,
+                                                'description' => $child->description,
+                                            ];
+                                        })->toArray(),
+                                    ];
+                                })->toArray();
+                            })
+                            ->schema([
+                                // Category Header
+                                TextInput::make('item')
+                                    ->label('Nama Kategori')
+                                    ->placeholder('Contoh: Social Media Management, Digital Ads, SEO, dll')
+                                    ->required()
                                     ->columnSpanFull(),
 
-                                Grid::make(4)
+                                // Sub-items nested under this category
+                                Forms\Components\Repeater::make('children')
+                                    ->label('Sub-Item')
+                                    ->defaultItems(0)
+                                    ->collapsible()
+                                    ->collapsed(true)
                                     ->schema([
-                                        TextInput::make('quantity')
-                                            ->label('Qty')
-                                            ->numeric()
-                                            ->default(1),
+                                        TextInput::make('item')
+                                            ->label('Nama Item')
+                                            ->placeholder('Contoh: Produksi 20 materi/bulan')
+                                            ->required()
+                                            ->columnSpanFull(),
 
-                                        TextInput::make('unit')
-                                            ->label('Unit')
-                                            ->placeholder('per bulan, per item, dll'),
-
-                                        TextInput::make('amount')
-                                            ->label('Harga')
-                                            ->numeric()
-                                            ->prefix('Rp '),
-
-                                        Textarea::make('notes')
-                                            ->label('Catatan')
-                                            ->rows(1),
-                                    ]),
+                                        Textarea::make('description')
+                                            ->label('Deskripsi / Rincian')
+                                            ->rows(2)
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->columns(1),
                             ])
-                            ->columns(2),
+                            ->columns(1),
                     ]),
 
                 // Section 5: Details
