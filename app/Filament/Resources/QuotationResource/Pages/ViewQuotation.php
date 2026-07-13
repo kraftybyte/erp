@@ -14,13 +14,20 @@ class ViewQuotation extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Di ViewQuotation.php
             Actions\Action::make('download_pdf')
-            ->label('Download PDF')
-            ->icon('heroicon-o-document-arrow-down')
-            ->url(fn () => route('quotations.pdf', $this->record->id))
-            ->openUrlInNewTab()
-            ->color('success'),
+                ->label('Download PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->url(fn () => route('quotations.pdf', $this->record->id))
+                ->openUrlInNewTab()
+                ->color('success'),
         ];
+    }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // Eager load items relationship for view
+        $this->record->load('items');
+
+        return $data;
     }
 }

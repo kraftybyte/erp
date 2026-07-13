@@ -130,7 +130,7 @@ class QuotationResource extends Resource
                 ->columns(3),
 
             /* ===============================
-               REPEATER ITEMS (FINAL FIXED)
+               REPEATER ITEMS
             =============================== */
 
             Forms\Components\Section::make('Items')
@@ -139,89 +139,117 @@ class QuotationResource extends Resource
                         ->relationship()
                         ->schema([
 
-                            Forms\Components\Toggle::make('manual_input')
+                            // The actual item name stored in DB
+                            Forms\Components\Hidden::make('item')
+                                ->required(),
+
+                            // Toggle untuk manual input
+                            Forms\Components\Toggle::make('is_manual')
                                 ->label('Manual Input')
                                 ->default(false)
                                 ->reactive()
-                                ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                                    $itemName = $get('item');
-
-                                    if ($itemName && Product::where('nama_layanan', $itemName)->exists()) {
-                                        $set('manual_input', false);
-                                        $set('product_name', $itemName);
+                                ->afterStateUpdated(function ($state, callable $set) {
+                                    if (!$state) {
+                                        // Switching to product mode - clear manual item
+                                        $set('manual_text', null);
                                     } else {
-                                        $set('manual_input', true);
-                                        $set('manual_item', $itemName);
+                                        // Switching to manual mode - clear product selection
+                                        $set('product_id', null);
                                     }
                                 }),
 
-                            Forms\Components\Select::make('product_name')
-                                ->label('Item Name')
-                                ->options(Product::query()->pluck('nama_layanan', 'nama_layanan'))
+                            // Select untuk pilih dari Product
+                            Forms\Components\Select::make('product_id')
+                                ->label('Select Product')
+                                ->options(Product::query()->pluck('nama_layanan', 'id'))
                                 ->searchable()
-                                ->hidden(fn ($get) => $get('manual_input'))
+                                ->preload()
+                                ->hidden(fn ($get) => $get('is_manual'))
                                 ->reactive()
                                 ->afterStateUpdated(function ($state, callable $set) {
-                                    if ($product = Product::where('nama_layanan', $state)->first()) {
+                                    if ($product = Product::find($state)) {
                                         $set('item', $product->nama_layanan);
-                                        $set('Description', $product->detail_layanan);
+                                        $set('description', $product->detail_layanan);
                                         $set('price', $product->harga_layanan);
                                     }
                                 })
                                 ->columnSpanFull(),
 
-                            Forms\Components\TextInput::make('manual_item')
-                                ->label('Item Name')
-                                ->hidden(fn ($get) => !$get('manual_input'))
+                            // Text input untuk manual item
+                            Forms\Components\TextInput::make('manual_text')
+                                ->label('Item Name (Manual)')
+                                ->hidden(fn ($get) => !$get('is_manual'))
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, callable $set) => $set('item', $state))
                                 ->columnSpanFull(),
 
-                            Forms\Components\Hidden::make('item')
-                                ->required()
-                                ->dehydrated(),
-
-                            Forms\Components\RichEditor::make('Description')
+                            // Deskripsi
+                            Forms\Components\RichEditor::make('description')
                                 ->columnSpanFull(),
 
+                            // Qty
                             Forms\Components\TextInput::make('qty')
                                 ->numeric()
                                 ->default(1)
                                 ->reactive()
                                 ->afterStateUpdated($updateItemTotals),
 
+                            // Discount
                             Forms\Components\TextInput::make('discount')
                                 ->numeric()
                                 ->default(0)
                                 ->reactive()
                                 ->afterStateUpdated($updateItemTotals),
 
+                            // VAT Percentage
                             Forms\Components\TextInput::make('vat_percentage')
                                 ->numeric()
                                 ->default(0)
                                 ->reactive()
                                 ->afterStateUpdated($updateItemTotals),
 
+                            // Price
                             Forms\Components\TextInput::make('price')
                                 ->numeric()
                                 ->default(0)
                                 ->reactive()
                                 ->afterStateUpdated($updateItemTotals),
 
+                            // VAT (calculated)
                             Forms\Components\TextInput::make('vat')
                                 ->numeric()
                                 ->disabled()
                                 ->dehydrated(),
 
+                            // Total (calculated)
                             Forms\Components\TextInput::make('total')
                                 ->numeric()
                                 ->disabled()
                                 ->dehydrated(),
                         ])
                         ->columns(2)
-                        ->reactive()
                         ->afterStateUpdated(fn ($get, $set) => self::recalculateTotals($get, $set))
-                        ->defaultItems(1),
+                        ->defaultItems(1)
+                        ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
+                            // Determine if this item is manual or from product
+                            $itemName = $data['item'] ?? null;
+                            if ($itemName) {
+                                $product = Product::where('nama_layanan', $itemName)->first();
+                                if ($product) {
+                                    $data['is_manual'] = false;
+                                    $data['product_id'] = $product->id;
+                                } else {
+                                    $data['is_manual'] = true;
+                                    $data['manual_text'] = $itemName;
+                                }
+                            }
+                            return $data;
+                        })
+                        ->mutateRelationshipDataBeforeSaveUsing(function (array $data): array {
+                            // Remove helper fields before saving
+                            unset($data['is_manual'], $data['product_id'], $data['manual_text']);
+                            return $data;
+                        }),
                 ]),
 
             Forms\Components\Section::make('Total Quotation')

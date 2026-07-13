@@ -16,4 +16,13 @@ class EditQuotation extends EditRecord
             Actions\DeleteAction::make(),
         ];
     }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // Eager load items relationship for edit
+        $record = $this->getRecord();
+        $record->load('items');
+
+        return $data;
+    }
 }

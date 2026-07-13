@@ -15,7 +15,7 @@ class QuotationItem extends Model
         'discount',
         'vat',
         'total',
-        'Description',
+        'description',
         'vat_percentage',
     ];
 
