@@ -4,7 +4,6 @@ namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource;
 use App\Models\ContractItem;
-use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
@@ -12,18 +11,12 @@ class CreateContract extends CreateRecord
 {
     protected static string $resource = ContractResource::class;
 
-    /** @var array|null */
-    protected ?array $sowCategoriesData = null;
-
-    protected function mutateRelationshipDataBeforeSaveUsing(array $data): array
+    protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Handle hierarchical SOW items (from repeater)
-        if (isset($data['_sow_categories'])) {
-            $categories = $data['_sow_categories'];
-            unset($data['_sow_categories']);
-
-            // Store for afterCreate hook
-            $this->sowCategoriesData = $categories;
+        // Extract SOW categories before record creation
+        if (isset($data['sow_categories'])) {
+            $this->sowCategoriesData = $data['sow_categories'];
+            unset($data['sow_categories']);
         }
 
         return $data;
@@ -31,7 +24,7 @@ class CreateContract extends CreateRecord
 
     protected function afterCreate(): void
     {
-        // Save hierarchical SOW items after contract is created
+        // Save SOW categories after contract is created
         if (!empty($this->sowCategoriesData)) {
             $this->saveSowCategories($this->record, $this->sowCategoriesData);
             unset($this->sowCategoriesData);
@@ -44,6 +37,11 @@ class CreateContract extends CreateRecord
         foreach ($categories as $categoryData) {
             $sortOrder++;
 
+            // Skip if no item name
+            if (empty($categoryData['item'])) {
+                continue;
+            }
+
             // Create category header
             $category = ContractItem::create([
                 'contract_id' => $contract->id,
@@ -54,10 +52,16 @@ class CreateContract extends CreateRecord
             ]);
 
             // Create children
-            if (!empty($categoryData['children'])) {
+            if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
                 $childSortOrder = 0;
                 foreach ($categoryData['children'] as $childData) {
                     $childSortOrder++;
+
+                    // Skip if no item name
+                    if (empty($childData['item'])) {
+                        continue;
+                    }
+
                     ContractItem::create([
                         'contract_id' => $contract->id,
                         'parent_id' => $category->id,

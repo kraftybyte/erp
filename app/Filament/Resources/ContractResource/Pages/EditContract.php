@@ -37,15 +37,12 @@ class EditContract extends EditRecord
         return $data;
     }
 
-    protected function mutateRelationshipDataBeforeSaveUsing(array $data): array
+    protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Handle hierarchical SOW items (from repeater)
-        if (isset($data['_sow_categories'])) {
-            $categories = $data['_sow_categories'];
-            unset($data['_sow_categories']);
-
-            // Store for afterSave hook
-            $this->sowCategoriesData = $categories;
+        // Extract SOW categories before record save
+        if (isset($data['sow_categories'])) {
+            $this->sowCategoriesData = $data['sow_categories'];
+            unset($data['sow_categories']);
         }
 
         return $data;
@@ -53,7 +50,7 @@ class EditContract extends EditRecord
 
     protected function afterSave(): void
     {
-        // Save hierarchical SOW items after contract is updated
+        // Save SOW categories after contract is updated
         if (!empty($this->sowCategoriesData)) {
             // Delete existing SOW items for this contract
             ContractItem::where('contract_id', $this->record->id)
@@ -72,6 +69,11 @@ class EditContract extends EditRecord
         foreach ($categories as $categoryData) {
             $sortOrder++;
 
+            // Skip if no item name
+            if (empty($categoryData['item'])) {
+                continue;
+            }
+
             // Create category header
             $category = ContractItem::create([
                 'contract_id' => $contract->id,
@@ -82,10 +84,16 @@ class EditContract extends EditRecord
             ]);
 
             // Create children
-            if (!empty($categoryData['children'])) {
+            if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
                 $childSortOrder = 0;
                 foreach ($categoryData['children'] as $childData) {
                     $childSortOrder++;
+
+                    // Skip if no item name
+                    if (empty($childData['item'])) {
+                        continue;
+                    }
+
                     ContractItem::create([
                         'contract_id' => $contract->id,
                         'parent_id' => $category->id,
