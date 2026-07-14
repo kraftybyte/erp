@@ -10,7 +10,9 @@
       "Bash(php -l /Users/macbook/Documents/ERP/App/app/Models/ContractItem.php)",
       "Bash(php -l /Users/macbook/Documents/ERP/App/app/Filament/Resources/ContractResource.php)",
       "Bash(php artisan *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

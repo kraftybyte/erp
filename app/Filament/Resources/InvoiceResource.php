@@ -215,7 +215,7 @@ class InvoiceResource extends BaseInvoiceResource
                                 ->columnSpanFull(),
 
                             // Deskripsi
-                            Forms\Components\Textarea::make('description')
+                            Forms\Components\RichEditor::make('description')
                                 ->label('Description')
                                 ->columnSpanFull(),
 
