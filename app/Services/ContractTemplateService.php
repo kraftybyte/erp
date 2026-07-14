@@ -147,72 +147,69 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 3cm 2.5cm 2cm 2.5cm;
+      margin: 3cm 2cm 2cm 2cm;
       size: A4;
     }
     body {
       font-family: Arial, Helvetica, sans-serif;
       font-size: 11pt;
-      line-height: 1.5;
+      line-height: 1.6;
       color: #000;
       margin: 0;
       padding: 0;
     }
-    /* HEADER - Logo kiri, Alamat kanan - behind content */
+    /* HEADER - fixed, muncul di setiap halaman */
     .header {
       position: fixed;
       top: 0;
       left: 0;
+      right: 0;
       width: 100%;
-      padding: 0.5cm 2.5cm 0.4cm 2.5cm;
-      display: table;
+      padding: 0.4cm 2cm 0.3cm 2cm;
       background: white;
-      border-bottom: 1px solid #ddd;
-      z-index: -1;
+      border-bottom: 1px solid #333;
+    }
+    .header table {
+      width: 100%;
+      border-collapse: collapse;
     }
     .header-logo {
-      display: table-cell;
-      width: 100px;
-      vertical-align: middle;
-      text-align: left;
+      width: 80px;
     }
     .header-logo img {
       height: 50px;
-      display: block;
     }
     .header-info {
-      display: table-cell;
-      vertical-align: middle;
       text-align: right;
       font-size: 9pt;
       color: #333;
       line-height: 1.5;
     }
-    /* CONTENT */
-    .content-wrapper {
-      padding-top: 1.8cm;
+    /* CONTENT - starts after header */
+    .content {
+      margin-top: 1.5cm;
     }
     .title {
       font-size: 14pt;
       font-weight: bold;
       text-align: center;
       text-transform: uppercase;
-      margin: 0.5cm 0 0.2cm 0;
+      margin: 0 0 0.2cm 0;
     }
     .contract-number {
       font-size: 10pt;
       text-align: center;
-      margin-bottom: 0.4cm;
+      margin-bottom: 0.3cm;
     }
     p {
       text-align: justify;
-      margin: 0 0 0.1cm 0;
-      line-height: 1.5;
+      margin: 0 0 0.15cm 0;
+      line-height: 1.6;
     }
     .party-title {
       font-weight: bold;
-      margin-bottom: 0.05cm;
-      margin-top: 0.2cm;
+      margin-bottom: 0.1cm;
+      margin-top: 0.25cm;
     }
     .indent {
       padding-left: 0.5cm;
@@ -221,20 +218,20 @@ class ContractTemplateService
       padding-left: 1cm;
     }
     .article {
-      margin-bottom: 0.15cm;
+      margin-bottom: 0.25cm;
       text-align: justify;
     }
     .article-title {
       font-weight: bold;
       text-transform: uppercase;
       text-align: center;
-      margin-bottom: 0.1cm;
+      margin-bottom: 0.15cm;
       font-size: 11pt;
     }
     .article-list {
       padding-left: 0.5cm;
       margin: 0.1cm 0;
-      line-height: 1.8;
+      line-height: 1.7;
     }
     .article-list li {
       margin-bottom: 0.1cm;
@@ -242,7 +239,7 @@ class ContractTemplateService
     }
     .sub-list {
       padding-left: 0.5cm;
-      margin: 0.05cm 0;
+      margin: 0.1cm 0;
     }
     .sub-list li {
       margin-bottom: 0.05cm;
@@ -317,15 +314,19 @@ class ContractTemplateService
 
 <!-- HEADER (setiap halaman) -->
 <div class="header">
-  <div class="header-logo">' . $logoHtml . '</div>
-  <div class="header-info">
-    <strong>' . htmlspecialchars($agencyName) . '</strong><br>
-    ' . nl2br(htmlspecialchars($agencyAddress)) . '
-  </div>
+  <table>
+    <tr>
+      <td class="header-logo">' . $logoHtml . '</td>
+      <td class="header-info">
+        <strong>' . htmlspecialchars($agencyName) . '</strong><br>
+        ' . nl2br(htmlspecialchars($agencyAddress)) . '
+      </td>
+    </tr>
+  </table>
 </div>
 
 <!-- CONTENT -->
-<div class="content-wrapper">
+<div class="content">
   <div class="title">Perjanjian Kerja Sama</div>
   <div class="contract-number">' . htmlspecialchars($contractNumber) . '</div>
 
