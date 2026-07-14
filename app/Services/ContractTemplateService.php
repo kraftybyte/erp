@@ -533,8 +533,11 @@ class ContractTemplateService
     <tbody>
       ' . $this->buildFeeTableFromItems($contract) . '
     </tbody>
-  </table>
+  </table>';
 
+        // Table a (Third Party) - only show if has_third_party is true
+        if ($contract->has_third_party) {
+            $html .= '
   <div class="table-b-title">' . htmlspecialchars($tableBTitle) . '</div>
   <div class="note">' . htmlspecialchars($tableBDescription) . '</div>
 
@@ -549,7 +552,10 @@ class ContractTemplateService
     <tbody>
       ' . $this->buildThirdPartyTableFromItems($contract) . '
     </tbody>
-  </table>
+  </table>';
+        }
+
+        $html .= '
 </div>
 
 </body>

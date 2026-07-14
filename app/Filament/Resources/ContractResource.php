@@ -140,7 +140,7 @@ class ContractResource extends Resource
                             ->defaultItems(0)
                             ->collapsible()
                             ->collapsed(false)
-                            ->mutateRelationshipDataBeforeFillUsing(function (Model $record, callable $get): array {
+                            ->mutateRelationshipDataBeforeFillUsing(function ($record): array {
                                 // Load sowCategories with children if not already loaded
                                 if (!$record->relationLoaded('sowCategories')) {
                                     $record->load(['sowCategories' => function ($query) {
@@ -349,11 +349,24 @@ class ContractResource extends Resource
                             ->columns(3)
                             ->defaultItems(1),
 
-                        // Tabel a - Third Party
+                        // Tabel a - Third Party (toggle)
+                        Toggle::make('has_third_party')
+                            ->label('Aktifkan Tabel a (Biaya Pihak Ketiga)')
+                            ->default(false)
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                if (!$state) {
+                                    $set('third_party_items', []);
+                                }
+                            }),
+
                         Forms\Components\Placeholder::make('table_b_placeholder')
                             ->label('Tabel a - Biaya Pihak Ketiga')
                             ->content('Klik tombol "+ Tambah" untuk menambah item pihak ketiga')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->hidden(function (callable $get) {
+                                return !$get('has_third_party');
+                            }),
 
                         Forms\Components\Repeater::make('third_party_items')
                             ->label('Item Pihak Ketiga (Tabel a)')
@@ -370,7 +383,10 @@ class ContractResource extends Resource
                                     ->rows(2),
                             ])
                             ->columns(3)
-                            ->defaultItems(0),
+                            ->defaultItems(0)
+                            ->hidden(function (callable $get) {
+                                return !$get('has_third_party');
+                            }),
                     ]),
 
                 // Section 9: Additional Terms

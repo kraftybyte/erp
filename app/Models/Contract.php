@@ -48,6 +48,7 @@ class Contract extends Model
         'table_a_title',
         'table_b_title',
         'table_b_description',
+        'has_third_party',
     ];
 
     protected $casts = [
@@ -59,6 +60,7 @@ class Contract extends Model
         'content_count' => 'integer',
         'max_revisions' => 'integer',
         'termination_notice_days' => 'integer',
+        'has_third_party' => 'boolean',
     ];
 
     public function deal(): BelongsTo
