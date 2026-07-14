@@ -4,7 +4,16 @@ namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource;
 use App\Models\ContractItem;
-use Filament\Actions;
+use Filament\Forms;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\MarkdownEditor;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
@@ -18,13 +27,13 @@ class EditContract extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            \Filament\Actions\DeleteAction::make(),
         ];
     }
 
-    protected function fillFormWithDataAndRelationships(): void
+    protected function form(Forms\Form $form): Forms\Form
     {
-        // Load relationships before filling form
+        // Load relationships first
         $this->record->load([
             'feeItems',
             'thirdPartyItems',
@@ -34,7 +43,266 @@ class EditContract extends EditRecord
             'deal',
         ]);
 
-        parent::fillFormWithDataAndRelationships();
+        // Get SOW categories data
+        $sowCategoriesData = $this->record->sowCategories->map(function ($category) {
+            return [
+                'item' => $category->item,
+                'children' => $category->children->map(function ($child) {
+                    return [
+                        'item' => $child->item,
+                        'description' => $child->description ?? '',
+                    ];
+                })->toArray(),
+            ];
+        })->toArray();
+
+        return $form
+            ->schema([
+                // Section 1: Contract Info
+                Section::make('Informasi Kontrak')
+                    ->icon('heroicon-o-document')
+                    ->schema([
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('contract_number')
+                                    ->label('Nomor Kontrak')
+                                    ->required(),
+                                DatePicker::make('effective_date')
+                                    ->label('Tanggal Efektif')
+                                    ->required(),
+                            ]),
+                        Grid::make(2)
+                            ->schema([
+                                DatePicker::make('expiration_date')
+                                    ->label('Tanggal Berakhir'),
+                                Select::make('deal_id')
+                                    ->label('Deal')
+                                    ->relationship('deal', 'nama_perusahaan')
+                                    ->searchable()
+                                    ->preload(),
+                            ]),
+                    ]),
+
+                // Section 2: Client Info
+                Section::make('Informasi Klien')
+                    ->icon('heroicon-o-user')
+                    ->collapsed()
+                    ->schema([
+                        TextInput::make('client_name_full')
+                            ->label('Nama Perusahaan (Full)')
+                            ->required(),
+                        Textarea::make('client_address')
+                            ->label('Alamat')
+                            ->rows(2),
+                        Grid::make(3)
+                            ->schema([
+                                TextInput::make('client_phone')
+                                    ->label('Telepon'),
+                                TextInput::make('client_email')
+                                    ->label('Email'),
+                            ]),
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('client_signatory_name')
+                                    ->label('Nama Penanda Tangan'),
+                                TextInput::make('client_signatory_title')
+                                    ->label('Jabatan Penanda Tangan'),
+                            ]),
+                    ]),
+
+                // Section 3: Project Description
+                Section::make('Deskripsi Project')
+                    ->icon('heroicon-o-briefcase')
+                    ->collapsed()
+                    ->schema([
+                        Textarea::make('project_description')
+                            ->label('Deskripsi Project')
+                            ->rows(2)
+                            ->placeholder('Deskripsi singkat project yang akan dikerjakan')
+                            ->helperText('Contoh: Digital Ads Management Funnel untuk meningkatkan brand awareness')
+                            ->columnSpanFull(),
+                    ]),
+
+                // Section 4: SOW Categories
+                Section::make('Ruang Lingkup Pekerjaan')
+                    ->icon('heroicon-o-sparkles')
+                    ->description('Tabel rincian ruang lingkup pekerjaan dengan kategori dan sub-item')
+                    ->schema([
+                        // Main SOW Categories Repeater
+                        Repeater::make('sow_categories')
+                            ->label('Kategori Ruang Lingkup')
+                            ->defaultItems(count($sowCategoriesData))
+                            ->schema([
+                                TextInput::make('item')
+                                    ->label('Nama Kategori')
+                                    ->placeholder('Contoh: Social Media Management, Digital Ads, SEO, dll')
+                                    ->required()
+                                    ->columnSpanFull(),
+
+                                Repeater::make('children')
+                                    ->label('Sub-Item')
+                                    ->defaultItems(0)
+                                    ->collapsible()
+                                    ->collapsed(false)
+                                    ->schema([
+                                        TextInput::make('item')
+                                            ->label('Nama Item')
+                                            ->placeholder('Contoh: Produksi 20 materi/bulan')
+                                            ->required()
+                                            ->columnSpanFull(),
+
+                                        Textarea::make('description')
+                                            ->label('Deskripsi / Rincian')
+                                            ->rows(2)
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->columns(1),
+                            ])
+                            ->columns(1)
+                            ->defaultItems(0)
+                            ->statePath('sow_categories')
+                            ->afterStateHydrated(function ($component, $state) use ($sowCategoriesData) {
+                                if (empty($state) && !empty($sowCategoriesData)) {
+                                    $component->state($sowCategoriesData);
+                                }
+                            }),
+                    ]),
+
+                // Section 5: Details
+                Section::make('Detail Kontrak')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->schema([
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('platform')
+                                    ->label('Platform')
+                                    ->placeholder('Instagram, Facebook, TikTok'),
+                                TextInput::make('content_count')
+                                    ->label('Jumlah Konten/Bulan')
+                                    ->numeric()
+                                    ->default(20),
+                            ]),
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('max_revisions')
+                                    ->label('Maksimal Revisi')
+                                    ->numeric()
+                                    ->default(3),
+                                TextInput::make('duration_months')
+                                    ->label('Durasi (Bulan)')
+                                    ->numeric()
+                                    ->default(3),
+                            ]),
+                    ]),
+
+                // Section 6: Payment
+                Section::make('Pembayaran')
+                    ->icon('heroicon-o-credit-card')
+                    ->schema([
+                        Grid::make(2)
+                            ->schema([
+                                Select::make('payment_type')
+                                    ->label('Tipe Pembayaran')
+                                    ->options([
+                                        'full' => 'Lunas',
+                                        'dp_monthly' => 'DP + Cicilan',
+                                        'monthly' => 'Cicilan per Bulan',
+                                    ])
+                                    ->default('full'),
+                                TextInput::make('total_value')
+                                    ->label('Total Nilai Kontrak')
+                                    ->numeric()
+                                    ->prefix('Rp ')
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        $this->recalculateTotals($set, $get);
+                                    }),
+                            ]),
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('down_payment_percent')
+                                    ->label('DP (%)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        $this->recalculateTotals($set, $get);
+                                    }),
+                                TextInput::make('installment_months')
+                                    ->label('Jumlah Cicilan')
+                                    ->numeric()
+                                    ->default(1),
+                            ]),
+                    ]),
+
+                // Section 7: Lampiran
+                Section::make('Lampiran')
+                    ->icon('heroicon-o-paper-clip')
+                    ->collapsed()
+                    ->schema([
+                        TextInput::make('lampiran_title')
+                            ->label('Judul Lampiran')
+                            ->default('Lampiran 1 — Rincian Biaya Jasa')
+                            ->columnSpanFull(),
+
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('table_a_title')
+                                    ->label('Judul Tabel A'),
+                                TextInput::make('table_b_title')
+                                    ->label('Judul Tabel a'),
+                            ]),
+
+                        Toggle::make('has_third_party')
+                            ->label('Aktifkan Tabel a (Biaya Pihak Ketiga)')
+                            ->default(false),
+
+                        Repeater::make('fee_items')
+                            ->label('Item Biaya (Tabel A)')
+                            ->relationship('feeItems')
+                            ->schema([
+                                TextInput::make('item')->label('Nama Item')->required(),
+                                TextInput::make('amount')->label('Jumlah')->numeric()->prefix('Rp '),
+                                TextInput::make('due_date')->label('Jatuh Tempo'),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(1),
+
+                        Repeater::make('third_party_items')
+                            ->label('Item Pihak Ketiga (Tabel a)')
+                            ->relationship('thirdPartyItems')
+                            ->schema([
+                                TextInput::make('item')->label('Nama Item'),
+                                TextInput::make('amount')->label('Jumlah')->numeric()->prefix('Rp '),
+                                Textarea::make('notes')->label('Keterangan')->rows(2),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->visible(fn (callable $get) => $get('has_third_party')),
+                    ]),
+
+                // Section 8: Additional Terms
+                Section::make('Ketentuan Tambahan')
+                    ->icon('heroicon-o-document-text')
+                    ->collapsed()
+                    ->schema([
+                        MarkdownEditor::make('content')
+                            ->label('Klausul / Catatan Tambahan')
+                            ->columnSpanFull(),
+                        MarkdownEditor::make('penalty_clause')
+                            ->label('Klausul Denda')
+                            ->columnSpanFull(),
+                        Grid::make(2)
+                            ->schema([
+                                Toggle::make('force_majeure_extended')
+                                    ->label('Force Majeure Extended'),
+                                TextInput::make('termination_notice_days')
+                                    ->label('Hari Pengakhiran Kontrak')
+                                    ->numeric()
+                                    ->default(30),
+                            ]),
+                    ]),
+            ]);
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
@@ -69,12 +337,10 @@ class EditContract extends EditRecord
         foreach ($categories as $categoryData) {
             $sortOrder++;
 
-            // Skip if no item name
             if (empty($categoryData['item'])) {
                 continue;
             }
 
-            // Create category header
             $category = ContractItem::create([
                 'contract_id' => $contract->id,
                 'item' => $categoryData['item'] ?? 'Layanan',
@@ -83,13 +349,11 @@ class EditContract extends EditRecord
                 'is_category_header' => true,
             ]);
 
-            // Create children
             if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
                 $childSortOrder = 0;
                 foreach ($categoryData['children'] as $childData) {
                     $childSortOrder++;
 
-                    // Skip if no item name
                     if (empty($childData['item'])) {
                         continue;
                     }
@@ -106,5 +370,10 @@ class EditContract extends EditRecord
                 }
             }
         }
+    }
+
+    private function recalculateTotals(callable $set, callable $get): void
+    {
+        // Placeholder for total recalculation
     }
 }
