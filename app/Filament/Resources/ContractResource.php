@@ -182,7 +182,8 @@ class ContractResource extends Resource
                                     ->label('Sub-Item')
                                     ->defaultItems(0)
                                     ->collapsible()
-                                    ->collapsed(true)
+                                    ->collapsed(false)
+                                    ->itemLabel(fn (array $state): string => $state['item'] ?? 'Sub-item')
                                     ->schema([
                                         TextInput::make('item')
                                             ->label('Nama Item')
