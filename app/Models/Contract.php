@@ -95,6 +95,7 @@ class Contract extends Model
     {
         return $this->hasMany(ContractItem::class)
             ->where('type', 'sow')
+            ->where('is_category_header', true)
             ->whereNull('parent_id')
             ->with('children')
             ->orderBy('sort_order');
