@@ -147,7 +147,7 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 2cm 2.5cm 2cm 2.5cm;
+      margin: 2.5cm 2.5cm 2cm 2.5cm;
       size: A4;
     }
     body {
@@ -157,32 +157,33 @@ class ContractTemplateService
       color: #000;
       margin: 0;
       padding: 0;
-      padding-top: 1.5cm;
     }
-    /* HEADER - Logo kiri, Alamat kanan */
+    /* HEADER - Logo kiri, Alamat kanan - behind content */
     .header {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
-      padding: 0.3cm 2.5cm;
+      padding: 0.4cm 2.5cm 0.3cm 2.5cm;
       display: table;
       background: white;
+      border-bottom: 1px solid #eee;
+      z-index: -1;
     }
     .header-logo {
       display: table-cell;
       width: 80px;
       vertical-align: middle;
+      text-align: left;
+    }
+    .header-logo img {
+      height: 45px;
+      display: block;
     }
     .header-info {
       display: table-cell;
       vertical-align: middle;
       text-align: right;
-      font-size: 9pt;
-      color: #333;
-      line-height: 1.4;
-    }
-      padding-left: 10px;
       font-size: 9pt;
       color: #333;
       line-height: 1.4;

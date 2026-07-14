@@ -12,12 +12,15 @@ class CreateContract extends CreateRecord
 {
     protected static string $resource = ContractResource::class;
 
+    /** @var array|null */
+    protected ?array $sowCategoriesData = null;
+
     protected function mutateRelationshipDataBeforeSaveUsing(array $data): array
     {
-        // Handle hierarchical SOW items
-        if (isset($data['sow_categories'])) {
-            $categories = $data['sow_categories'];
-            unset($data['sow_categories']);
+        // Handle hierarchical SOW items (from repeater)
+        if (isset($data['_sow_categories'])) {
+            $categories = $data['_sow_categories'];
+            unset($data['_sow_categories']);
 
             // Store for afterCreate hook
             $this->sowCategoriesData = $categories;

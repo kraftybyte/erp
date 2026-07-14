@@ -162,6 +162,13 @@ class ContractResource extends Resource
                                     ];
                                 })->toArray();
                             })
+                            ->mutateRelationshipDataBeforeSaveUsing(function (array $data): array {
+                                // Store for afterCreate/afterSave hook
+                                if (isset($data['sow_categories'])) {
+                                    $data['_sow_categories'] = $data['sow_categories'];
+                                }
+                                return $data;
+                            })
                             ->schema([
                                 // Category Header
                                 TextInput::make('item')
