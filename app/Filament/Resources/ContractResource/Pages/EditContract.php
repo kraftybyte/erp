@@ -31,7 +31,7 @@ class EditContract extends EditRecord
         ];
     }
 
-    protected function form(Forms\Form $form): Forms\Form
+    public function form(Forms\Form $form): Forms\Form
     {
         // Load relationships first
         $this->record->load([

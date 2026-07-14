@@ -24,7 +24,7 @@ class CreateContract extends CreateRecord
     /** @var array|null */
     protected ?array $sowCategoriesData = null;
 
-    protected function form(Forms\Form $form): Forms\Form
+    public function form(Forms\Form $form): Forms\Form
     {
         return $form
             ->schema([
