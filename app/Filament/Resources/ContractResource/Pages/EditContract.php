@@ -22,9 +22,9 @@ class EditContract extends EditRecord
         ];
     }
 
-    protected function mutateFormDataBeforeFill(array $data): array
+    protected function fillFormWithDataAndRelationships(): void
     {
-        // Eager load all relationships for edit
+        // Load relationships before filling form
         $this->record->load([
             'feeItems',
             'thirdPartyItems',
@@ -34,7 +34,7 @@ class EditContract extends EditRecord
             'deal',
         ]);
 
-        return $data;
+        parent::fillFormWithDataAndRelationships();
     }
 
     protected function mutateFormDataBeforeSave(array $data): array

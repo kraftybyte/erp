@@ -30,9 +30,9 @@ class ViewContract extends ViewRecord
         ];
     }
 
-    protected function mutateFormDataBeforeFill(array $data): array
+    protected function fillFormWithDataAndRelationships(): void
     {
-        // Eager load all relationships for view
+        // Load relationships before filling form
         $this->record->load([
             'feeItems',
             'thirdPartyItems',
@@ -42,6 +42,6 @@ class ViewContract extends ViewRecord
             'deal',
         ]);
 
-        return $data;
+        parent::fillFormWithDataAndRelationships();
     }
 }
