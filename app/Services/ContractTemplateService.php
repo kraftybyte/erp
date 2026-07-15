@@ -165,25 +165,31 @@ class ContractTemplateService
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.15cm 2cm 0.1cm 2cm;
+      padding: 0.15cm 1.5cm 0.1cm 1.5cm;
       background: white;
+      box-sizing: border-box;
     }
     .header-inner {
       width: 100%;
       border: none !important;
+      table-layout: fixed;
     }
     .header-inner td {
       border: none !important;
       padding: 0;
+      overflow: hidden;
     }
     .header-logo {
+      width: 40%;
       vertical-align: middle;
       text-align: left;
     }
     .header-logo img {
       height: 30px;
+      max-width: 100%;
     }
     .header-info {
+      width: 60%;
       text-align: right;
       font-size: 9pt;
       color: #555;
