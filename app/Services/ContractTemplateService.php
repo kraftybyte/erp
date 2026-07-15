@@ -158,18 +158,23 @@ class ContractTemplateService
       margin: 0;
       padding: 0;
     }
-    /* HEADER - fixed, bersih tanpa garis */
+    /* HEADER - fixed, bersih tanpa garis/border */
     .header {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.3cm 2cm 0.3cm 2cm;
+      padding: 0.4cm 2cm 0.4cm 2cm;
       background: white;
     }
     .header-inner {
       width: 100%;
+      border: none !important;
+    }
+    .header-inner td {
+      border: none !important;
+      padding: 0;
     }
     .header-logo {
       vertical-align: middle;
@@ -318,7 +323,7 @@ class ContractTemplateService
 
 <!-- HEADER (muncul di setiap halaman) -->
 <div class="header">
-  <table class="header-inner">
+  <table class="header-inner" border="0" cellpadding="0" cellspacing="0">
     <tr>
       <td class="header-logo">' . $logoHtml . '</td>
       <td class="header-info">
