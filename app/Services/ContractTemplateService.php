@@ -165,7 +165,7 @@ class ContractTemplateService
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.08cm 1.5cm 0.05cm 1.5cm;
+      padding: 0.08cm 1.2cm 0.05cm 1.5cm;
       background: white;
       box-sizing: border-box;
     }
@@ -196,6 +196,7 @@ class ContractTemplateService
       color: #555;
       line-height: 1.3;
       vertical-align: top;
+      padding-right: 0;
     }
     .header-info strong {
       font-size: 10pt;
