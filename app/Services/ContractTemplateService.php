@@ -147,7 +147,7 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 3cm 2cm 2cm 2cm;
+      margin: 3.5cm 2cm 2cm 2cm;
       size: A4;
     }
     body {
@@ -191,7 +191,7 @@ class ContractTemplateService
     }
     /* CONTENT - starts below header */
     .content {
-      padding-top: 1.8cm;
+      padding-top: 2cm;
     }
     .title {
       font-size: 14pt;
