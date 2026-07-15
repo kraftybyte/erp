@@ -147,7 +147,7 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 2.5cm 2cm 2cm 2cm;
+      margin: 3cm 2cm 2cm 2cm;
       size: A4;
     }
     body {
@@ -165,9 +165,8 @@ class ContractTemplateService
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.4cm 2cm 0.3cm 2cm;
+      padding: 0.3cm 2cm 0.3cm 2cm;
       background: white;
-      text-align: center;
     }
     .header-inner {
       width: 100%;
@@ -192,7 +191,7 @@ class ContractTemplateService
     }
     /* CONTENT - starts below header */
     .content {
-      padding-top: 1.3cm;
+      padding-top: 1.8cm;
     }
     .title {
       font-size: 14pt;
