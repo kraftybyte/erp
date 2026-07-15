@@ -158,31 +158,32 @@ class ContractTemplateService
       margin: 0;
       padding: 0;
     }
-    /* HEADER - fixed, muncul di setiap halaman */
+    /* HEADER - fixed, bersih tanpa garis */
     .header {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.5cm 2cm 0.3cm 2cm;
+      padding: 0.4cm 2cm 0.3cm 2cm;
       background: white;
-      /* Tidak ada border, bersih */
+      text-align: center;
     }
     .header-inner {
       width: 100%;
     }
     .header-logo {
       vertical-align: middle;
+      text-align: left;
     }
     .header-logo img {
-      height: 45px;
+      height: 40px;
     }
     .header-info {
       text-align: right;
       font-size: 9pt;
-      color: #333;
-      line-height: 1.5;
+      color: #555;
+      line-height: 1.4;
       vertical-align: middle;
     }
     .header-info strong {
@@ -191,7 +192,7 @@ class ContractTemplateService
     }
     /* CONTENT - starts below header */
     .content {
-      padding-top: 1.5cm;
+      padding-top: 1.3cm;
     }
     .title {
       font-size: 14pt;
