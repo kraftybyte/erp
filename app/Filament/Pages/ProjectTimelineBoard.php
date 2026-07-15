@@ -33,7 +33,7 @@ class ProjectTimelineBoard extends Page
     {
         /** @var \App\Models\User $user */
         $user = Auth::user();
-        return Gate::allows('view_page_project_timeline_board') || $user->hasRole('super_admin');
+        return Gate::allows('viewAny', [static::class]) || $user->hasRole('super_admin');
     }
 
 

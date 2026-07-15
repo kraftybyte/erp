@@ -13,7 +13,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(php -l /Users/macbook/Documents/ERP/App/app/Services/ContractTemplateService.php)"
+      "Bash(php -l /Users/macbook/Documents/ERP/App/app/Services/ContractTemplateService.php)",
+      "Bash(git commit *)"
     ]
   }
 }

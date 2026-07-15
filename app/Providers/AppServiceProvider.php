@@ -38,6 +38,8 @@ use App\Policies\PurchaseRequestPolicy;
 use App\Policies\QuotationPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TaskStagePolicy;
+use App\Policies\ProjectTimelineBoardPolicy;
+use App\Filament\Pages\ProjectTimelineBoard;
 use App\Observers\AnnouncementObserver;
 use App\Observers\ContractObserver;
 use App\Observers\DealObserver;
@@ -91,6 +93,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Quotation::class, QuotationPolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
         Gate::policy(TaskStage::class, TaskStagePolicy::class);
+        Gate::policy(ProjectTimelineBoard::class, ProjectTimelineBoardPolicy::class);
 
         // Register Observers
         PaymentAccount::observe(PaymentAccountObserver::class);

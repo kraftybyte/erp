@@ -59,7 +59,7 @@ class ContractTemplateService
         $penaltyClause = $contract->penalty_clause ?? '';
 
         // === LAMPIRAN CUSTOMIZATION ===
-        $lampiranTitle = $contract->lampiran_title ?? 'Lampiran 1 — Rincian Biaya Jasa';
+        $lampiranTitle = $contract->lampiran_title ?? 'Lampiran 2 — Rincian Biaya Jasa';
         $lampiranDescription = str_replace('{duration}', $durationMonths, $contract->lampiran_description ?? 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Pertama selama ' . $durationMonths . ' bulan');
         $tableATitle = $contract->table_a_title ?? 'Tabel A';
         $tableBTitle = $contract->table_b_title ?? 'Tabel a';
@@ -95,7 +95,7 @@ class ContractTemplateService
 
         if ($logoPath && Storage::exists($logoPath)) {
             $url = Storage::url($logoPath);
-            return '<img src="' . $url . '" alt="Logo" style="height: 30px;">';
+            return '<img src="' . $url . '" alt="Logo" style="height: 90px;">';
         }
 
         // Try alternative path for media library
@@ -124,6 +124,16 @@ class ContractTemplateService
         return $short ?: strtoupper(substr($name, 0, 5));
     }
 
+    private function breakEveryWords(string $text, int $wordsPerLine = 8): string
+    {
+        $words = preg_split('/\s+/', trim($text));
+
+        return implode('<br>', array_map(
+            fn ($chunk) => implode(' ', $chunk),
+            array_chunk($words, $wordsPerLine)
+        ));
+    }
+
     private function generateContractNumber(Contract $contract, string $shortName): string
     {
         $prefix = '001';
@@ -147,61 +157,81 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 2cm 2cm 2cm 2cm;
-      size: A4;
-    }
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 11pt;
-      line-height: 1.6;
-      color: #000;
-      margin: 0;
-      padding: 0;
-    }
-    /* HEADER - fixed, di paling atas page */
-    .header {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      padding: 0.08cm 1cm 0.05cm 1.5cm;
-      background: white;
-      box-sizing: border-box;
-    }
-    .header-inner {
-      width: 100%;
-      border: none !important;
-      table-layout: fixed;
-    }
-    .header-inner td {
-      border: none !important;
-      padding: 0;
-      overflow: hidden;
-      vertical-align: top;
-    }
-    .header-logo {
-      width: 40%;
-      vertical-align: top;
-      text-align: left;
-    }
-    .header-logo img {
-      height: 30px;
-      max-width: 100%;
-    }
-    .header-info {
-      width: 60%;
-      text-align: right;
-      font-size: 9pt;
-      color: #555;
-      line-height: 1.3;
-      vertical-align: top;
-      padding-right: 0;
-    }
-    .header-info strong {
-      font-size: 10pt;
-      color: #000;
-    }
+    size: A4;
+    margin: 3cm 2cm 2cm 2cm;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #000;
+    margin: 0;
+    padding: 0;
+}
+
+@page {
+    size: A4;
+    margin: 3.5cm 2cm 2cm 2cm;
+}
+
+/* HEADER */
+.header {
+    position: fixed;
+    top: -3cm;
+    left: 0;
+    right: 0;
+    height: 3cm;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+.header-inner {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.header-inner td {
+    border: none;
+    padding: 0;
+    vertical-align: middle;
+}
+
+/* Logo */
+.header-logo {
+    width: 22%;
+}
+
+.header-logo img {
+    max-height: 80px;      /* sesuaikan */
+    width: auto;
+    height: auto;
+    display: block;
+}
+
+/* Informasi */
+.header-info {
+    width: 78%;
+    text-align: right;
+    font-size: 9pt;
+    color: #555;
+    line-height: 1.15;
+}
+
+.header-info strong {
+    display: block;
+    font-size: 16pt;
+    color: #000;
+    font-weight: bold;
+    margin-bottom: 2px;
+    line-height: 1.1;
+}
+/* Garis bawah header */
+.header-line {
+    margin-top: 8px;
+    border-top: 1px solid #000;
+}
     /* CONTENT - starts below header */
     .content {
       padding-top: 1.5cm;
@@ -223,43 +253,64 @@ class ContractTemplateService
       margin: 0 0 0.15cm 0;
       line-height: 1.6;
     }
-    .party-title {
-      font-weight: bold;
-      margin-bottom: 0.1cm;
-      margin-top: 0.25cm;
+      .party-title {
+        font-weight: bold;
+        margin: 0.35cm 0 0.15cm 0;
     }
+
     .indent {
-      padding-left: 0.5cm;
+        text-align: justify;
+        text-indent: 1cm;
+        line-height: 1.6;
+        margin-bottom: 0.25cm;
     }
+
     .indent-2 {
-      padding-left: 1cm;
+        text-align: justify;
+        text-indent: 2cm;
+        line-height: 1.6;
+        margin-bottom: 0.25cm;
     }
-    .article {
-      margin-bottom: 0.25cm;
-      text-align: justify;
+   .article {
+    margin-bottom: 0.35cm;
+    text-align: justify;
+    line-height: 1.6;
     }
+
     .article-title {
-      font-weight: bold;
-      text-transform: uppercase;
-      text-align: center;
-      margin-bottom: 0.15cm;
-      font-size: 11pt;
+        font-weight: bold;
+        text-transform: uppercase;
+        text-align: center;
+        font-size: 11pt;
+        line-height: 1.5;
+        margin: 0 0 0.3cm 0;
     }
+
+    /* List utama */
     .article-list {
-      padding-left: 0.5cm;
-      margin: 0.1cm 0;
-      line-height: 1.7;
+        margin: 0;
+        padding-left: 0.8cm;
     }
+
     .article-list li {
-      margin-bottom: 0.1cm;
-      text-align: justify;
+        margin-bottom: 0.18cm;
+        text-align: justify;
+        line-height: 1.6;
+        padding-left: 0.2cm;
     }
+
+    /* Sub list */
     .sub-list {
-      padding-left: 0.5cm;
-      margin: 0.1cm 0;
+        margin-top: 0.15cm;
+        margin-bottom: 0.15cm;
+        padding-left: 0.8cm;
     }
+
     .sub-list li {
-      margin-bottom: 0.05cm;
+        margin-bottom: 0.12cm;
+        text-align: justify;
+        line-height: 1.6;
+        padding-left: 0.2cm;
     }
     /* SIGNATURE */
     .signature-section {
@@ -329,18 +380,18 @@ class ContractTemplateService
 </head>
 <body>
 
-<!-- HEADER (muncul di setiap halaman) -->
-<div class="header">
-  <table class="header-inner" border="0" cellpadding="0" cellspacing="0">
-    <tr>
-      <td class="header-logo">' . $logoHtml . '</td>
-      <td class="header-info">
-        <strong>' . htmlspecialchars($agencyName) . '</strong><br>
-        ' . nl2br(htmlspecialchars($agencyAddress)) . '
-      </td>
-    </tr>
-  </table>
-</div>
+  <!-- HEADER (muncul di setiap halaman) -->
+  <div class="header">
+    <table class="header-inner" border="0" cellpadding="0" cellspacing="0">
+      <tr>
+        <td class="header-logo" >' . $logoHtml . '</td>
+        <td class="header-info">
+          <strong>' . htmlspecialchars($agencyName) . '</strong><br>
+          ' . $this->breakEveryWords(htmlspecialchars($agencyAddress), 7) . '
+        </td>
+      </tr>
+    </table>
+  </div>
 
 <!-- CONTENT -->
 <div class="content">
@@ -367,7 +418,7 @@ class ContractTemplateService
     <p>Istilah-istilah berikut yang digunakan dalam Perjanjian ini memiliki pengertian sebagai berikut:</p>
     <ol class="article-list">
       <li><strong>Jasa</strong> adalah seluruh lingkup pekerjaan yang dilakukan oleh Pihak Pertama kepada Pihak Kedua sesuai dengan Lampiran 1 Perjanjian ini.</li>
-      <li><strong>Biaya Jasa</strong> adalah besaran biaya yang harus dibayarkan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan Lampiran 1 Perjanjian ini.</li>
+      <li><strong>Biaya Jasa</strong> adalah besaran biaya yang harus dibayarkan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan Lampiran 2 Perjanjian ini.</li>
       <li><strong>Pihak Ketiga</strong> adalah penyedia third-party yang dibutuhkan selama pekerjaan berjalan.</li>
       <li><strong>Invoice</strong> adalah surat penagihan yang dikeluarkan oleh Pihak Pertama kepada Pihak Kedua.</li>
       <li><strong>Hari Kerja</strong> adalah hari di luar hari Sabtu, Minggu dan hari libur nasional Indonesia.</li>
@@ -400,9 +451,9 @@ class ContractTemplateService
   <div class="article">
     <div class="article-title">Pasal 4 <br> Biaya Jasa dan Pembayaran</div>
     <ol class="article-list">
-      <li>Para Pihak sepakat bahwa untuk Biaya Jasa adalah mengacu pada Lampiran 1 Tabel A dari Perjanjian ini.</li>
+      <li>Para Pihak sepakat bahwa untuk Biaya Jasa adalah mengacu pada Lampiran 2 Tabel A dari Perjanjian ini.</li>
       <li>Biaya Jasa tidak dapat diubah tanpa persetujuan tertulis terlebih dahulu dari Para Pihak.</li>
-      <li>Pembayaran wajib dilakukan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan jangka waktu pembayaran yang diatur di dalam Lampiran 1 Tabel A dari Perjanjian ini.</li>
+      <li>Pembayaran wajib dilakukan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan jangka waktu pembayaran yang diatur di dalam Lampiran 2 Tabel A dari Perjanjian ini.</li>
       <li>Pembayaran wajib dilakukan oleh Pihak Kedua ke rekening Pihak Pertama sebagai berikut:<br><br>
         <strong>Nama Bank</strong> : ' . htmlspecialchars($agencyBankName) . '<br>
         <strong>No. Rek</strong> : ' . htmlspecialchars($agencyBankAccount) . '<br>
@@ -655,7 +706,7 @@ class ContractTemplateService
         $totalValue = (float)($contract->total_value ?? 0);
         $formattedTotal = 'Rp ' . number_format($totalValue, 0, ',', '.');
         $html .= '<tr>
-            <td colspan="4" class="text-right font-bold">TOTAL</td>
+            <td colspan="4" class="text-left font-bold">TOTAL</td>
             <td class="text-right font-bold">' . $formattedTotal . '</td>
           </tr>';
 
@@ -743,16 +794,14 @@ class ContractTemplateService
 
         $html = '
   <div class="article">
-    <div class="article-title">Lampiran 2 <br> Ruang Lingkup Pekerjaan</div>
+    <div class="article-title">Lampiran 1 <br> Ruang Lingkup Pekerjaan</div>
     <table style="width: 100%; border-collapse: collapse; margin: 0.15cm 0; font-size: 10pt;">
       <thead>
-        <tr>
-          <th style="width: 25px; border: 1px solid #000; padding: 6px; background-color: #f5f5f5; text-align: center;">No</th>
-          <th style="border: 1px solid #000; padding: 6px; background-color: #f5f5f5; text-align: center;">Layanan</th>
-          <th style="border: 1px solid #000; padding: 6px; background-color: #f5f5f5; text-align: center;">Rincian</th>
-          <th style="width: 50px; border: 1px solid #000; padding: 6px; background-color: #f5f5f5; text-align: center;">Qty</th>
-          <th style="width: 80px; border: 1px solid #000; padding: 6px; background-color: #f5f5f5; text-align: center;">Unit</th>
-        </tr>
+          <tr>
+              <th style="width:25px; border:1px solid #000; padding:6px; background-color:#f5f5f5; text-align:center;">No</th>
+              <th style="border:1px solid #000; padding:6px; background-color:#f5f5f5; text-align:center;">Layanan</th>
+              <th style="border:1px solid #000; padding:6px; background-color:#f5f5f5; text-align:center;">Rincian</th>
+          </tr>
       </thead>
       <tbody>';
 
@@ -767,7 +816,9 @@ class ContractTemplateService
                 $html .= '
         <tr style="background-color: #f0f0f0;">
           <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top; font-weight: bold;">' . $rowNum . '</td>
-          <td colspan="4" style="border: 1px solid #000; padding: 6px; font-weight: bold; vertical-align: top;">' . $categoryName . '</td>
+          <td colspan="2" style="border:1px solid #000; padding:6px; font-weight:bold; vertical-align:top;">
+            ' . $categoryName . '
+        </td>
         </tr>';
 
                 // Sub-items (children)
@@ -780,11 +831,17 @@ class ContractTemplateService
 
                     $html .= '
         <tr>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top;">' . $rowNum . '.' . $childNum . '</td>
-          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; padding-left: 20px;">' . $childItem . '</td>
-          <td style="border: 1px solid #000; padding: 6px; vertical-align: top; line-height: 1.4;">' . $childDesc . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $childQty . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $childUnit . '</td>
+            <td style="border:1px solid #000; padding:6px; text-align:center; vertical-align:top;">
+                ' . $rowNum . '.' . $childNum . '
+            </td>
+
+            <td style="border:1px solid #000; padding:6px 6px 6px 20px; vertical-align:top;">
+                ' . $childItem . '
+            </td>
+
+            <td style="border:1px solid #000; padding:6px; vertical-align:top; line-height:1.4;">
+                ' . $childDesc . '
+            </td>
         </tr>';
                     $childNum++;
                 }
