@@ -158,39 +158,41 @@ class ContractTemplateService
       margin: 0;
       padding: 0;
     }
-    /* HEADER - sederhana, tidak ada kotak */
+    /* HEADER - fixed, muncul di setiap halaman */
     .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
       width: 100%;
-      margin-bottom: 0.4cm;
-      padding-bottom: 0.2cm;
+      padding: 0.5cm 2cm 0.3cm 2cm;
+      background: white;
+      /* Tidak ada border, bersih */
     }
-    .header table {
+    .header-inner {
       width: 100%;
-      border-collapse: collapse;
-      border: none;
-    }
-    .header td {
-      border: none;
-      vertical-align: middle;
-      padding: 0;
     }
     .header-logo {
-      width: 70px;
+      vertical-align: middle;
     }
     .header-logo img {
-      height: 40px;
+      height: 45px;
     }
     .header-info {
       text-align: right;
       font-size: 9pt;
       color: #333;
       line-height: 1.5;
+      vertical-align: middle;
     }
     .header-info strong {
       font-size: 10pt;
       color: #000;
     }
-    /* CONTENT */
+    /* CONTENT - starts below header */
+    .content {
+      padding-top: 1.5cm;
+    }
     .title {
       font-size: 14pt;
       font-weight: bold;
@@ -314,9 +316,9 @@ class ContractTemplateService
 </head>
 <body>
 
-<!-- HEADER (setiap halaman) -->
+<!-- HEADER (muncul di setiap halaman) -->
 <div class="header">
-  <table>
+  <table class="header-inner">
     <tr>
       <td class="header-logo">' . $logoHtml . '</td>
       <td class="header-info">
@@ -328,7 +330,7 @@ class ContractTemplateService
 </div>
 
 <!-- CONTENT -->
-<div>
+<div class="content">
   <div class="title">Perjanjian Kerja Sama</div>
   <div class="contract-number">' . htmlspecialchars($contractNumber) . '</div>
 
