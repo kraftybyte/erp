@@ -165,7 +165,7 @@ class ContractTemplateService
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.08cm 1.2cm 0.05cm 1.5cm;
+      padding: 0.08cm 1cm 0.05cm 1.5cm;
       background: white;
       box-sizing: border-box;
     }
