@@ -95,7 +95,7 @@ class ContractTemplateService
 
         if ($logoPath && Storage::exists($logoPath)) {
             $url = Storage::url($logoPath);
-            return '<img src="' . $url . '" alt="Logo" style="height: 45px;">';
+            return '<img src="' . $url . '" alt="Logo" style="height: 30px;">';
         }
 
         // Try alternative path for media library
@@ -103,7 +103,7 @@ class ContractTemplateService
             $altPath = str_replace('sites/', 'public/sites/', $logoPath);
             if (Storage::exists($altPath)) {
                 $url = Storage::url($altPath);
-                return '<img src="' . $url . '" alt="Logo" style="height: 45px;">';
+                return '<img src="' . $url . '" alt="Logo" style="height: 30px;">';
             }
         }
 
@@ -147,7 +147,7 @@ class ContractTemplateService
   <title>Perjanjian Kerja Sama</title>
   <style>
     @page {
-      margin: 4cm 2cm 2cm 2cm;
+      margin: 2cm 2cm 2cm 2cm;
       size: A4;
     }
     body {
@@ -165,7 +165,7 @@ class ContractTemplateService
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.3cm 2cm 0.2cm 2cm;
+      padding: 0.15cm 2cm 0.1cm 2cm;
       background: white;
     }
     .header-inner {
@@ -181,7 +181,7 @@ class ContractTemplateService
       text-align: left;
     }
     .header-logo img {
-      height: 40px;
+      height: 30px;
     }
     .header-info {
       text-align: right;
@@ -196,7 +196,7 @@ class ContractTemplateService
     }
     /* CONTENT - starts below header */
     .content {
-      padding-top: 2.5cm;
+      padding-top: 1.5cm;
     }
     .title {
       font-size: 14pt;
