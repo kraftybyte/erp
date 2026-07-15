@@ -158,14 +158,14 @@ class ContractTemplateService
       margin: 0;
       padding: 0;
     }
-    /* HEADER - fixed, bersih tanpa garis/border */
+    /* HEADER - fixed, di paling atas page */
     .header {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       width: 100%;
-      padding: 0.4cm 2cm 0.4cm 2cm;
+      padding: 0.3cm 2cm 0.2cm 2cm;
       background: white;
     }
     .header-inner {
