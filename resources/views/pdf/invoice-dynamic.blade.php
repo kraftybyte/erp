@@ -30,7 +30,15 @@ $calcTotalDiscount = 0;   // SUM(discount * qty)
 $calcSubTotal = 0;        // SUM(price * qty) - HARGA ASLI sebelum diskon
 $calcGrandTotal = 0;      // Sub Total + Total VAT
 
-$invoiceItems = $invoice->invoicesItems;
+$invoiceItems = $invoice->invoicesItems ?? collect();
+
+// Calculate if this is a DP invoice
+$typePayment = $invoice->type_payment ?? '';
+$isDP = !empty($typePayment) && str_starts_with($typePayment, 'dp_');
+$dpPercentage = 0;
+if ($isDP) {
+    $dpPercentage = (int) str_replace('dp_', '', $typePayment);
+}
 
 foreach ($invoiceItems as $item) {
     $price = (float) ($item->price ?? 0);
@@ -38,9 +46,11 @@ foreach ($invoiceItems as $item) {
     $discount = (float) ($item->discount ?? 0);
     $vatPercentage = (float) ($item->vat_percentage ?? 0);
     // original_price: harga sebelum DP (untuk tampilkan di subtotal)
-    $originalPrice = (float) ($item->original_price ?? $item->price ?? 0);
+    // Jika DP dan ada original_price, gunakan itu. Jika tidak, gunakan price.
+    $originalPriceFromDB = $item->original_price ?? null;
+    $originalPrice = (float) ($originalPriceFromDB ?? $price ?? 0);
 
-    // Sub Total pakai harga asli (sebelum DP)
+    // Sub Total: gunakan original_price jika ada, jika tidak gunakan price
     $itemSubTotal = $originalPrice * $qty;
     // Discount per item
     $itemDiscount = $discount * $qty;
@@ -55,6 +65,12 @@ foreach ($invoiceItems as $item) {
     $calcSubTotal += $itemSubTotal;  // HARGA ASLI (sebelum diskon)
     $calcTotalVat += $itemVat;
     $calcGrandTotal += $itemCurrentTotal;  // Grand Total dari harga saat ini
+}
+
+// Calculate Balance Due for DP
+$remainingAmount = 0;
+if ($isDP && $calcSubTotal > 0) {
+    $remainingAmount = $calcSubTotal - $calcGrandTotal;
 }
 ?>
 <!DOCTYPE html>
@@ -406,30 +422,6 @@ foreach ($invoiceItems as $item) {
                             <strong>Sub Total &emsp;:</strong> Rp{{ number_format($calcSubTotal, 0, ',', '.') }}
                             <br>
                             <strong style="font-size: 14px;">Total &emsp;:</strong> Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
-                            @php
-                                // Calculate Balance Due for DP invoices
-                                $typePayment = $invoice->type_payment ?? '';
-                                $isDP = !empty($typePayment) && str_starts_with($typePayment, 'dp_');
-                                $remainingAmount = 0;
-
-                                if ($isDP) {
-                                    $dpPercentage = (int) str_replace('dp_', '', $typePayment);
-                                    $originalTotal = 0;
-                                    $items = $invoice->invoicesItems ?? collect();
-                                    foreach ($items as $item) {
-                                        $originalPrice = (float) ($item->original_price ?? $item->price ?? 0);
-                                        $qty = (float) ($item->qty ?? 1);
-                                        $discount = (float) ($item->discount ?? 0);
-                                        $vatPct = (float) ($item->vat_percentage ?? 0);
-                                        $subtotal = $originalPrice * $qty;
-                                        $discountAmount = $discount * $qty;
-                                        $afterDiscount = max($subtotal - $discountAmount, 0);
-                                        $vat = $afterDiscount * ($vatPct / 100);
-                                        $originalTotal += $afterDiscount + $vat;
-                                    }
-                                    $remainingAmount = $originalTotal - $calcGrandTotal;
-                                }
-                            @endphp
                             @if($isDP && $remainingAmount > 0)
                                 <br>
                                 <span style="color: #f04f29; font-size: 12px;">
