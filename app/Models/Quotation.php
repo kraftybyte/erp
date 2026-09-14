@@ -44,6 +44,12 @@ class Quotation extends Model
 
         return '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
     }
+        protected static function booted(): void
+    {
+        static::deleting(function (Quotation $quotation) {
+            $quotation->items()->delete();
+        });
+    }
 
     public function items(): HasMany
     {

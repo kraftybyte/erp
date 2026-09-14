@@ -4,15 +4,16 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Filament\Pages\ProjectTimelineBoard;
+use Illuminate\Auth\Access\HandlesAuthorization;
+
 
 class ProjectTimelineBoardPolicy
 {
     /**
      * View page.
      */
-    public function viewAny(User $user): bool
+    public function view(User $user): bool
     {
-        // Allow super_admin or specific roles
-        return $user->hasRole(['super_admin', 'Director', 'Project Manager', 'Creative', 'Admin']);
+        return $user->can('view_project_timeline_board');
     }
 }

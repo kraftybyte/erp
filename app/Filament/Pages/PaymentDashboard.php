@@ -10,6 +10,7 @@ use App\Settings\GeneralSettings;
 use Filament\Pages\Page;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Livewire\Attributes\On;
 
 class PaymentDashboard extends Page
@@ -33,11 +34,20 @@ class PaymentDashboard extends Page
     public int $pendingAdvance = 0;
 
     // Collections
-    public $accounts;
-    public $recentTransactions;
-    public $monthlyStats;
-    public $recentExpenses;
-    public $recentAdvances;
+    /** @var Collection<int, \App\Models\PaymentAccount> */
+    public Collection $accounts;
+
+    /** @var Collection<int, \App\Models\Transaction> */
+    public Collection $recentTransactions;
+
+    /** @var Collection<int, array{month: string, in: float, out: float, net: float}> */
+    public Collection $monthlyStats;
+
+    /** @var Collection<int, \App\Models\Expense> */
+    public Collection $recentExpenses;
+
+    /** @var Collection<int, \App\Models\Advance> */
+    public Collection $recentAdvances;
 
     // Pagination
     public int $transactionsPage = 1;
@@ -96,32 +106,42 @@ class PaymentDashboard extends Page
         $startOfMonth = Carbon::now()->startOfMonth();
         $endOfMonth = Carbon::now()->endOfMonth();
 
+        // Total pemasukan dari Transaction (type = 'in')
         $this->totalInThisMonth = (float) Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
             ->where('type', 'in')
             ->sum('amount');
 
-        $this->totalOutThisMonth = (float) Transaction::whereBetween('transaction_date', [$startOfMonth, $endOfMonth])
-            ->where('type', 'out')
+        // Total pengeluaran dari Expense + Advance model (bukan Transaction)
+        // Hitung semua expense (tanpa filter status)
+        $totalExpense = (float) Expense::whereBetween('submission_date', [$startOfMonth, $endOfMonth])
             ->sum('amount');
+        $totalAdvance = (float) Advance::whereBetween('submission_date', [$startOfMonth, $endOfMonth])
+            ->sum('amount');
+        $this->totalOutThisMonth = $totalExpense + $totalAdvance;
 
         // Pending counts
         $this->pendingExpense = Expense::whereIn('status', ['Pending', 'Disetujui'])->count();
         $this->pendingAdvance = Advance::whereIn('status', ['Pending', 'Disetujui'])->count();
         $this->pendingPayments = $this->pendingExpense + $this->pendingAdvance;
 
-        // Monthly stats (last 6 months)
+        // Monthly stats (last 6 months) - juga dari Expense model
         $this->monthlyStats = collect();
         for ($i = 5; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i);
             $start = $month->copy()->startOfMonth();
             $end = $month->copy()->endOfMonth();
 
+            // Pemasukan dari Transaction
             $in = (float) Transaction::whereBetween('transaction_date', [$start, $end])
                 ->where('type', 'in')
                 ->sum('amount');
-            $out = (float) Transaction::whereBetween('transaction_date', [$start, $end])
-                ->where('type', 'out')
+
+            // Pengeluaran dari Expense + Advance (semua status)
+            $outExpense = (float) Expense::whereBetween('submission_date', [$start, $end])
                 ->sum('amount');
+            $outAdvance = (float) Advance::whereBetween('submission_date', [$start, $end])
+                ->sum('amount');
+            $out = $outExpense + $outAdvance;
 
             $this->monthlyStats->push([
                 'month' => $month->format('M Y'),
@@ -240,6 +260,12 @@ class PaymentDashboard extends Page
             'payment' => 'Pembayaran',
             'expense' => 'Biaya',
             'income' => 'Pendapatan',
+            'transport' => 'Transport',
+            'komunikasi' => 'Komunikasi',
+            'software' => 'Software',
+            'entertainment' => 'Entertainment',
+            'project_support' => 'Project Support',
+            'biaya_lain' => 'Biaya Lain',
             'other' => 'Lainnya',
         ];
         return $labels[$category] ?? $category;

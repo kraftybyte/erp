@@ -52,9 +52,14 @@ class DealResource extends Resource
                         ->maxLength(255),
 
                     Forms\Components\TextInput::make('email')
-                        ->required()
                         ->email()
-                        ->maxLength(255),
+                        ->maxLength(255)
+                        ->default('-')
+                        ->dehydrateStateUsing(fn ($state) => blank($state) ? '-' : $state)
+                        ->rules([
+                            'nullable',
+                            'email',
+                        ]),
 
                     Forms\Components\TextInput::make('telephone')
                         ->required()
@@ -66,7 +71,7 @@ class DealResource extends Resource
                         ->label('No. NPWP'),
 
                     Forms\Components\Textarea::make('alamat')
-                        ->required()
+                    ->default('-')
                         ->columnSpanFull(),
                 ]),
 
@@ -102,12 +107,13 @@ class DealResource extends Resource
                         ]),
                 ]),
 
-            Forms\Components\Section::make('Catatan')
-                ->schema([
-                    Forms\Components\MarkdownEditor::make('notes')
-                        ->helperText('Catatan untuk customer ini.')
-                        ->maxLength(500),
-                ]),
+          Forms\Components\Section::make('Catatan')
+                    ->schema([
+                        Forms\Components\MarkdownEditor::make('notes')
+                            ->helperText('Catatan untuk customer ini.')
+                            ->default('-')
+                            ->maxLength(500),
+                    ]),
         ]);
     }
 
@@ -123,11 +129,25 @@ class DealResource extends Resource
                     ->sortable()
                     ->weight('bold'),
 
+                    
                 Tables\Columns\TextColumn::make('nama_perusahaan')
                     ->searchable()
                     ->weight('medium')
                     ->limit(25)
-                    ->tooltip(fn ($record) => $record->nama_perusahaan),
+                    ->formatStateUsing(function ($state, $record) {
+                        $namaPic = ($record->nama_pic === '-' || blank($record->nama_pic))
+                            ? '(Pribadi)'
+                            : $record->nama_pic;
+
+                        return $namaPic . ' - ' . $record->nama_perusahaan;
+                    })
+                    ->tooltip(function ($record) {
+                        $namaPic = ($record->nama_pic === '-' || blank($record->nama_pic))
+                            ? '(Pribadi)'
+                            : $record->nama_pic;
+
+                        return $namaPic . ' - ' . $record->nama_perusahaan;
+                    }),
                     
                 Tables\Columns\TextColumn::make('product.nama_layanan')
                     ->badge()

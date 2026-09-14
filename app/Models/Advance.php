@@ -34,6 +34,7 @@ class Advance extends Model
         'submission_date',
         'project_id',
         'keterangan_advance',
+        'category',
         'amount',
         'attachment',
         'reference_number',

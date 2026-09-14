@@ -109,13 +109,17 @@ class AnalyticsDashboard extends Page
         $startOfMonth = Carbon::now()->startOfMonth();
         $startOfYear = Carbon::now()->startOfYear();
 
+        // Cache leads counts
+        $totalLeads = Leads::count();
+        $convertedLeads = Leads::where('is_converted', true)->count();
+
         return [
             // Leads
             'leads' => [
-                'total' => Leads::count(),
+                'total' => $totalLeads,
                 'period' => Leads::whereBetween('created_at', [$startDate, $endDate])->count(),
-                'converted' => Leads::where('is_converted', true)->count(),
-                'conversion_rate' => Leads::count() > 0 ? round(Leads::where('is_converted', true)->count() / Leads::count() * 100, 1) : 0,
+                'converted' => $convertedLeads,
+                'conversion_rate' => $totalLeads > 0 ? round($convertedLeads / $totalLeads * 100, 1) : 0,
             ],
 
             // Deals
@@ -137,23 +141,22 @@ class AnalyticsDashboard extends Page
 
             // Expenses
             'expenses' => [
-                'all_time' => Expense::whereIn('status', ['Disetujui', 'Selesai'])->sum('paid'),
-                'year_to_date' => Expense::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startOfYear, now()])->sum('paid'),
-                'period' => Expense::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startDate, $endDate])->sum('paid'),
+                'all_time' => Expense::sum('amount'),
+                'year_to_date' => Expense::whereBetween('submission_date', [$startOfYear, now()])->sum('amount'),
+                'period' => Expense::whereBetween('submission_date', [$startDate, $endDate])->sum('amount'),
                 'pending' => Expense::where('status', 'Pending')->sum('amount'),
                 'pending_count' => Expense::where('status', 'Pending')->count(),
             ],
 
             // Advances
             'advances' => [
-                'all_time' => Advance::whereIn('status', ['Disetujui', 'Selesai'])->sum('paid'),
-                'year_to_date' => Advance::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startOfYear, now()])->sum('paid'),
-                'period' => Advance::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startDate, $endDate])->sum('paid'),
+                'all_time' => Advance::sum('amount'),
+                'year_to_date' => Advance::whereBetween('submission_date', [$startOfYear, now()])->sum('amount'),
+                'period' => Advance::whereBetween('submission_date', [$startDate, $endDate])->sum('amount'),
                 'pending' => Advance::where('status', 'Pending')->sum('amount'),
                 'pending_count' => Advance::where('status', 'Pending')->count(),
                 'recent' => Advance::with('user')
                     ->whereBetween('submission_date', [$startDate, $endDate])
-                    ->whereIn('status', ['Disetujui', 'Selesai'])
                     ->orderBy('submission_date', 'desc')
                     ->limit(10)
                     ->get(),
@@ -163,8 +166,10 @@ class AnalyticsDashboard extends Page
             'balance' => [
                 'total' => PaymentAccount::active()->get()->sum(fn($a) => $a->getAvailableBalance()),
                 'accounts' => PaymentAccount::active()->count(),
-                'monthly_in' => Transaction::whereBetween('transaction_date', [$startOfMonth, now()])->where('type', 'in')->sum('amount'),
-                'monthly_out' => Transaction::whereBetween('transaction_date', [$startOfMonth, now()])->where('type', 'out')->sum('amount'),
+                // monthly_out dihitung dari Expense + Advance (semua status)
+                'monthly_in' => Invoice::where('status', 'paid')->whereBetween('date', [$startOfMonth, now()])->sum('grand_total'),
+                'monthly_out' => Expense::whereBetween('submission_date', [$startOfMonth, now()])->sum('amount')
+                    + Advance::whereBetween('submission_date', [$startOfMonth, now()])->sum('amount'),
             ],
 
             // Tasks
@@ -271,37 +276,157 @@ class AnalyticsDashboard extends Page
         $startDate = $this->dateFrom ? Carbon::parse($this->dateFrom)->startOfDay() : Carbon::now()->startOfMonth();
         $endDate = $this->dateTo ? Carbon::parse($this->dateTo)->endOfDay() : Carbon::now()->endOfDay();
 
-        // Expenses
+        // ========== EXPENSES ==========
         $expenses = Expense::whereBetween('submission_date', [$startDate, $endDate])
-            ->whereIn('status', ['Disetujui', 'Selesai'])
-            ->with('user')
+            ->with('user', 'itemExpenses')
             ->orderBy('submission_date', 'desc')
             ->limit(20)
             ->get();
 
-        // Advance
+        // ========== ADVANCES ==========
         $advances = Advance::whereBetween('submission_date', [$startDate, $endDate])
-            ->whereIn('status', ['Disetujui', 'Selesai'])
-            ->with('user')
+            ->with('user', 'project.deal')
             ->orderBy('submission_date', 'desc')
             ->limit(20)
             ->get();
 
-        // Summary
-        $totalExpenses = Expense::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startDate, $endDate])->sum('paid');
-        $totalAdvances = Advance::whereIn('status', ['Disetujui', 'Selesai'])->whereBetween('submission_date', [$startDate, $endDate])->sum('paid');
-        $pendingExpenses = Expense::where('status', 'Pending')->sum('amount');
-        $pendingAdvances = Advance::where('status', 'Pending')->sum('amount');
+        // ========== SUMMARY ==========
+        // Hitung semua expense/advance tanpa filter status, pakai field 'amount'
+        $totalExpenses = Expense::whereBetween('submission_date', [$startDate, $endDate])->sum('amount');
+        $totalAdvances = Advance::whereBetween('submission_date', [$startDate, $endDate])->sum('amount');
+        $pendingExpenses = Expense::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->sum('amount');
+        $pendingAdvances = Advance::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->sum('amount');
+
+        // ========== BREAKDOWN BY USER ==========
+        $expensesByUser = Expense::whereBetween('submission_date', [$startDate, $endDate])
+            ->with('user')
+            ->get()
+            ->groupBy(fn($e) => $e->user?->name ?? 'Unknown')
+            ->map(fn($items, $user) => [
+                'user' => $user,
+                'count' => $items->count(),
+                'total' => $items->sum('amount'),
+            ])
+            ->sortByDesc('total')
+            ->take(10)
+            ->values();
+
+        $advancesByUser = Advance::whereBetween('submission_date', [$startDate, $endDate])
+            ->with('user')
+            ->get()
+            ->groupBy(fn($a) => $a->user?->name ?? 'Unknown')
+            ->map(fn($items, $user) => [
+                'user' => $user,
+                'count' => $items->count(),
+                'total' => $items->sum('amount'),
+            ])
+            ->sortByDesc('total')
+            ->take(10)
+            ->values();
+
+        // ========== BREAKDOWN BY PROJECT (Advances) ==========
+        $advancesByProject = Advance::whereBetween('submission_date', [$startDate, $endDate])
+            ->whereNotNull('project_id')
+            ->with('project.deal')
+            ->get()
+            ->groupBy(fn($a) => $a->project?->nama_project ?? 'Unknown')
+            ->map(fn($items, $project) => [
+                'project' => $project,
+                'client' => $items->first()->project?->deal?->nama_perusahaan ?? '-',
+                'count' => $items->count(),
+                'total' => $items->sum('amount'),
+            ])
+            ->sortByDesc('total')
+            ->take(10)
+            ->values();
+
+        // ========== TREND BY MONTH (last 6 months) ==========
+        $monthlyTrend = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = Carbon::now()->subMonths($i);
+            $monthStart = $month->copy()->startOfMonth();
+            $monthEnd = $month->copy()->endOfMonth();
+
+            $expensesMonth = Expense::whereBetween('submission_date', [$monthStart, $monthEnd])
+                ->sum('amount');
+
+            $advancesMonth = Advance::whereBetween('submission_date', [$monthStart, $monthEnd])
+                ->sum('amount');
+
+            $monthlyTrend[] = [
+                'month' => $month->format('M Y'),
+                'expenses' => $expensesMonth,
+                'advances' => $advancesMonth,
+                'total' => $expensesMonth + $advancesMonth,
+            ];
+        }
+
+        // ========== BREAKDOWN BY CATEGORY (Expense) ==========
+        $expensesByCategory = Expense::whereBetween('submission_date', [$startDate, $endDate])
+            ->whereNotNull('category')
+            ->get()
+            ->groupBy('category')
+            ->map(fn($items, $category) => [
+                'category' => $category,
+                'count' => $items->count(),
+                'total' => $items->sum('amount'),
+            ])
+            ->sortByDesc('total')
+            ->values();
+
+        // ========== TOP EXPENSE ITEMS (Grouped by similar names) ==========
+        $topExpenseItems = \App\Models\ItemExpense::whereHas('expense', function ($q) use ($startDate, $endDate) {
+            $q->whereBetween('submission_date', [$startDate, $endDate]);
+        })
+            ->get()
+            ->groupBy(function ($item) {
+                // Group by first word only (e.g., "Transport Jakarta" + "Transport Bandung" = "Transport")
+                $words = explode(' ', trim($item->name ?? ''));
+                return strtolower($words[0] ?? 'unknown');
+            })
+            ->map(function ($items, $groupKey) {
+                // Get the most common name pattern from the group
+                $name = $items->first()->name ?? 'Unknown';
+                $words = explode(' ', trim($name));
+                $displayName = $words[0]; // Use first word
+
+                return [
+                    'name' => $displayName,
+                    'count' => $items->count(),
+                    'qty' => $items->sum('quantity'),
+                    'total' => $items->sum(fn($i) => $i->quantity * $i->price),
+                    'avg_price' => $items->avg(fn($i) => $i->price),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(15)
+            ->values();
 
         return [
+            // Lists
             'expenses' => $expenses,
             'advances' => $advances,
+
+            // Summary totals
             'total_expenses' => $totalExpenses,
             'total_advances' => $totalAdvances,
+            'total_combined' => $totalExpenses + $totalAdvances,
             'pending_expenses' => $pendingExpenses,
             'pending_advances' => $pendingAdvances,
-            'pending_expenses_count' => Expense::where('status', 'Pending')->count(),
-            'pending_advances_count' => Advance::where('status', 'Pending')->count(),
+            'pending_expenses_count' => Expense::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->count(),
+            'pending_advances_count' => Advance::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->count(),
+
+            // Breakdown
+            'by_user' => [
+                'expenses' => $expensesByUser,
+                'advances' => $advancesByUser,
+            ],
+            'by_project' => $advancesByProject,
+            'by_category' => [
+                'expenses' => $expensesByCategory,
+            ],
+            'top_items' => $topExpenseItems,
+            'monthly_trend' => $monthlyTrend,
         ];
     }
 
@@ -331,7 +456,7 @@ class AnalyticsDashboard extends Page
         return [
             'all' => $allAdvances,
             'by_status' => $byStatus,
-            'total_all_time' => Advance::whereBetween('submission_date', [$startDate, $endDate])->whereIn('status', ['Disetujui', 'Selesai'])->sum('paid'),
+            'total_all_time' => Advance::whereBetween('submission_date', [$startDate, $endDate])->sum('amount'),
             'total_pending' => Advance::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->sum('amount'),
             'total_pending_count' => Advance::whereBetween('submission_date', [$startDate, $endDate])->where('status', 'Pending')->count(),
             'count_by_status' => $byStatus,
@@ -510,9 +635,9 @@ class AnalyticsDashboard extends Page
             ->get();
 
         // Summary
-        $paidAdvances = $advances->whereIn('status', ['Disetujui', 'Dibayarkan', 'Selesai']);
-        $totalPaid = $paidAdvances->sum('paid');
-        $totalRealisasi = $advances->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal'));
+        $paidAdvances = $advances; // Semua advance dihitung
+        $totalPaid = $paidAdvances->sum('amount');
+        $totalRealisasi = $advances->sum(fn($a) => $a->realizasis->flatMap(fn($r) => $r->items)->sum('subtotal'));
         $pendingAdvances = $advances->where('status', 'Pending');
         $pendingCount = $pendingAdvances->count();
         $pendingAmount = $pendingAdvances->sum('amount');
@@ -524,11 +649,11 @@ class AnalyticsDashboard extends Page
                 'project_id' => $id,
                 'project_name' => $items->first()->project?->nama_project ?? 'Tanpa Project',
                 'client_name' => $items->first()->project?->deal?->nama_perusahaan ?? '-',
-                'total_paid' => $items->sum('paid'),
-                'total_realisasi' => $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
-                'sisa' => $items->sum('paid') - $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
+                'total_paid' => $items->sum('amount'),
+                'total_realisasi' => $items->sum(fn($a) => $a->realizasis->flatMap(fn($r) => $r->items)->sum('subtotal')),
+                'sisa' => $items->sum('amount') - $items->sum(fn($a) => $a->realizasis->flatMap(fn($r) => $r->items)->sum('subtotal')),
                 'count' => $items->count(),
-                'is_overrun' => $items->sum('paid') < $items->sum(fn($a) => $a->realizasis->flatMap->items->sum('subtotal')),
+                'is_overrun' => $items->sum('amount') < $items->sum(fn($a) => $a->realizasis->flatMap(fn($r) => $r->items)->sum('subtotal')),
             ])
             ->sortByDesc('total_paid')
             ->take(20)

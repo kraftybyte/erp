@@ -15,7 +15,7 @@ class InvoicePdfController extends Controller
             abort(403, 'Unauthorized access to invoice');
         }
 
-        // Ensure relationship is loaded
+        // Load invoicesItems relationship
         $invoice->load('invoicesItems');
 
         // Load settings

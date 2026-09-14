@@ -69,7 +69,8 @@ class QuotationResource extends Resource
             $vatPercentage = floatval($get('vat_percentage') ?? 0);
 
             $subtotalItem = $price * $qty;
-            $discountedSubtotal = max($subtotalItem - $discount, 0);
+            $discountAmount = $discount * $qty;  // Discount × Qty (samakan dengan recalculateTotals)
+            $discountedSubtotal = max($subtotalItem - $discountAmount, 0);
             $vat = $discountedSubtotal * ($vatPercentage / 100);
             $total = $discountedSubtotal + $vat;
 
@@ -89,17 +90,67 @@ class QuotationResource extends Resource
             Forms\Components\Section::make('Company Information')
                 ->schema([
                     Forms\Components\Select::make('nama_perusahaan')
-                        ->options(Leads::query()->pluck('nama_perusahaan', 'nama_perusahaan'))
-                        ->searchable()
-                        ->reactive()
-                        ->afterStateUpdated(function ($state, callable $set) {
-                            if ($lead = Leads::where('nama_perusahaan', $state)->first()) {
-                                $set('telephone', $lead->telephone);
-                                $set('nama_pic', $lead->nama_pic);
-                                $set('email', $lead->email);
+                    ->label('Nama Klien')
+                    ->options(function () {
+                        $options = [];
+
+                        // Dari Leads
+                        $leads = \App\Models\Leads::select('nama_perusahaan', 'nama_pic')
+                            ->orderBy('nama_perusahaan')
+                            ->get();
+
+                        foreach ($leads as $lead) {
+                            $key = $lead->nama_perusahaan . '|' . ($lead->nama_pic ?? '-');
+                            $options[$key] = $lead->nama_perusahaan . ' — ' . ($lead->nama_pic ?? '-');
+                        }
+
+                        // Dari Deal
+                        $deals = \App\Models\Deal::select('nama_perusahaan', 'nama_pic')
+                            ->orderBy('nama_perusahaan')
+                            ->get();
+
+                        foreach ($deals as $deal) {
+                            $key = $deal->nama_perusahaan . '|' . ($deal->nama_pic ?? '-');
+                            if (!isset($options[$key])) {
+                                $options[$key] = $deal->nama_perusahaan . ' — ' . ($deal->nama_pic ?? '-');
                             }
-                        })
-                        ->required(),
+                        }
+
+                        ksort($options);
+                        return $options;
+                    })
+                    ->searchable()
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        // Parse key: "nama_perusahaan|nama_pic"
+                        $parts = explode('|', $state);
+                        $namaPerusahaan = $parts[0] ?? '';
+                        $namaPic = $parts[1] ?? '-';
+
+                        // Simpan HANYA nama perusahaan, bukan key lengkap
+                        $set('nama_perusahaan', $namaPerusahaan);
+                        $set('nama_pic', $namaPic);
+
+                        // Ambil data lengkap dari Leads atau Deal
+                        $lead = \App\Models\Leads::where('nama_perusahaan', $namaPerusahaan)
+                            ->where('nama_pic', $namaPic)
+                            ->first();
+
+                        $deal = $lead ? null : \App\Models\Deal::where('nama_perusahaan', $namaPerusahaan)
+                            ->where('nama_pic', $namaPic)
+                            ->first();
+
+                        $contact = $lead ?? $deal;
+
+                        if ($contact) {
+                            $set('telephone', $contact->telephone ?? '-');
+                            $set('email', $contact->email ?? '-');
+                        } else {
+                            $set('telephone', '-');
+                            $set('email', '-');
+                        }
+                    })
+                    ->required(),
 
                     Forms\Components\TextInput::make('telephone'),
                     Forms\Components\TextInput::make('nama_pic'),
@@ -190,8 +241,9 @@ class QuotationResource extends Resource
                             // Qty
                             Forms\Components\TextInput::make('qty')
                                 ->numeric()
-                                ->default(1)
+                                ->helperText('Wajib dimasukan Quantity produknya.')
                                 ->reactive()
+                                ->required()
                                 ->afterStateUpdated($updateItemTotals),
 
                             // Discount
@@ -204,8 +256,9 @@ class QuotationResource extends Resource
                             // VAT Percentage
                             Forms\Components\TextInput::make('vat_percentage')
                                 ->numeric()
-                                ->default(0)
                                 ->reactive()
+                                ->helperText('Isi (0) apabila tidak ada pajak.')
+                                ->required()
                                 ->afterStateUpdated($updateItemTotals),
 
                             // Price
@@ -278,11 +331,12 @@ class QuotationResource extends Resource
             $vatPercentage = floatval($item['vat_percentage'] ?? 0);
 
             $subtotalItem = $price * $qty;
-            $discountedSubtotal = max($subtotalItem - $discount, 0);
+            $discountAmount = $discount * $qty;  // Discount × Qty
+            $discountedSubtotal = max($subtotalItem - $discountAmount, 0);
             $vat = $discountedSubtotal * ($vatPercentage / 100);
 
             $subtotal += $subtotalItem;
-            $totalDiscount += $discount;
+            $totalDiscount += $discountAmount;  // Total discount
             $totalVat += $vat;
         }
 
@@ -305,7 +359,21 @@ class QuotationResource extends Resource
                 Tables\Columns\TextColumn::make('uuid')->label('ID'),
 
                 Tables\Columns\TextColumn::make('nama_perusahaan')
-                ->limit(20)->tooltip(fn ($record) => $record->nama_perusahaan),
+                ->formatStateUsing(function ($state, $record) {
+                    $namaPic = $record->nama_pic === '-' || empty($record->nama_pic)
+                        ? '(Pribadi)'
+                        : $record->nama_pic;
+
+                    return $namaPic . ' - ' . $state;
+                })
+                ->limit(20)
+                ->tooltip(function ($record) {
+                    $namaPic = $record->nama_pic === '-' || empty($record->nama_pic)
+                        ? '(Pribadi)'
+                        : $record->nama_pic;
+
+                    return $namaPic . ' - ' . $record->nama_perusahaan;
+                }),
 
 
                 Tables\Columns\TextColumn::make('status')
@@ -336,45 +404,49 @@ class QuotationResource extends Resource
                             $record->nama_perusahaan
                         )->first();
 
-                        /* ========= GENERATE PROFORMA UUID ========= */
-                        $settings = app(GeneralSettings::class);
-                        $datePart = now()->format('ym'); // Format: YYMM
-
-                        // Determine prefix based on type
-                        $invoiceType = 'estimate';
-                        $prefix = match ($invoiceType) {
-                            'estimate' => 'PI',
-                            'sale' => $settings->invoice_prefix ?? 'INV',
-                            default => $settings->invoice_prefix ?? 'INV',
-                        };
-
-                        // Get highest sequence number by TYPE and MONTH
-                        // Format: #PREFIX/013YYMM/XXXXX
-                        // Filter by prefix (type) AND current month
-                        $monthPattern = $prefix . '/013' . $datePart . '/%';
-
-                        $highestSeq = Invoice::where('uuid', 'like', $monthPattern)
-                            ->get()
-                            ->map(fn($inv) => intval(substr($inv->uuid, -5)))
-                            ->max() ?? 0;
-
-                        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
-                        $uuid = '#' . $monthPattern . $newNumber;
-
                         /* ========= DB TRANSACTION ========= */
-                        \DB::transaction(function () use ($record, $uuid, $deal) {
+                        \DB::transaction(function () use ($record, $deal) {
+
+                            /* ========= GENERATE PROFORMA UUID (inside transaction, locked) ========= */
+                            $settings = app(GeneralSettings::class);
+                            $datePart = now()->format('my'); // Format: MMYY (bulan dulu, baru tahun)
+
+                            // Determine prefix based on type
+                            $invoiceType = 'estimate';
+                            $prefix = match ($invoiceType) {
+                                'estimate' => 'PI',
+                                'sale' => $settings->invoice_prefix ?? 'INV',
+                                default => $settings->invoice_prefix ?? 'INV',
+                            };
+
+                            // Get highest sequence number by TYPE and MONTH
+                            // Format: #PREFIX/013MMYY/XXXXX
+                            // Filter by prefix (type) AND current month
+                            $monthPattern = $prefix . '/013' . $datePart . '/';
+
+                            $highestSeq = Invoice::where('uuid', 'like', '#' . $monthPattern . '%')
+                                ->lockForUpdate() // kunci baris yang cocok agar tidak ada race condition saat convert bersamaan
+                                ->get()
+                                ->map(fn($inv) => intval(substr($inv->uuid, -5)))
+                                ->max() ?? 0;
+
+                            $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
+                            $uuid = '#' . $monthPattern . $newNumber;
 
                             $invoice = Invoice::create([
                                 'uuid'            => $uuid,
                                 'for_type'        => 'quotation',
                                 'for_id'          => $record->id,
                                 'user_id'         => auth()->id(),
+                                'deal_id'         => $deal?->id, // Simpan deal_id
                                 'nama_perusahaan' => $record->nama_perusahaan,
-                                'telephone'       => $record->telephone,
+                                'nama_pic'        => $deal?->nama_pic ?? $record->nama_pic,
+                                'telephone'       => $deal?->telephone ?? $record->telephone,
                                 'alamat'          => $deal?->alamat
                                     ?? $record->alamat
                                     ?? '-',
                                 'type'            => 'estimate',
+                                'type_payment'    => 'full_payment',
                                 'status'          => 'draft',
                                 'subtotal'        => $record->subtotal,
                                 'total_discount'  => $record->total_discount,
@@ -390,15 +462,16 @@ class QuotationResource extends Resource
                             /* ========= COPY ITEMS ========= */
                             foreach ($record->items as $item) {
                                 InvoicesItem::create([
-                                    'invoice_id'  => $invoice->id,
-                                    'item'        => $item->item,
-                                    'description' => $item->Description,
-                                    'qty'         => $item->qty,
-                                    'price'       => $item->price,
-                                    'discount'    => $item->discount,
-                                    'vat'         => $item->vat,
+                                    'invoice_id'     => $invoice->id,
+                                    'item'           => $item->item,
+                                    'description'    => $item->description,
+                                    'qty'            => $item->qty,
+                                    'price'          => $item->price,
+                                    'original_price' => $item->price, // Simpan harga asli untuk referensi
+                                    'discount'       => $item->discount,
+                                    'vat'            => $item->vat,
                                     'vat_percentage' => $item->vat_percentage,
-                                    'total'       => $item->total,
+                                    'total'          => $item->total,
                                 ]);
                             }
 
@@ -419,15 +492,12 @@ class QuotationResource extends Resource
                 /* DOWNLOAD */
                 Action::make('Download')
                     ->tooltip('Download PDF')
-                    ->icon('heroicon-m-download')
-                    ->iconButton()
-                    ->color('primary')
                     ->icon('heroicon-o-document-arrow-down')
+                    ->color('danger')
                     ->url(fn(Quotation $record) =>
                         route('quotation.download', $record)
                     )
-                    ->openUrlInNewTab()
-                    ->color('danger'),
+                    ->openUrlInNewTab(),
 
                 Tables\Actions\ViewAction::make()
                     ->hiddenLabel()

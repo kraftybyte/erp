@@ -14,7 +14,11 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(php -l /Users/macbook/Documents/ERP/App/app/Services/ContractTemplateService.php)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(php -l app/Filament/Pages/AnalyticsDashboard.php)",
+      "Bash(php -l resources/views/filament/pages/analytics-dashboard.blade.php)",
+      "Bash(php artisan tinker '--execute= *)",
+      "Bash(xargs cat)"
     ]
   }
 }

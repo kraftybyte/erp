@@ -1,6 +1,10 @@
 <?php
-    // Get theme color safely
-    $themeColorSafe = is_string($themeColor ?? '') && strlen($themeColor ?? '') === 7 ? $themeColor : '#f04f29';
+    /** @var string|null $themeColor */
+    /** @var array $settings */
+    /** @var \App\Models\Quotation $quotation */
+
+    // Get theme color safely - use default if not set
+    $themeColorSafe = is_string($themeColor ?? null) && strlen($themeColor ?? '') === 7 ? $themeColor : '#f04f29';
 
     // Settings variables
     $showCoverPages = ($settings['show_cover_pages'] ?? true) === true;
@@ -14,8 +18,46 @@
     $terms = $settings['terms'] ?? [];
     $logoPath = $settings['logo'] ?? null;
 
+    // ============================================================
+    // CALCULATION - Hitung dari items untuk konsistensi
+    // ============================================================
+    $calcTotalVat = 0;        // SUM((price * qty - discount * qty) * vat%)
+    $calcTotalDiscount = 0;   // SUM(discount * qty)
+    $calcSubTotal = 0;        // SUM(price * qty) - HARGA ASLI sebelum diskon
+    $calcGrandTotal = 0;      // Sub Total + Total VAT
+
+    foreach ($quotation->items as $item) {
+        $price = (float) ($item->price ?? 0);
+        $qty = (float) ($item->qty ?? 1);
+        $discount = (float) ($item->discount ?? 0);
+        $vatPercentage = (float) ($item->vat_percentage ?? 0);
+        // original_price: harga sebelum DP (untuk tampilkan di subtotal)
+        $originalPrice = (float) ($item->original_price ?? $item->price ?? 0);
+
+        // Sub Total pakai harga asli (sebelum DP)
+        $itemSubTotal = $originalPrice * $qty;
+        // Discount per item
+        $itemDiscount = $discount * $qty;
+        // Setelah diskon
+        $itemAfterDiscount = $itemSubTotal - $itemDiscount;
+        // VAT dari harga setelah diskon
+        $itemVat = $itemAfterDiscount * ($vatPercentage / 100);
+        // Total per item (harga saat ini = price * qty, bukan original)
+        $itemCurrentTotal = ($price * $qty) + $itemVat;
+
+        $calcTotalDiscount += $itemDiscount;
+        $calcSubTotal += $itemSubTotal;  // HARGA ASLI (sebelum diskon)
+        $calcTotalVat += $itemVat;
+        $calcGrandTotal += $itemCurrentTotal;  // Grand Total dari harga saat ini
+    }
+
     // Helper function to get image data from path
-    function getImageData($path) {
+    /**
+     * Get base64 encoded image data from storage path
+     * @param string|null $path
+     * @return string|null
+     */
+    function getImageData(?string $path): ?string {
         if (empty($path) || !is_string($path)) return null;
         $fullPath = public_path('storage/' . $path);
         if (file_exists($fullPath)) {
@@ -25,7 +67,12 @@
     }
 
     // Get image extensions
-    function getImageMimeType($path) {
+    /**
+     * Get MIME type from file path
+     * @param string|null $path
+     * @return string
+     */
+    function getImageMimeType(?string $path): string {
         if (empty($path) || !is_string($path)) return 'image/jpeg';
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
         return match($ext) {
@@ -123,61 +170,104 @@
         <table style="width: 100%; border-collapse: collapse; border-top: 1px solid {{ $themeColorSafe }};">
             <thead style="background-color: {{ $themeColorSafe }};">
                 <tr>
-                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Type</th>
+                   {{-- <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Type</th> --}}
                     <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Item</th>
-                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Unit</th>
-                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Rate</th>
-                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Discount</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Qty</th>
                     <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Price</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Discount</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">VAT</th>
+                    <th style="color: white; text-align: center; font-size: 11px; padding: 10px;">Total</th>
                 </tr>
             </thead>
-            <tbody>
-                @foreach ($quotation->items as $item)
-                <tr style="border-bottom: 1px solid #ddd;">
-                    <td style="text-align: center; font-size: 11px; padding: 10px;">Service</td>
-                    <td style="text-align: left; font-size: 11px; padding: 10px;">
-                        {{ $item->item }}<br>
-                        <span style="font-size: 9px; color: #666;">{!! $item->description ?? '' !!}</span>
-                    </td>
-                    <td style="text-align: center; font-size: 11px; padding: 10px;">{{ $item->qty }} Month</td>
-                    <td style="text-align: center; font-size: 11px; padding: 10px;">Rp{{ number_format($item->price, 0, ',', '.') }}</td>
-                    <td style="text-align: center; font-size: 11px; padding: 10px;">
-                        @if(($item->discount ?? 0) == 0) - @else Rp{{ number_format($item->discount, 0, ',', '.') }} @endif
-                    </td>
-                    <td style="text-align: center; font-size: 11px; padding: 10px;">Rp{{ number_format($item->price * $item->qty, 0, ',', '.') }}</td>
-                </tr>
-                @endforeach
-            </tbody>
+<tbody>
+    @foreach ($quotation->items as $item)
+    @php
+        $itemPrice = (float) ($item->price ?? 0);
+        $itemQty = (float) ($item->qty ?? 1);
+        $itemDiscount = (float) ($item->discount ?? 0);
+        $itemVatPct = (float) ($item->vat_percentage ?? 0);
+        $itemSubTotal = $itemPrice * $itemQty;
+        $itemTotalDiscount = $itemDiscount * $itemQty;
+        $itemAfterDiscount = $itemSubTotal - $itemTotalDiscount;
+        $itemVat = $itemAfterDiscount * ($itemVatPct / 100);
+        $itemTotal = $itemAfterDiscount + $itemVat;
+    @endphp
+    <tr style="border-bottom: 1px solid #ddd;">
+        {{-- <td style="text-align: center; font-size: 11px; padding: 10px;">Service</td> --}}
+        <td style="text-align: left; font-size: 11px; padding: 10px;">
+            {{ $item->item }}<br>
+            <span style="font-size: 9px; color: #666;">{!! $item->description ?? '' !!}</span>
+        </td>
+
+        <td style="text-align: center; font-size: 11px; padding: 10px;">
+            {{ $itemQty }}
+        </td>
+
+        {{-- Price --}}
+        <td style="text-align: center; font-size: 11px; padding: 10px;">
+            Rp{{ number_format($itemPrice, 0, ',', '.') }}
+        </td>
+
+        {{-- Discount --}}
+        <td style="text-align: center; font-size: 11px; padding: 10px;">
+            @if($itemTotalDiscount == 0)
+                -
+            @else
+                Rp{{ number_format($itemTotalDiscount, 0, ',', '.') }}
+            @endif
+        </td>
+
+        {{-- VAT Percentage --}}
+        <td style="text-align: center; font-size: 11px; padding: 10px;">
+            @if($itemVatPct == 0)
+                -
+            @else
+                {{ $itemVatPct }}%
+            @endif
+        </td>
+
+        {{-- Total including VAT --}}
+        <td style="text-align: center; font-size: 11px; padding: 10px;">
+            Rp{{ number_format($itemTotal, 0, ',', '.') }}
+        </td>
+    </tr>
+    @endforeach
+</tbody>
         </table>
     </div>
 
-    {{-- Summary --}}
+    {{-- Terms & Conditions (selalu tampil) --}}
+    @if(count($terms) > 0)
     <div style="padding: 15px 25px;">
         <table style="width: 100%; border-collapse: collapse;">
             <tr>
                 <td style="width: 50%; vertical-align: top;">
-                    @if(count($terms) > 0)
-                        <div style="font-size: 9px; line-height: 1.5;">
-                            <strong>Terms & Conditions:</strong><br>
-                            @foreach($terms as $i => $termText)
-                                {{ $i + 1 }}. {{ $termText }}<br>
-                            @endforeach
-                        </div>
-                    @endif
+                    <div style="font-size: 9px; line-height: 1.5;">
+                        <strong>Terms & Conditions:</strong><br>
+                        @foreach($terms as $i => $termText)
+                            {{ $i + 1 }}. {{ $termText }}<br>
+                        @endforeach
+                    </div>
                 </td>
                 <td style="width: 50%; text-align: right; font-size: 12px;">
-                    <strong>Sub Total:</strong> Rp{{ number_format($quotation->subtotal ?? 0, 0, ',', '.') }}<br>
-                    @if(($quotation->total_discount ?? 0) > 0)
-                        <strong>Total Discount:</strong> Rp{{ number_format($quotation->total_discount, 0, ',', '.') }}<br>
+                    <strong>Sub Total:</strong> Rp{{ number_format($calcSubTotal, 0, ',', '.') }}<br>
+                    @if($calcTotalVat > 0)
+                        <strong>Total VAT:</strong> Rp{{ number_format($calcTotalVat, 0, ',', '.') }}<br>
                     @endif
-                    @if(($quotation->total_vat ?? 0) > 0)
-                        <strong>Total VAT:</strong> Rp{{ number_format($quotation->total_vat, 0, ',', '.') }}<br>
+                    @if($calcTotalDiscount > 0)
+                        <strong>Total Diskon:</strong> -Rp{{ number_format($calcTotalDiscount, 0, ',', '.') }}<br>
                     @endif
-                    <strong style="font-size: 14px;">Grand Total:</strong> Rp{{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}
+                    <div style="padding-top: 6px;">
+                    <strong style="font-size: 14px;">
+                        Grand Total:
+                    </strong>
+                    Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
+                </div>
                 </td>
             </tr>
         </table>
     </div>
+    @endif
 
     {{-- Signature --}}
     <div style="padding: 40px 25px 30px;">

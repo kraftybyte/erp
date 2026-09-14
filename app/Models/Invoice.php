@@ -3,20 +3,28 @@
 namespace App\Models;
 
 use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Extended Invoice model with PaymentAccount support and SoftDeletes
+ * Extended Invoice model with PaymentAccount support
  *
  * @property int|null $payment_account_id
  */
 class Invoice extends BaseInvoice
 {
-    use SoftDeletes;
+    /**
+     * Override the invoicesItems relationship to use custom model
+     */
+    public function invoicesItems()
+    {
+        return $this->hasMany(InvoicesItem::class);
+    }
 
     protected $fillable = [
         // === PaymentAccount integration ===
         'payment_account_id',
+
+        // === Deal integration ===
+        'deal_id',
 
         // === Bank fields ===
         'bank_account',
@@ -35,6 +43,7 @@ class Invoice extends BaseInvoice
         'user_id',
         'uuid',
         'nama_perusahaan',
+        'nama_pic',
         'telephone',
         'alamat',
         'type',
@@ -59,8 +68,7 @@ class Invoice extends BaseInvoice
         'type_payment',
         'po_number',
         'faktur',
-
-        // === Missing fields from base model ===
+        'delivery_note_number',
         'is_activated',
         'is_offer',
         'send_email',
@@ -88,6 +96,14 @@ class Invoice extends BaseInvoice
     }
 
     /**
+     * Relationship with Deal
+     */
+    public function deal()
+    {
+        return $this->belongsTo(Deal::class);
+    }
+
+    /**
      * Generate UUID based on type and reset per month
      * Format: #DG/0132607/XXXXX or #PI/0132607/XXXXX
      */
@@ -95,8 +111,8 @@ class Invoice extends BaseInvoice
     {
         $prefix = match ($type) {
             'estimate' => 'PI',
-            'sale' => 'DG',
-            default => 'DG',
+            'sale' => 'SC',
+            default => 'SC',
         };
 
         // Format: 013YYMM (e.g., 0132607 for July 2026)
@@ -105,9 +121,8 @@ class Invoice extends BaseInvoice
         // Pattern to match: #PREFIX/013YYMM/XXXXX
         $pattern = '#' . $prefix . '/013' . $datePart . '/%';
 
-        // Find highest sequence for this month (including soft-deleted)
-        $highestSeq = self::withTrashed()
-            ->where('uuid', 'like', $pattern)
+        // Find highest sequence for this month
+        $highestSeq = self::where('uuid', 'like', $pattern)
             ->get()
             ->map(fn($inv) => intval(substr($inv->uuid, -5)))
             ->max() ?? 0;

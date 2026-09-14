@@ -23,6 +23,12 @@ class Asset extends Model
         'foto',
     ];
 
+    protected $casts = [
+        'tanggal_pembelian' => 'date',
+        'maintenance_date'  => 'date',
+        'harga_barang'      => 'decimal:2',
+    ];
+
     // Definisi relasi ke User (Penanggung Jawab)
     public function user()
         {

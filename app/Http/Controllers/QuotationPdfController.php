@@ -51,7 +51,7 @@ class QuotationPdfController extends Controller
             return false;
         }
 
-        if ($user->hasRole(['super_admin', 'Director', 'Finance'])) {
+        if ($user->hasRole(['super_admin', 'Director', 'Finance','Team'])) {
             return true;
         }
 

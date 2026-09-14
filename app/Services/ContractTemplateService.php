@@ -13,6 +13,15 @@ class ContractTemplateService
     {
         $settings = app(GeneralSettings::class);
 
+        // Eager-load relations used in this template so we don't trigger N+1
+        // queries when generating documents for many contracts in a batch.
+        $contract->loadMissing([
+            'feeItems',
+            'thirdPartyItems',
+            'sowItems',
+            'sowCategories.children',
+        ]);
+
         // === COMPANY INFO (dari Invoice Settings) ===
         $logoHtml = $this->getLogoHtml($settings);
         $agencyName = $settings->inv_company_name ?? 'PT. Nama Perusahaan';
@@ -21,10 +30,13 @@ class ContractTemplateService
         $agencyShortName = $this->getAgencyShortName($agencyName);
 
         // === CONTRACT DETAILS ===
-        $contractNumber = $contract->contract_number ?? $this->generateContractNumber($contract, $agencyShortName);
         $effectiveDate = $contract->effective_date ? Carbon::parse($contract->effective_date) : now();
         $expirationDate = $contract->expiration_date ? Carbon::parse($contract->expiration_date) : now()->addMonths(12);
         $durationMonths = (int)($contract->duration_months ?? 12);
+        // Use the contract's own effective date (not "now") when auto-generating
+        // a contract number, so regenerating the same contract's PDF later
+        // (e.g. in a different month/year) doesn't produce a different number.
+        $contractNumber = $contract->contract_number ?? $this->generateContractNumber($contract, $agencyShortName, $effectiveDate);
 
         // === CLIENT INFO (PIHAK KEDUA) ===
         $clientName = $contract->client_name_full ?? '..................';
@@ -38,15 +50,15 @@ class ContractTemplateService
 
         // === PRICING ===
         $totalValue = (float)($contract->total_value ?? 0);
-        $formattedTotal = 'Rp ' . number_format($totalValue, 0, ',', '.');
+        $formattedTotal = $this->formatRupiah($totalValue);
         $downPaymentPercent = (float)($contract->down_payment_percent ?? 0);
         $downPaymentValue = ($totalValue * $downPaymentPercent) / 100;
-        $formattedDp = 'Rp ' . number_format($downPaymentValue, 0, ',', '.');
+        $formattedDp = $this->formatRupiah($downPaymentValue);
         $remainingValue = $totalValue - $downPaymentValue;
-        $formattedRemaining = 'Rp ' . number_format($remainingValue, 0, ',', '.');
+        $formattedRemaining = $this->formatRupiah($remainingValue);
         $installmentMonths = (int)($contract->installment_months ?? $durationMonths);
         $monthlyValue = $installmentMonths > 0 ? $remainingValue / $installmentMonths : 0;
-        $formattedMonthly = 'Rp ' . number_format($monthlyValue, 0, ',', '.');
+        $formattedMonthly = $this->formatRupiah($monthlyValue);
 
         // === SCOPE OF WORK ===
         $scopeOfWork = $contract->scope_of_work ?? '';
@@ -62,7 +74,7 @@ class ContractTemplateService
         $lampiranTitle = $contract->lampiran_title ?? 'Lampiran 2 — Rincian Biaya Jasa';
         $lampiranDescription = str_replace('{duration}', $durationMonths, $contract->lampiran_description ?? 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Pertama selama ' . $durationMonths . ' bulan');
         $tableATitle = $contract->table_a_title ?? 'Tabel A';
-        $tableBTitle = $contract->table_b_title ?? 'Tabel a';
+        $tableBTitle = $contract->table_b_title ?? 'Tabel B';
         $tableBDescription = $contract->table_b_description ?? 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Ketiga (Pihak yang menyediakan third-party yang dibutuhkan selama project berjalan)';
 
         // === BANK INFO (dari Invoice Settings) ===
@@ -95,7 +107,7 @@ class ContractTemplateService
 
         if ($logoPath && Storage::exists($logoPath)) {
             $url = Storage::url($logoPath);
-            return '<img src="' . $url . '" alt="Logo" style="height: 90px;">';
+            return '<img src="' . htmlspecialchars($url) . '" alt="Logo" style="height: 90px;">';
         }
 
         // Try alternative path for media library
@@ -103,7 +115,7 @@ class ContractTemplateService
             $altPath = str_replace('sites/', 'public/sites/', $logoPath);
             if (Storage::exists($altPath)) {
                 $url = Storage::url($altPath);
-                return '<img src="' . $url . '" alt="Logo" style="height: 30px;">';
+                return '<img src="' . htmlspecialchars($url) . '" alt="Logo" style="height: 90px;">';
             }
         }
 
@@ -134,11 +146,22 @@ class ContractTemplateService
         ));
     }
 
-    private function generateContractNumber(Contract $contract, string $shortName): string
+    /**
+     * Format a numeric value as Indonesian Rupiah (e.g. "Rp 1.000.000").
+     * Centralized here so every place that prints a money value formats
+     * it identically.
+     */
+    private function formatRupiah(float $value): string
     {
+        return 'Rp ' . number_format($value, 0, ',', '.');
+    }
+
+    private function generateContractNumber(Contract $contract, string $shortName, ?Carbon $referenceDate = null): string
+    {
+        $referenceDate ??= now();
         $prefix = '001';
-        $month = now()->format('m');
-        $year = now()->format('y');
+        $month = $referenceDate->format('m');
+        $year = $referenceDate->format('y');
         return $prefix . '/SPK/' . $month . $year . '/' . strtoupper($shortName);
     }
 
@@ -150,6 +173,11 @@ class ContractTemplateService
         $formattedEffectiveDate = $this->formatDateIndonesia($effectiveDate);
         $formattedExpirationDate = $this->formatDateIndonesia($expirationDate);
 
+        // Running counter for "Pasal N" numbers in the optional/dynamic
+        // clauses appended after Pasal 10, so numbering stays sequential
+        // even if one of the optional clauses (additional / penalty) is empty.
+        $nextArticleNumber = 11;
+
         $html = '<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -158,7 +186,8 @@ class ContractTemplateService
   <style>
     @page {
     size: A4;
-    margin: 3cm 2cm 2cm 2cm;
+        margin: 120px 70px 90px 70px;
+
 }
 
 body {
@@ -170,228 +199,267 @@ body {
     padding: 0;
 }
 
-@page {
-    size: A4;
-    margin: 3.5cm 2cm 2cm 2cm;
-}
+/* =========================
+   HEADER
+========================= */
 
-/* HEADER */
 .header {
     position: fixed;
-    top: -3cm;
-    left: 0;
-    right: 0;
-    height: 3cm;
-    background: #fff;
-    box-sizing: border-box;
+    top: -120px;
+    left: -40px;
+    right: -40px;
+    height: 110px;
 }
 
-.header-inner {
+.header img {
     width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-}
-
-.header-inner td {
-    border: none;
-    padding: 0;
-    vertical-align: middle;
-}
-
-/* Logo */
-.header-logo {
-    width: 22%;
-}
-
-.header-logo img {
-    max-height: 80px;      /* sesuaikan */
-    width: auto;
     height: auto;
     display: block;
 }
 
-/* Informasi */
-.header-info {
-    width: 78%;
-    text-align: right;
-    font-size: 9pt;
-    color: #555;
-    line-height: 1.15;
+/* =========================
+   FOOTER
+========================= */
+
+.footer {
+    position: fixed;
+    bottom: -60px;
+    left: -40px;
+    right: -40px;
+    height: 80px;
 }
 
-.header-info strong {
+.footer img {
+    width: 100%;
+    height: auto;
     display: block;
-    font-size: 16pt;
-    color: #000;
+}
+
+/* =========================
+   CONTENT
+========================= */
+
+.content {
+    padding: 0;
+    margin: 0;
+}
+
+/* =========================
+   TITLE
+========================= */
+
+.title {
+    font-size: 14pt;
     font-weight: bold;
-    margin-bottom: 2px;
-    line-height: 1.1;
+    text-align: center;
+    text-transform: uppercase;
+    margin: 0 0 0.2cm 0;
 }
-/* Garis bawah header */
-.header-line {
-    margin-top: 8px;
-    border-top: 1px solid #000;
+
+.contract-number {
+    font-size: 10pt;
+    text-align: center;
+    margin-bottom: 0.3cm;
 }
-    /* CONTENT - starts below header */
-    .content {
-      padding-top: 1.5cm;
-    }
-    .title {
-      font-size: 14pt;
-      font-weight: bold;
-      text-align: center;
-      text-transform: uppercase;
-      margin: 0 0 0.2cm 0;
-    }
-    .contract-number {
-      font-size: 10pt;
-      text-align: center;
-      margin-bottom: 0.3cm;
-    }
-    p {
-      text-align: justify;
-      margin: 0 0 0.15cm 0;
-      line-height: 1.6;
-    }
-      .party-title {
-        font-weight: bold;
-        margin: 0.35cm 0 0.15cm 0;
-    }
 
-    .indent {
-        text-align: justify;
-        text-indent: 1cm;
-        line-height: 1.6;
-        margin-bottom: 0.25cm;
-    }
+/* =========================
+   PARAGRAPH
+========================= */
 
-    .indent-2 {
-        text-align: justify;
-        text-indent: 2cm;
-        line-height: 1.6;
-        margin-bottom: 0.25cm;
-    }
-   .article {
+p {
+    text-align: justify;
+    margin: 0 0 0.15cm 0;
+    line-height: 1.6;
+}
+
+.party-title {
+    font-weight: bold;
+    margin: 0.35cm 0 0.15cm 0;
+}
+
+.indent {
+    text-align: justify;
+    text-indent: 1cm;
+    line-height: 1.6;
+    margin-bottom: 0.25cm;
+}
+
+.indent-2 {
+    text-align: justify;
+    text-indent: 2cm;
+    line-height: 1.6;
+    margin-bottom: 0.25cm;
+}
+
+/* =========================
+   ARTICLE
+========================= */
+
+.article {
     margin-bottom: 0.35cm;
     text-align: justify;
     line-height: 1.6;
-    }
+    page-break-inside: avoid;
+}
 
-    .article-title {
-        font-weight: bold;
-        text-transform: uppercase;
-        text-align: center;
-        font-size: 11pt;
-        line-height: 1.5;
-        margin: 0 0 0.3cm 0;
-    }
+.article-title {
+    font-weight: bold;
+    text-transform: uppercase;
+    text-align: center;
+    font-size: 11pt;
+    line-height: 1.5;
+    margin: 0 0 0.3cm 0;
+}
 
-    /* List utama */
-    .article-list {
-        margin: 0;
-        padding-left: 0.8cm;
-    }
+/* =========================
+   LIST
+========================= */
 
-    .article-list li {
-        margin-bottom: 0.18cm;
-        text-align: justify;
-        line-height: 1.6;
-        padding-left: 0.2cm;
-    }
+.article-list {
+    margin: 0;
+    padding-left: 0.8cm;
+}
 
-    /* Sub list */
-    .sub-list {
-        margin-top: 0.15cm;
-        margin-bottom: 0.15cm;
-        padding-left: 0.8cm;
-    }
+.article-list li {
+    margin-bottom: 0.18cm;
+    text-align: justify;
+    line-height: 1.6;
+    padding-left: 0.2cm;
+}
 
-    .sub-list li {
-        margin-bottom: 0.12cm;
-        text-align: justify;
-        line-height: 1.6;
-        padding-left: 0.2cm;
-    }
-    /* SIGNATURE */
-    .signature-section {
-      margin-top: 1cm;
-      page-break-inside: avoid;
-    }
-    .signature-line {
-      margin-top: 1.5cm;
-      padding-bottom: 0.05cm;
-      border-bottom: 1px solid #000;
-      display: inline-block;
-      min-width: 4cm;
-    }
-    /* LAMPIRAN */
-    .lampiran {
-      page-break-before: always;
-    }
-    .lampiran-title {
-      font-size: 12pt;
-      font-weight: bold;
-      text-transform: uppercase;
-      text-align: center;
-      margin: 0.5cm 0 0.3cm 0;
-    }
-    .table-a-title {
-      font-weight: bold;
-      margin-bottom: 0.2cm;
-      font-size: 10pt;
-    }
-    .table-b-title {
-      font-weight: bold;
-      margin: 0.4cm 0 0.2cm 0;
-      font-size: 10pt;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 0.15cm 0;
-      font-size: 10pt;
-    }
-    table th, table td {
-      border: 1px solid #000;
-      padding: 0.1cm 0.15cm;
-      text-align: left;
-      line-height: 1.5;
-    }
-    table th {
-      background-color: #f5f5f5;
-      font-weight: bold;
-      text-align: center;
-    }
-    .text-center { text-align: center; }
-    .text-right { text-align: right; }
-    .font-bold { font-weight: bold; }
-    .note {
-      font-size: 9pt;
-      margin-top: 0.2cm;
-      line-height: 1.6;
-    }
-    .footer-text {
-      font-size: 8pt;
-      color: #666;
-      text-align: center;
-      margin-top: 0.3cm;
-    }
+.sub-list {
+    margin-top: 0.15cm;
+    margin-bottom: 0.15cm;
+    padding-left: 0.8cm;
+}
+
+.sub-list li {
+    margin-bottom: 0.12cm;
+    text-align: justify;
+    line-height: 1.6;
+    padding-left: 0.2cm;
+}
+
+/* =========================
+   TABLE
+========================= */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.15cm 0;
+    font-size: 10pt;
+}
+
+table th,
+table td {
+    border: 1px solid #000;
+    padding: 0.12cm 0.15cm;
+    text-align: left;
+    line-height: 1.5;
+    vertical-align: top;
+}
+
+table th {
+    background: #f5f5f5;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* =========================
+   SIGNATURE
+========================= */
+
+.signature-section {
+    margin-top: 1cm;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+.signature-line {
+    margin-top: 1.5cm;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #000;
+    display: inline-block;
+    min-width: 4cm;
+}
+
+/* =========================
+   LAMPIRAN
+========================= */
+
+.lampiran {
+    page-break-before: always;
+}
+
+.lampiran-title {
+    font-size: 12pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    text-align: center;
+    margin: 0.5cm 0 0.3cm;
+}
+
+.table-a-title,
+.table-b-title {
+    font-weight: bold;
+    font-size: 10pt;
+    margin: 0.3cm 0 0.2cm;
+}
+
+/* =========================
+   UTILITIES
+========================= */
+
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.font-bold {
+    font-weight: bold;
+}
+
+.note {
+    font-size: 9pt;
+    margin-top: 0.2cm;
+    line-height: 1.5;
+}
+
+.contract-table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+    margin-bottom:10px;
+    font-size:10pt;
+}
+
+.contract-table th,
+.contract-table td{
+    border:1px solid #000;
+    padding:6px;
+    vertical-align:top;
+}
+
+.contract-table th{
+    background:#f2f2f2;
+    text-align:center;
+    font-weight:bold;
+}
   </style>
 </head>
 <body>
 
-  <!-- HEADER (muncul di setiap halaman) -->
-  <div class="header">
-    <table class="header-inner" border="0" cellpadding="0" cellspacing="0">
-      <tr>
-        <td class="header-logo" >' . $logoHtml . '</td>
-        <td class="header-info">
-          <strong>' . htmlspecialchars($agencyName) . '</strong><br>
-          ' . $this->breakEveryWords(htmlspecialchars($agencyAddress), 7) . '
-        </td>
-      </tr>
-    </table>
-  </div>
+<div class="header">
+    <img src="' . Storage::path('sites/header.png') . '" alt="Header">
+</div>
+
+<div class="footer">
+    <img src="' . Storage::path('sites/footer.png') . '" alt="Footer">
+</div>
 
 <!-- CONTENT -->
 <div class="content">
@@ -428,9 +496,20 @@ body {
 
   <!-- PASAL 2 -->
   <div class="article">
-    <div class="article-title">Pasal 2 <br> Kewajiban Pihak Pertama</div>
+    <div class="article-title">Pasal 2 <br> Kewajiban Pihak Pertama</div>' .
+
+(!empty($projectDescription) ? '
+
+<table class="contract-table" style="margin-bottom:15px;">
+    <tr>
+        <th style="width:180px;">Deskripsi Proyek</th>
+        <td>' . nl2br(htmlspecialchars($projectDescription)) . '</td>
+    </tr>
+</table>
+
+' : '') . '
     <ol class="article-list">
-      <li>Pihak Pertama akan memberikan Jasa untuk kepentingan Pihak Kedua sesuai dengan ruang lingkup pengerjaan yang tercantum dalam Lampiran 1 Perjanjian ini.</li>
+      <li>Pihak Pertama akan memberikan Jasa untuk kepentingan Pihak Kedua sesuai dengan ruang lingkup pengerjaan yang tercantum dalam Lampiran 1 Perjanjian ini' . (!empty($scopeOfWork) ? ', yaitu: ' . nl2br(htmlspecialchars($scopeOfWork)) : '') . '.</li>
       <li>Pihak Pertama akan memberikan Jasa kepada Pihak Kedua dengan didasarkan pada jangka waktu <strong>' . $durationMonths . ' bulan</strong> pengerjaan terhitung dari pembayaran diterima oleh Pihak Pertama.</li>
       <li>Pekerjaan Jasa akan dimulai oleh Pihak Pertama dalam waktu 1 (satu) hari kerja setelah pembayaran pertama dibayarkan oleh Pihak Kedua.</li>
       <li>Dengan ditandatanganinya Perjanjian ini, Pihak Kedua dianggap telah memesan Jasa kepada Pihak Kedua, yang mana pemesanan tersebut tidak dapat dibatalkan tanpa persetujuan tertulis dari Pihak Pertama.</li>
@@ -454,7 +533,7 @@ body {
       <li>Para Pihak sepakat bahwa untuk Biaya Jasa adalah mengacu pada Lampiran 2 Tabel A dari Perjanjian ini.</li>
       <li>Biaya Jasa tidak dapat diubah tanpa persetujuan tertulis terlebih dahulu dari Para Pihak.</li>
       <li>Pembayaran wajib dilakukan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan jangka waktu pembayaran yang diatur di dalam Lampiran 2 Tabel A dari Perjanjian ini.</li>
-      <li>Pembayaran wajib dilakukan oleh Pihak Kedua ke rekening Pihak Pertama sebagai berikut:<br><br>
+      <li>Pembayaran wajib dilakukan oleh Pihak Kedua ke rekening Pihak Pertama sebagai berikut:<br>
         <strong>Nama Bank</strong> : ' . htmlspecialchars($agencyBankName) . '<br>
         <strong>No. Rek</strong> : ' . htmlspecialchars($agencyBankAccount) . '<br>
         <strong>Nama Perusahaan</strong> : ' . htmlspecialchars($agencyBankAccountName) . '
@@ -487,7 +566,9 @@ body {
       </li>
       <li>Dalam hal terjadi peristiwa sebagaimana dimaksud dalam ayat 1 Pasal ini, Para Pihak secara bersama-sama maupun sendiri-sendiri dengan dilandasi iktikad baik akan melakukan upaya semaksimal mungkin agar akibat dari peristiwa tersebut dapat ditekan seminimal mungkin.</li>
       <li>Semua kerugian dan biaya yang diderita oleh salah satu Pihak sebagai akibat terjadinya Force Majeure tidak menjadi tanggung jawab pihak lainnya.</li>
-      <li>Untuk menghindari keragu-raguan, kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama, termasuk pembayaran denda, tidak dapat ditunda, dikurangi dengan alasan Force Majeure.</li>
+      <li>Untuk menghindari keragu-raguan, kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama, termasuk pembayaran denda, tidak dapat ditunda, dikurangi dengan alasan Force Majeure.</li>' .
+      ($forceMajeureExtended ? '
+      <li>Termasuk pula sebagai peristiwa Force Majeure adalah gangguan yang bersifat sistemik di luar kendali Para Pihak, antara lain namun tidak terbatas pada gangguan siber berskala luas, gangguan infrastruktur telekomunikasi/internet nasional, kebijakan pembatasan wilayah (lockdown) oleh pemerintah, dan gangguan rantai pasok global, yang secara material menghalangi pelaksanaan kewajiban salah satu Pihak.</li>' : '') . '
     </ol>
   </div>
 
@@ -544,22 +625,25 @@ body {
     </ol>
   </div>';
 
-        // Additional clauses
+        // Additional clauses (Pasal number assigned dynamically so it stays
+        // sequential even if the penalty clause below is the only one present)
         if (!empty($additionalClauses)) {
             $html .= '
   <div class="article">
-    <div class="article-title">Pasal 11 <br> Ketentuan Tambahan</div>
+    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Ketentuan Tambahan</div>
     <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($additionalClauses)) . '</div>
   </div>';
+            $nextArticleNumber++;
         }
 
         // Penalty clause
         if (!empty($penaltyClause)) {
             $html .= '
   <div class="article">
-    <div class="article-title">Pasal 12 <br> Klausul Denda</div>
+    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Klausul Denda</div>
     <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($penaltyClause)) . '</div>
   </div>';
+            $nextArticleNumber++;
         }
 
         // SIGNATURE
@@ -604,7 +688,7 @@ body {
       </tr>
     </thead>
     <tbody>
-      ' . $this->buildFeeTableFromItems($contract) . '
+      ' . $this->buildFeeTableFromItems($contract, $formattedDp, $formattedRemaining, $formattedMonthly, $installmentMonths) . '
     </tbody>
   </table>';
 
@@ -637,8 +721,24 @@ body {
         return $html;
     }
 
-    private function buildFeeTableFromItems(Contract $contract): string
-    {
+    /**
+     * @param string $formattedDp        Pre-computed, already-formatted down payment amount.
+     * @param string $formattedRemaining Pre-computed, already-formatted remaining balance.
+     * @param string $formattedMonthly   Pre-computed, already-formatted monthly installment amount.
+     * @param int    $installmentMonths  Number of installments, already resolved by generate().
+     *
+     * These values are passed in (rather than recalculated here) so the fee
+     * breakdown always matches the figures shown elsewhere in the contract -
+     * previously this method duplicated the calculation with slightly
+     * different rounding/guard logic, which could produce mismatched totals.
+     */
+    private function buildFeeTableFromItems(
+        Contract $contract,
+        string $formattedDp,
+        string $formattedRemaining,
+        string $formattedMonthly,
+        int $installmentMonths
+    ): string {
         $items = $contract->feeItems ?? collect();
         $html = '';
 
@@ -646,13 +746,7 @@ body {
             // Default: Generate from payment type
             $paymentType = $contract->payment_type ?? 'full';
             $totalValue = (float)($contract->total_value ?? 0);
-            $downPaymentPercent = (float)($contract->down_payment_percent ?? 0);
-            $downPaymentValue = ($totalValue * $downPaymentPercent) / 100;
-            $remainingValue = $totalValue - $downPaymentValue;
-            $formattedDp = 'Rp ' . number_format($downPaymentValue, 0, ',', '.');
-            $formattedRemaining = 'Rp ' . number_format($remainingValue, 0, ',', '.');
-            $formattedTotal = 'Rp ' . number_format($totalValue, 0, ',', '.');
-            $installmentMonths = (int)($contract->installment_months ?? 1);
+            $formattedTotal = $this->formatRupiah($totalValue);
             $effectiveDate = $contract->effective_date ? Carbon::parse($contract->effective_date) : now();
 
             if ($paymentType === 'dp_monthly') {
@@ -671,8 +765,6 @@ body {
                     <td class="text-right">' . $formattedRemaining . '</td>
                   </tr>';
             } elseif ($paymentType === 'monthly') {
-                $monthlyValue = $remainingValue / max(1, $installmentMonths);
-                $formattedMonthly = 'Rp ' . number_format($monthlyValue, 0, ',', '.');
                 $html .= '<tr>
                     <td class="text-center">1</td>
                     <td>Pembayaran per Bulan (' . $installmentMonths . 'x)</td>
@@ -691,7 +783,7 @@ body {
             }
         } else {
             foreach ($items as $index => $item) {
-                $amount = $item->amount ? 'Rp ' . number_format((float)$item->amount, 0, ',', '.') : '-';
+                $amount = $item->amount ? $this->formatRupiah((float)$item->amount) : '-';
                 $html .= '<tr>
                     <td class="text-center">' . ($index + 1) . '</td>
                     <td>' . htmlspecialchars($item->item ?? '-') . '</td>
@@ -704,7 +796,7 @@ body {
 
         // Total row
         $totalValue = (float)($contract->total_value ?? 0);
-        $formattedTotal = 'Rp ' . number_format($totalValue, 0, ',', '.');
+        $formattedTotal = $this->formatRupiah($totalValue);
         $html .= '<tr>
             <td colspan="4" class="text-left font-bold">TOTAL</td>
             <td class="text-right font-bold">' . $formattedTotal . '</td>
@@ -726,7 +818,7 @@ body {
               </tr>';
         } else {
             foreach ($items as $index => $item) {
-                $amount = $item->amount ? 'Rp ' . number_format((float)$item->amount, 0, ',', '.') : '-';
+                $amount = $item->amount ? $this->formatRupiah((float)$item->amount) : '-';
                 $html .= '<tr>
                     <td class="text-center">' . ($index + 1) . '</td>
                     <td>' . htmlspecialchars($item->item ?? '-');
@@ -792,6 +884,10 @@ body {
             return '';
         }
 
+        // Both branches below render exactly 3 columns (No, Layanan, Rincian)
+        // to match this header. Quantity/unit (when present) are folded into
+        // the "Rincian" cell instead of being dropped or rendered as extra
+        // columns that don't exist in the header.
         $html = '
   <div class="article">
     <div class="article-title">Lampiran 1 <br> Ruang Lingkup Pekerjaan</div>
@@ -826,8 +922,15 @@ body {
                 foreach ($children as $child) {
                     $childItem = htmlspecialchars($child->item ?? '-');
                     $childDesc = nl2br(htmlspecialchars($child->description ?? '-'));
-                    $childQty = $child->quantity ?? '-';
-                    $childUnit = htmlspecialchars($child->unit ?? '-');
+                    $childQty = $child->quantity ?? null;
+                    $childUnit = $child->unit ?? null;
+
+                    // Append quantity/unit to the description cell (when set)
+                    // so this data is still shown to the reader instead of
+                    // being silently discarded.
+                   // if ($childQty !== null && $childQty !== '') {
+                   //     $childDesc .= '<br><em>Jumlah: ' . htmlspecialchars((string)$childQty) . ($childUnit ? ' ' . htmlspecialchars($childUnit) : '') . '</em>';
+                  //  }
 
                     $html .= '
         <tr>
@@ -854,16 +957,18 @@ body {
             foreach ($flatItems as $index => $item) {
                 $itemName = htmlspecialchars($item->item ?? '-');
                 $itemDesc = nl2br(htmlspecialchars($item->description ?? '-'));
-                $itemQty = $item->quantity ?? '-';
-                $itemUnit = htmlspecialchars($item->unit ?? '-');
+                $itemQty = $item->quantity ?? null;
+                $itemUnit = $item->unit ?? null;
+
+                if ($itemQty !== null && $itemQty !== '') {
+                    $itemDesc .= '<br><em>Jumlah: ' . htmlspecialchars((string)$itemQty) . ($itemUnit ? ' ' . htmlspecialchars($itemUnit) : '') . '</em>';
+                }
 
                 $html .= '
         <tr>
           <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top;">' . ($index + 1) . '</td>
           <td style="border: 1px solid #000; padding: 6px; font-weight: bold; vertical-align: top;">' . $itemName . '</td>
           <td style="border: 1px solid #000; padding: 6px; vertical-align: top; line-height: 1.4;">' . $itemDesc . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $itemQty . '</td>
-          <td style="border: 1px solid #000; padding: 6px; text-align: center;">' . $itemUnit . '</td>
         </tr>';
             }
         }

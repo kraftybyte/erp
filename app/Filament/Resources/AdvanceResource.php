@@ -43,6 +43,17 @@ class AdvanceResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $categories = [
+            'Marketing' => 'Marketing',
+            'Transport' => 'Transport',
+            'Operasional Kantor' => 'Operasional Kantor',
+            'Komunikasi' => 'Komunikasi',
+            'Software' => 'Software',
+            'Entertainment' => 'Entertainment',
+            'Project Support' => 'Project Support',
+            'Biaya Lain' => 'Biaya Lain',
+        ];
+
         return $form
             ->schema([
                 Forms\Components\Hidden::make('user_id')
@@ -57,20 +68,38 @@ class AdvanceResource extends Resource
                 Forms\Components\Select::make('project_id')
                     ->label('Pilih Project')
                     ->searchable()
-                    ->getOptionLabelFromRecordUsing(fn (Project $record): string => $record->deal?->nama_perusahaan . ' - ' . $record->nama_project)
+                    ->getOptionLabelFromRecordUsing(function (Project $record): string {
+                        $namaPic = $record->deal?->nama_pic ?? '-';
+                        $perusahaan = $record->deal?->nama_perusahaan ?? '-';
+                        return "{$namaPic} - {$perusahaan} | {$record->nama_project}";
+                    })
                     ->getSearchResultsUsing(fn (string $search): array => Project::with('deal')
                         ->whereHas('deal', fn ($q) => $q->where('nama_perusahaan', 'like', '%' . $search . '%'))
                         ->orWhereHas('deal', fn ($q) => $q->where('nama_pic', 'like', '%' . $search . '%'))
                         ->orWhere('nama_project', 'like', '%' . $search . '%')
                         ->limit(20)
                         ->get()
-                        ->mapWithKeys(fn ($project) => [$project->id => $project->deal?->nama_perusahaan . ' - ' . $project->nama_project])
+                        ->mapWithKeys(function ($project) {
+                            $namaPic = $project->deal?->nama_pic ?? '-';
+                            $perusahaan = $project->deal?->nama_perusahaan ?? '-';
+                            return [$project->id => "{$namaPic} - {$perusahaan} | {$project->nama_project}"];
+                        })
                         ->toArray()
                     )
                     ->options(fn (): array => Project::with('deal')->latest()->limit(50)->get()
-                        ->mapWithKeys(fn ($project) => [$project->id => $project->deal?->nama_perusahaan . ' - ' . $project->nama_project])
+                        ->mapWithKeys(function ($project) {
+                            $namaPic = $project->deal?->nama_pic ?? '-';
+                            $perusahaan = $project->deal?->nama_perusahaan ?? '-';
+                            return [$project->id => "{$namaPic} - {$perusahaan} | {$project->nama_project}"];
+                        })
                         ->toArray()
                     )
+                    ->required(),
+
+                Forms\Components\Select::make('category')
+                    ->label('Kategori')
+                    ->options($categories)
+                    ->searchable()
                     ->required(),
 
                 Forms\Components\Textarea::make('keterangan_advance')
@@ -119,17 +148,40 @@ class AdvanceResource extends Resource
                     ->sortable()
                     ->wrap(),
 
-                Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
-                    ->label('Project')
+                Tables\Columns\BadgeColumn::make('category')
+                    ->label('Kategori')
                     ->sortable()
-                    ->wrap()
-                    ->formatStateUsing(fn ($record) => $record->project?->deal?->nama_perusahaan ?? '-'),
+                    ->color('info'),
+
+Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
+    ->label('Project')
+    ->sortable()
+    ->wrap()
+    ->formatStateUsing(function ($record) {
+        $deal = $record->project?->deal;
+
+        if (!$deal) {
+            return '-';
+        }
+
+        $namaPic = $deal->nama_pic === '-' || empty($deal->nama_pic)
+            ? '(Pribadi)'
+            : $deal->nama_pic;
+
+        return $namaPic . ' - ' . $deal->nama_perusahaan;
+    }),
 
                 Tables\Columns\TextColumn::make('paid')
                     ->label('Dibayarkan')
                     ->sortable()
                     ->formatStateUsing(fn($state) => $state ? 'Rp ' . number_format((float)$state, 0, ',', '.') : '-')
                     ->color('info'),
+
+                Tables\Columns\TextColumn::make('amount')
+                    ->label('Diajukan')
+                    ->sortable()
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format((float)($state ?? 0), 0, ',', '.'))
+                    ->color('primary'),
 
                 Tables\Columns\TextColumn::make('total_realisasi_display')
                     ->label('Terealisasi')

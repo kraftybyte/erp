@@ -43,14 +43,16 @@ class ExpenseResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $categories = cache()->remember('expense_categories', 60, function () {
-            return [
-                'Transport' => 'Transport',
-                'Makan' => 'Makan',
-                'Operasional' => 'Operasional',
-                'Lainnya' => 'Lainnya',
-            ];
-        });
+        $categories = [
+            'Marketing' => 'Marketing',
+            'Transport' => 'Transport',
+            'Operasional Kantor' => 'Operasional Kantor',
+            'Komunikasi' => 'Komunikasi',
+            'Software' => 'Software',
+            'Entertainment' => 'Entertainment',
+            'Project Support' => 'Project Support',
+            'Biaya Lain' => 'Biaya Lain',
+        ];
 
         return $form
             ->schema([
@@ -66,6 +68,12 @@ class ExpenseResource extends Resource
                 Forms\Components\Select::make('project_id')
                     ->label('Pilih Project')
                     ->options(fn () => cache()->remember('projects_list', 300, fn () => Project::all()->pluck('nama_perusahaan', 'id')))
+                    ->searchable()
+                    ->required(),
+
+                Forms\Components\Select::make('category')
+                    ->label('Kategori')
+                    ->options($categories)
                     ->searchable()
                     ->required(),
 
@@ -113,6 +121,11 @@ class ExpenseResource extends Resource
                     ->description(fn(Expense $record): string => $record->submission_date, position: 'after')
                     ->sortable()
                     ->wrap(),
+
+                Tables\Columns\BadgeColumn::make('category')
+                    ->label('Kategori')
+                    ->sortable()
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('keterangan_expense')
                     ->label('Keterangan Expense')

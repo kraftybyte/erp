@@ -12,14 +12,17 @@ use Filament\Actions\Action;
 use App\Models\Project;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Auth;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
+
 
 class ProjectTimelineBoard extends Page
 {
+    use HasPageShield;
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
     protected static string $view = 'filament.pages.project-timeline-board';
     protected static ?string $navigationLabel = 'Board Project Timeline';
     protected static ?string $navigationGroup = 'Project';
-    protected static bool $shouldRegisterNavigation = false;
+    protected static bool $shouldRegisterNavigation = true;
     public ?string $lastHistoryText = null;
     public string $viewMode = 'board'; // board | list
     public ?string $lastUpdatedAt = null;
@@ -27,13 +30,6 @@ class ProjectTimelineBoard extends Page
     public static function getNavigationLabel(): string
     {
         return \App\Helpers\NavigationHelper::getLabel('timeline', 'Board Project Timeline');
-    }
-
-    public static function canAccess(): bool
-    {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
-        return Gate::allows('viewAny', [static::class]) || $user->hasRole('super_admin');
     }
 
 
@@ -131,6 +127,9 @@ if ($latest && $latest->updater) {
 
 protected function getHeaderActions(): array
 {
+
+/** @var User|null $currentUser */
+        $currentUser = Auth::user();
     return [
     
         Action::make('create')

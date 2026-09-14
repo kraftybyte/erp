@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             UsersTableSeeder::class,
             TaskStageSeeder::class,
+            ExpenseAndAdvanceSeeder::class,
         ]);
 
         Artisan::call('shield:generate --all');
