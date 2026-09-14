@@ -310,9 +310,12 @@ if ($isDP && $calcSubTotal > 0) {
                         @if ($invoice->type === 'sale')
                         <br>
                         <b>Type Payment:</b>
-                        {{ $invoice->type_payment === 'full_payment'
-                            ? 'Full Payment'
-                            : 'Down Payment ' . str_replace('dp_', '', $invoice->type_payment) }} <br>
+                        @if($invoice->type_payment === 'full_payment')
+                            <span style="background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Full Payment</span>
+                        @else
+                            <span style="background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Down Payment {{ (int) str_replace('dp_', '', $invoice->type_payment) }}%</span>
+                        @endif
+                        <br>
                         <b>PO Number:</b> {{ $invoice->po_number ?: '-' }}
                         <br>
                         <b>No. Faktur:</b> {{ $invoice->faktur ?: '-' }}
