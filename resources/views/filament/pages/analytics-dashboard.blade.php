@@ -2044,509 +2044,301 @@ $rgba = function ($hex, $opacity) {
             @endphp
 
 
-            <div class="top-stats-grid three-stats">
+            {{-- KPI STATS --}}
+            <div class="top-stats-grid">
 
                 <div class="card stat-mini">
-
                     <div class="stat-mini-content">
-
                         <span class="stat-mini-label">
                             <x-heroicon-o-credit-card class="stat-icon" />
                             Total Expenses
                         </span>
-
                         <span class="stat-mini-value text-danger">
                             Rp {{ number_format($data['total_expenses'], 0, ',', '.') }}
                         </span>
-
                     </div>
-
                 </div>
 
-
                 <div class="card stat-mini">
-
                     <div class="stat-mini-content">
-
                         <span class="stat-mini-label">
                             <x-heroicon-o-clock class="stat-icon" />
                             Pending
                         </span>
-
                         <span class="stat-mini-value text-warning">
                             {{ $data['pending_expenses_count'] }}
                         </span>
-
                     </div>
-
                 </div>
 
-
                 <div class="card stat-mini">
-
                     <div class="stat-mini-content">
-
                         <span class="stat-mini-label">
                             <x-heroicon-o-user class="stat-icon" />
                             Pending Amount
                         </span>
-
                         <span class="stat-mini-value text-warning">
                             Rp {{ number_format($data['pending_expenses'], 0, ',', '.') }}
                         </span>
-
                     </div>
-
                 </div>
 
             </div>
 
 
-            {{-- TREND --}}
-
-            <div class="section">
-
-                <h2 class="section-title">
-                    <x-heroicon-o-calendar class="section-icon" />
-                    Trend Bulanan
-                </h2>
-
-                <div class="card">
-
-                    <div class="card-body" style="padding:0;">
-
-                        <div class="table-wrapper">
-
-                            <table class="data-table">
-
-                                <thead>
-
-                                    <tr>
-
-                                        <th>Bulan</th>
-                                        <th style="text-align:right;">Amount</th>
-
-                                    </tr>
-
-                                </thead>
-
-                                <tbody>
-
-                                    @forelse($data['monthly_trend'] as $trend)
-
-                                        <tr>
-
-                                            <td>
-                                                <strong>{{ $trend['month'] }}</strong>
-                                            </td>
-
-                                            <td style="text-align:right;font-weight:600;">
-                                                Rp {{ number_format($trend['expenses'], 0, ',', '.') }}
-                                            </td>
-
-                                        </tr>
-
-                                    @empty
-
-                                        <tr>
-
-                                            <td colspan="2">
-
-                                                <div class="empty-state">
-                                                    <div class="empty-state-text">
-                                                        No trend data available
-                                                    </div>
-                                                </div>
-
-                                            </td>
-
-                                        </tr>
-
-                                    @endforelse
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            {{-- BREAKDOWNS --}}
-
+            {{-- MAIN CONTENT GRID --}}
             <div class="grid-2">
 
-                {{-- EXPENSE USER --}}
+                {{-- LEFT: Monthly Trend + Top Items --}}
+                <div class="overview-col">
 
-                <div class="section">
-
-                    <h2 class="section-title">
-                        <x-heroicon-o-user class="section-icon" />
-                        Expenses by User
-                    </h2>
-
+                    {{-- TREND BULANAN --}}
                     <div class="card">
-
                         <div class="card-header">
-                            <h3>Top 10</h3>
+                            <h3>
+                                <x-heroicon-o-calendar class="stat-icon" />
+                                Trend Bulanan
+                            </h3>
                         </div>
-
                         <div class="card-body" style="padding:0;">
-
                             <div class="table-wrapper">
-
                                 <table class="data-table">
-
                                     <thead>
-
                                         <tr>
-                                            <th>User</th>
-                                            <th style="text-align:center;">Count</th>
-                                            <th style="text-align:right;">Total</th>
+                                            <th>Bulan</th>
+                                            <th style="text-align:right;">Amount</th>
                                         </tr>
-
                                     </thead>
-
                                     <tbody>
-
-                                        @forelse($data['by_user']['expenses'] as $item)
-
+                                        @forelse($data['monthly_trend'] as $trend)
                                             <tr>
-
-                                                <td>
-                                                    {{ $item['user'] }}
+                                                <td><strong>{{ $trend['month'] }}</strong></td>
+                                                <td style="text-align:right;font-weight:600;">
+                                                    Rp {{ number_format($trend['expenses'], 0, ',', '.') }}
                                                 </td>
-
-                                                <td style="text-align:center;">
-                                                    <span class="badge badge-gray">
-                                                        {{ $item['count'] }}
-                                                    </span>
-                                                </td>
-
-                                                <td style="text-align:right;">
-                                                    Rp {{ number_format($item['total'], 0, ',', '.') }}
-                                                </td>
-
                                             </tr>
-
                                         @empty
-
                                             <tr>
-
-                                                <td colspan="3">
-
+                                                <td colspan="2">
                                                     <div class="empty-state">
-                                                        <div class="empty-state-text">
-                                                            No data
-                                                        </div>
+                                                        <div class="empty-state-text">No trend data available</div>
                                                     </div>
-
                                                 </td>
-
                                             </tr>
-
                                         @endforelse
-
                                     </tbody>
-
                                 </table>
-
                             </div>
-
                         </div>
-
                     </div>
 
-                </div>
-
-                {{-- EXPENSES BY CATEGORY --}}
-
-                <div class="section">
-
-                    <h2 class="section-title">
-                        <x-heroicon-o-tag class="section-icon" />
-                        Expenses by Kategori
-                    </h2>
-
+                    {{-- TOP ITEMS --}}
                     <div class="card">
-
                         <div class="card-header">
-                            <h3>Top Kategori</h3>
+                            <h3>
+                                <x-heroicon-o-cube class="stat-icon" />
+                                Top Expense Items
+                            </h3>
+                            <span class="badge-count">By Amount</span>
                         </div>
-
                         <div class="card-body" style="padding:0;">
-
                             <div class="table-wrapper">
-
                                 <table class="data-table">
-
                                     <thead>
-
-                                        <tr>
-                                            <th>Kategori</th>
-                                            <th style="text-align:center;">Count</th>
-                                            <th style="text-align:right;">Total</th>
-                                        </tr>
-
-                                    </thead>
-
-                                    <tbody>
-
-                                        @forelse($data['by_category']['expenses'] as $item)
-
-                                            <tr>
-
-                                                <td>
-                                                    <span class="badge badge-info">
-                                                        {{ ucfirst($item['category']) }}
-                                                    </span>
-                                                </td>
-
-                                                <td style="text-align:center;">
-                                                    <span class="badge badge-gray">
-                                                        {{ $item['count'] }}
-                                                    </span>
-                                                </td>
-
-                                                <td style="text-align:right;">
-                                                    Rp {{ number_format($item['total'], 0, ',', '.') }}
-                                                </td>
-
-                                            </tr>
-
-                                        @empty
-
-                                            <tr>
-
-                                                <td colspan="3">
-
-                                                    <div class="empty-state">
-                                                        <div class="empty-state-text">
-                                                            No data
-                                                        </div>
-                                                    </div>
-
-                                                </td>
-
-                                            </tr>
-
-                                        @endforelse
-
-                                    </tbody>
-
-                                </table>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-                {{-- TOP ITEMS --}}
-
-                <div class="section">
-
-                    <h2 class="section-title">
-                        <x-heroicon-o-cube class="section-icon" />
-                        Top Expense Items
-                    </h2>
-
-                    <div class="card">
-
-                        <div class="card-header">
-                            <h3>By Amount</h3>
-                        </div>
-
-                        <div class="card-body" style="padding:0;">
-
-                            <div class="table-wrapper">
-
-                                <table class="data-table">
-
-                                    <thead>
-
                                         <tr>
                                             <th>Item</th>
                                             <th style="text-align:center;">Qty</th>
                                             <th style="text-align:right;">Total</th>
                                         </tr>
-
                                     </thead>
-
                                     <tbody>
-
                                         @forelse($data['top_items'] as $item)
-
                                             <tr>
-
-                                                <td>
-                                                    {{ Str::limit($item['name'], 25) }}
-                                                </td>
-
+                                                <td>{{ Str::limit($item['name'], 25) }}</td>
                                                 <td style="text-align:center;">
-                                                    <span class="badge badge-gray">
-                                                        {{ $item['qty'] }}
-                                                    </span>
+                                                    <span class="badge badge-gray">{{ $item['qty'] }}</span>
                                                 </td>
-
                                                 <td style="text-align:right;">
                                                     Rp {{ number_format($item['total'], 0, ',', '.') }}
                                                 </td>
-
                                             </tr>
-
                                         @empty
-
                                             <tr>
-
                                                 <td colspan="3">
-
                                                     <div class="empty-state">
-                                                        <div class="empty-state-text">
-                                                            No data
-                                                        </div>
+                                                        <div class="empty-state-text">No data</div>
                                                     </div>
-
                                                 </td>
-
                                             </tr>
-
                                         @endforelse
-
                                     </tbody>
-
                                 </table>
-
                             </div>
-
                         </div>
+                    </div>
 
+                </div>
+
+                {{-- RIGHT: By User + By Category --}}
+                <div class="overview-col">
+
+                    {{-- BY USER --}}
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>
+                                <x-heroicon-o-user class="stat-icon" />
+                                Expenses by User
+                            </h3>
+                            <span class="badge-count">Top 10</span>
+                        </div>
+                        <div class="card-body" style="padding:0;">
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>User</th>
+                                            <th style="text-align:center;">Count</th>
+                                            <th style="text-align:right;">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($data['by_user']['expenses'] as $item)
+                                            <tr>
+                                                <td>{{ $item['user'] }}</td>
+                                                <td style="text-align:center;">
+                                                    <span class="badge badge-gray">{{ $item['count'] }}</span>
+                                                </td>
+                                                <td style="text-align:right;">
+                                                    Rp {{ number_format($item['total'], 0, ',', '.') }}
+                                                </td>
+                                            </tr>
+                                        @empty
+                                            <tr>
+                                                <td colspan="3">
+                                                    <div class="empty-state">
+                                                        <div class="empty-state-text">No data</div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- BY CATEGORY --}}
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>
+                                <x-heroicon-o-tag class="stat-icon" />
+                                Expenses by Kategori
+                            </h3>
+                            <span class="badge-count">Top Kategori</span>
+                        </div>
+                        <div class="card-body" style="padding:0;">
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Kategori</th>
+                                            <th style="text-align:center;">Count</th>
+                                            <th style="text-align:right;">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($data['by_category']['expenses'] as $item)
+                                            <tr>
+                                                <td>
+                                                    <span class="badge badge-info">{{ ucfirst($item['category']) }}</span>
+                                                </td>
+                                                <td style="text-align:center;">
+                                                    <span class="badge badge-gray">{{ $item['count'] }}</span>
+                                                </td>
+                                                <td style="text-align:right;">
+                                                    Rp {{ number_format($item['total'], 0, ',', '.') }}
+                                                </td>
+                                            </tr>
+                                        @empty
+                                            <tr>
+                                                <td colspan="3">
+                                                    <div class="empty-state">
+                                                        <div class="empty-state-text">No data</div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
 
                 </div>
 
             </div>
 
+
             {{-- RECENT EXPENSES --}}
-
-            <div class="section">
-
-                <h2 class="section-title">
-                    <x-heroicon-o-credit-card class="section-icon" />
-                    Recent Expenses
-                </h2>
-
-                <div class="card">
-
-                    <div class="card-body" style="padding:0;">
-
-                        <div class="table-wrapper">
-
-                            <table class="data-table">
-
-                                <thead>
-
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>User</th>
-                                        <th style="text-align:right;">Amount</th>
-                                        <th>Status</th>
-                                    </tr>
-
-                                </thead>
-
-                                <tbody>
-
-                                    @forelse($data['expenses'] as $expense)
-
-                                        <tr>
-
-                                            <td>
-                                                {{ $expense->submission_date?->format('d/m') ?? '-' }}
-                                            </td>
-
-                                            <td>
-                                                {{ $expense->user?->name ?? '-' }}
-                                            </td>
-
-                                            <td style="text-align:right;">
-                                                Rp {{ number_format($expense->amount, 0, ',', '.') }}
-                                            </td>
-
-                                            <td>
-
-                                                @switch($expense->status)
-
-                                                    @case('Pending')
-                                                        <span class="badge badge-warning">
-                                                            Pending
-                                                        </span>
-                                                        @break
-
-                                                    @case('Disetujui')
-                                                        <span class="badge badge-info">
-                                                            Approved
-                                                        </span>
-                                                        @break
-
-                                                    @case('Selesai')
-                                                        <span class="badge badge-success">
-                                                            Done
-                                                        </span>
-                                                        @break
-
-                                                    @case('Ditolak')
-                                                        <span class="badge badge-danger">
-                                                            Rejected
-                                                        </span>
-                                                        @break
-
-                                                    @default
-                                                        <span class="badge badge-gray">
-                                                            {{ $expense->status }}
-                                                        </span>
-
-                                                @endswitch
-
-                                            </td>
-
-                                        </tr>
-
-                                    @empty
-
-                                        <tr>
-
-                                            <td colspan="4">
-
-                                                <div class="empty-state">
-                                                    <div class="empty-state-text">
-                                                        No expenses found
-                                                    </div>
-                                                </div>
-
-                                            </td>
-
-                                        </tr>
-
-                                    @endforelse
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
-
-                    </div>
-
+            <div class="card">
+                <div class="card-header">
+                    <h3>
+                        <x-heroicon-o-credit-card class="stat-icon" />
+                        Recent Expenses
+                    </h3>
+                    <span class="badge-count">{{ $data['expenses']->count() }} items</span>
                 </div>
-
+                <div class="card-body" style="padding:0;">
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>User</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($data['expenses'] as $expense)
+                                    <tr>
+                                        <td>{{ $expense->submission_date?->format('d/m') ?? '-' }}</td>
+                                        <td>{{ $expense->user?->name ?? '-' }}</td>
+                                        <td style="text-align:right;">
+                                            Rp {{ number_format($expense->amount, 0, ',', '.') }}
+                                        </td>
+                                        <td>
+                                            @switch($expense->status)
+                                                @case('Pending')
+                                                    <span class="badge badge-warning">Pending</span>
+                                                    @break
+                                                @case('Disetujui')
+                                                    <span class="badge badge-info">Approved</span>
+                                                    @break
+                                                @case('Selesai')
+                                                    <span class="badge badge-success">Done</span>
+                                                    @break
+                                                @case('Ditolak')
+                                                    <span class="badge badge-danger">Rejected</span>
+                                                    @break
+                                                @default
+                                                    <span class="badge badge-gray">{{ $expense->status }}</span>
+                                            @endswitch
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="4">
+                                            <div class="empty-state">
+                                                <div class="empty-state-text">No expenses found</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
         @endif
