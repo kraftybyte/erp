@@ -407,12 +407,16 @@ foreach ($invoiceItems as $item) {
                             <br>
                             <strong style="font-size: 14px;">Total &emsp;:</strong> Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
                             @php
-                                $isDP = $invoice->type_payment && str_starts_with($invoice->type_payment, 'dp_');
+                                // Calculate Balance Due for DP invoices
+                                $typePayment = $invoice->type_payment ?? '';
+                                $isDP = !empty($typePayment) && str_starts_with($typePayment, 'dp_');
                                 $remainingAmount = 0;
+
                                 if ($isDP) {
-                                    $dpPercentage = (int) str_replace('dp_', '', $invoice->type_payment);
+                                    $dpPercentage = (int) str_replace('dp_', '', $typePayment);
                                     $originalTotal = 0;
-                                    foreach ($invoiceItems as $item) {
+                                    $items = $invoice->invoicesItems ?? collect();
+                                    foreach ($items as $item) {
                                         $originalPrice = (float) ($item->original_price ?? $item->price ?? 0);
                                         $qty = (float) ($item->qty ?? 1);
                                         $discount = (float) ($item->discount ?? 0);
