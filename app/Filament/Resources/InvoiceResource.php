@@ -365,6 +365,9 @@ class InvoiceResource extends BaseInvoiceResource
                             'full_payment' =>
                                 'Full Payment',
 
+                            'final_payment' =>
+                                'Final Payment',
+
                             'dp_10' =>
                                 'Down Payment 10%',
 
@@ -1359,6 +1362,10 @@ class InvoiceResource extends BaseInvoiceResource
                                 return 'Full Payment';
                             }
 
+                            if ($state === 'final_payment') {
+                                return 'Final Payment';
+                            }
+
                             if ($state && str_starts_with($state, 'dp_')) {
 
                                 $percentage = (int) str_replace(
@@ -1394,6 +1401,10 @@ class InvoiceResource extends BaseInvoiceResource
 
                             if ($state === 'full_payment') {
                                 return 'success';
+                            }
+
+                            if ($state === 'final_payment') {
+                                return 'warning';
                             }
 
                             if ($state && str_starts_with($state, 'dp_')) {

@@ -309,6 +309,8 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                         <b>Type Payment:</b>
                         @if($invoice->type_payment === 'full_payment')
                             <span style="background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Full Payment</span>
+                        @elseif($invoice->type_payment === 'final_payment')
+                            <span style="background-color: #6f42c1; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Final Payment</span>
                         @else
                             <span style="background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Down Payment {{ (int) str_replace('dp_', '', $invoice->type_payment) }}%</span>
                         @endif
