@@ -61,13 +61,16 @@ foreach ($invoiceItems as $item) {
     $calcGrandTotal += $itemTotal;
 }
 
-// Calculate Balance Due for DP (difference between original and DP amount)
+// Calculate DP amounts (the entered grand_total is the FULL price)
+$dpAmount = 0;
 $remainingAmount = 0;
-$originalFullTotal = $calcGrandTotal;
 if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
-    // Original total = DP total / (percentage / 100)
-    $originalFullTotal = $calcGrandTotal / ($dpPercentage / 100);
-    $remainingAmount = $originalFullTotal - $calcGrandTotal;
+    // calcGrandTotal = full/original price (user enters this)
+    $originalFullTotal = $calcGrandTotal;
+    // DP amount = full price × percentage
+    $dpAmount = $originalFullTotal * ($dpPercentage / 100);
+    // Remaining = full price - DP
+    $remainingAmount = $originalFullTotal - $dpAmount;
 }
 ?>
 <!DOCTYPE html>
@@ -417,7 +420,7 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                                 {{-- Format DP Invoice --}}
                                 <strong>Grand Total &emsp;:</strong> Rp{{ number_format($originalFullTotal, 0, ',', '.') }}
                                 <br>
-                                <strong>DP {{ $dpPercentage }}% &emsp;:</strong> <span style="color: #f04f29;">(-) Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}</span>
+                                <strong>DP {{ $dpPercentage }}% &emsp;:</strong> <span style="color: #f04f29;">(-) Rp{{ number_format($dpAmount, 0, ',', '.') }}</span>
                                 <br>
                                 <strong style="font-size: 14px;">Amount Due &emsp;:</strong> <span style="font-size: 14px; color: #f04f29;">Rp{{ number_format($remainingAmount, 0, ',', '.') }}</span>
                             @else
