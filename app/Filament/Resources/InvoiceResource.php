@@ -94,11 +94,10 @@ class InvoiceResource extends BaseInvoiceResource
             $subtotalItem =
                 $price * $qty;
 
-            $discountAmount = $discount * $qty;  // Discount × Qty (samakan dengan Quotation)
-
+            // Discount adalah TOTAL (bukan per unit)
             $discountedSubtotal =
                 max(
-                    $subtotalItem - $discountAmount,
+                    $subtotalItem - $discount,
                     0
                 );
 
@@ -479,12 +478,11 @@ class InvoiceResource extends BaseInvoiceResource
                                         $subtotalItem =
                                             $price * $qty;
 
-                                        $discountAmount = $discount * $qty;  // Discount × Qty
-
+                                        // Discount adalah TOTAL (bukan per unit)
                                         $discountedSubtotal =
                                             max(
                                                 $subtotalItem -
-                                                $discountAmount,
+                                                $discount,
                                                 0
                                             );
 
@@ -627,12 +625,11 @@ class InvoiceResource extends BaseInvoiceResource
                                         $subtotalItem =
                                             $dpPrice * $qty;
 
-                                        $discountAmount = $discount * $qty;  // Discount × Qty
-
+                                        // Discount adalah TOTAL (bukan per unit)
                                         $discountedSubtotal =
                                             max(
                                                 $subtotalItem -
-                                                $discountAmount,
+                                                $discount,
                                                 0
                                             );
 
@@ -1337,12 +1334,11 @@ class InvoiceResource extends BaseInvoiceResource
             $subtotalItem =
                 $price * $qty;
 
-            $discountAmount = $discount * $qty;  // Discount × Qty (samakan dengan Quotation)
-
+            // Discount adalah TOTAL (bukan per unit)
             $discountedSubtotal =
                 max(
                     $subtotalItem -
-                    $discountAmount,
+                    $discount,
                     0
                 );
 
@@ -1357,7 +1353,7 @@ class InvoiceResource extends BaseInvoiceResource
                 $subtotalItem;
 
             $totalDiscount +=
-                $discountAmount;
+                $discount;
 
             $totalVat +=
                 $vat;
@@ -2461,12 +2457,11 @@ class InvoiceResource extends BaseInvoiceResource
                             |--------------------------------------------------------------------------
                             */
 
-                            $discountAmount = $discount * $qty;  // Discount × Qty
-
+                            // Discount adalah TOTAL (bukan per unit)
                             $dpp = max(
                                 (
                                     $price * $qty
-                                ) - $discountAmount,
+                                ) - $discount,
                                 0
                             );
 

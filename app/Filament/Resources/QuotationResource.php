@@ -65,12 +65,12 @@ class QuotationResource extends Resource
         $updateItemTotals = function (callable $get, callable $set) {
             $price = floatval($get('price') ?? 0);
             $qty = floatval($get('qty') ?? 1);
-            $discount = floatval($get('discount') ?? 0);
+            $discount = floatval($get('discount') ?? 0);  // Discount TOTAL
             $vatPercentage = floatval($get('vat_percentage') ?? 0);
 
             $subtotalItem = $price * $qty;
-            $discountAmount = $discount * $qty;  // Discount × Qty (samakan dengan recalculateTotals)
-            $discountedSubtotal = max($subtotalItem - $discountAmount, 0);
+            // Discount adalah TOTAL (bukan per unit)
+            $discountedSubtotal = max($subtotalItem - $discount, 0);
             $vat = $discountedSubtotal * ($vatPercentage / 100);
             $total = $discountedSubtotal + $vat;
 
@@ -327,16 +327,16 @@ class QuotationResource extends Resource
         foreach ($items as $item) {
             $price = floatval($item['price'] ?? 0);
             $qty = floatval($item['qty'] ?? 1);
-            $discount = floatval($item['discount'] ?? 0);
+            $discount = floatval($item['discount'] ?? 0);  // Discount TOTAL
             $vatPercentage = floatval($item['vat_percentage'] ?? 0);
 
             $subtotalItem = $price * $qty;
-            $discountAmount = $discount * $qty;  // Discount × Qty
-            $discountedSubtotal = max($subtotalItem - $discountAmount, 0);
+            // Discount adalah TOTAL (bukan per unit)
+            $discountedSubtotal = max($subtotalItem - $discount, 0);
             $vat = $discountedSubtotal * ($vatPercentage / 100);
 
             $subtotal += $subtotalItem;
-            $totalDiscount += $discountAmount;  // Total discount
+            $totalDiscount += $discount;  // Total discount
             $totalVat += $vat;
         }
 

@@ -25,8 +25,8 @@ $cssThemeColor = $themeColorSafe;
 // ============================================================
 // CALCULATION - Hitung dari items untuk konsistensi
 // ============================================================
-$calcTotalVat = 0;        // SUM((price * qty - discount * qty) * vat%)
-$calcTotalDiscount = 0;   // SUM(discount * qty)
+$calcTotalVat = 0;        // SUM((price * qty - discount) * vat%)
+$calcTotalDiscount = 0;   // SUM(discount) - discount adalah TOTAL
 $calcSubTotal = 0;        // SUM(price * qty)
 $calcGrandTotal = 0;      // (subtotal - discount) + vat
 
@@ -43,21 +43,19 @@ if ($isDP) {
 foreach ($invoiceItems as $item) {
     $price = (float) ($item->price ?? 0);
     $qty = (float) ($item->qty ?? 1);
-    $discount = (float) ($item->discount ?? 0);
+    $discount = (float) ($item->discount ?? 0);  // Discount TOTAL
     $vatPercentage = (float) ($item->vat_percentage ?? 0);
 
     // Sub Total: price × qty
     $itemSubTotal = $price * $qty;
-    // Discount: discount × qty
-    $itemDiscount = $discount * $qty;
-    // After discount: subtotal - discount
-    $itemAfterDiscount = max($itemSubTotal - $itemDiscount, 0);
+    // After discount: subtotal - discount (discount adalah total, bukan per unit)
+    $itemAfterDiscount = max($itemSubTotal - $discount, 0);
     // VAT from price after discount
     $itemVat = $itemAfterDiscount * ($vatPercentage / 100);
     // Total per item: after discount + VAT
     $itemTotal = $itemAfterDiscount + $itemVat;
 
-    $calcTotalDiscount += $itemDiscount;
+    $calcTotalDiscount += $discount;
     $calcSubTotal += $itemSubTotal;
     $calcTotalVat += $itemVat;
     $calcGrandTotal += $itemTotal;
@@ -343,11 +341,11 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
     @php
         $itemPrice = (float) ($item->price ?? 0);
         $itemQty = (float) ($item->qty ?? 1);
-        $itemDiscount = (float) ($item->discount ?? 0);
+        $itemDiscount = (float) ($item->discount ?? 0);  // Discount TOTAL
         $itemVatPct = (float) ($item->vat_percentage ?? 0);
         $itemSubTotal = $itemPrice * $itemQty;
-        $itemTotalDiscount = $itemDiscount * $itemQty;
-        $itemAfterDiscount = $itemSubTotal - $itemTotalDiscount;
+        // Discount adalah total (bukan per unit)
+        $itemAfterDiscount = max($itemSubTotal - $itemDiscount, 0);
         $itemVat = $itemAfterDiscount * ($itemVatPct / 100);
         $itemTotal = $itemAfterDiscount + $itemVat;
 
@@ -375,10 +373,10 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
 
         {{-- Discount --}}
         <td style="text-align: center; font-size: 11px; padding: 10px;">
-            @if($itemTotalDiscount == 0)
+            @if($itemDiscount == 0)
                 -
             @else
-                Rp{{ number_format($itemTotalDiscount, 0, ',', '.') }}
+                Rp{{ number_format($itemDiscount, 0, ',', '.') }}
             @endif
         </td>
 
