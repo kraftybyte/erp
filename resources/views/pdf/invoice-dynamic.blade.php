@@ -63,10 +63,11 @@ foreach ($invoiceItems as $item) {
 
 // Calculate Balance Due for DP (difference between original and DP amount)
 $remainingAmount = 0;
+$originalFullTotal = $calcGrandTotal;
 if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
     // Original total = DP total / (percentage / 100)
-    $originalTotal = $calcGrandTotal / ($dpPercentage / 100);
-    $remainingAmount = $originalTotal - $calcGrandTotal;
+    $originalFullTotal = $calcGrandTotal / ($dpPercentage / 100);
+    $remainingAmount = $originalFullTotal - $calcGrandTotal;
 }
 ?>
 <!DOCTYPE html>
@@ -410,22 +411,26 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                             </p>
                         </td>
                         <td style="text-align: right; width: 50%;">
-                            @if($calcTotalVat > 0)
-                                <strong>Total VAT &emsp;:</strong> Rp{{ number_format($calcTotalVat, 0, ',', '.') }}
+                            @if($isDP && $dpPercentage > 0)
+                                {{-- Format DP Invoice --}}
+                                <strong>Grand Total &emsp;:</strong> Rp{{ number_format($originalFullTotal, 0, ',', '.') }}
                                 <br>
-                            @endif
-                            @if($calcTotalDiscount > 0)
-                                <strong>Total Diskon &emsp;:</strong> -Rp{{ number_format($calcTotalDiscount, 0, ',', '.') }}
+                                <strong>DP {{ $dpPercentage }}% &emsp;:</strong> <span style="color: #f04f29;">(-) Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}</span>
                                 <br>
-                            @endif
-                            <strong>Sub Total &emsp;:</strong> Rp{{ number_format($calcSubTotal, 0, ',', '.') }}
-                            <br>
-                            <strong style="font-size: 14px;">Total &emsp;:</strong> Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
-                            @if($isDP && $remainingAmount > 0)
+                                <strong style="font-size: 14px;">Amount Due &emsp;:</strong> <span style="font-size: 14px; color: #f04f29;">Rp{{ number_format($remainingAmount, 0, ',', '.') }}</span>
+                            @else
+                                {{-- Format Full Payment Invoice --}}
+                                @if($calcTotalVat > 0)
+                                    <strong>Total VAT &emsp;:</strong> Rp{{ number_format($calcTotalVat, 0, ',', '.') }}
+                                    <br>
+                                @endif
+                                @if($calcTotalDiscount > 0)
+                                    <strong>Total Diskon &emsp;:</strong> -Rp{{ number_format($calcTotalDiscount, 0, ',', '.') }}
+                                    <br>
+                                @endif
+                                <strong>Sub Total &emsp;:</strong> Rp{{ number_format($calcSubTotal, 0, ',', '.') }}
                                 <br>
-                                <span style="color: #f04f29; font-size: 12px;">
-                                    <strong>Balance Due &emsp;:</strong> Rp{{ number_format($remainingAmount, 0, ',', '.') }}
-                                </span>
+                                <strong style="font-size: 14px;">Grand Total &emsp;:</strong> Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
                             @endif
                         </td>
                     </tr>
