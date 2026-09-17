@@ -27,8 +27,8 @@ $cssThemeColor = $themeColorSafe;
 // ============================================================
 $calcTotalVat = 0;        // SUM((price * qty - discount * qty) * vat%)
 $calcTotalDiscount = 0;   // SUM(discount * qty)
-$calcSubTotal = 0;        // SUM(price * qty) - HARGA ASLI sebelum diskon
-$calcGrandTotal = 0;      // Sub Total + Total VAT
+$calcSubTotal = 0;        // SUM(price * qty)
+$calcGrandTotal = 0;      // (subtotal - discount) + vat
 
 $invoiceItems = $invoice->invoicesItems ?? collect();
 
@@ -45,32 +45,30 @@ foreach ($invoiceItems as $item) {
     $qty = (float) ($item->qty ?? 1);
     $discount = (float) ($item->discount ?? 0);
     $vatPercentage = (float) ($item->vat_percentage ?? 0);
-    // original_price: harga sebelum DP (untuk tampilkan di subtotal)
-    // Jika DP dan ada original_price, gunakan itu. Jika tidak, gunakan price.
-    $originalPriceFromDB = $item->original_price ?? null;
-    $originalPrice = (float) ($originalPriceFromDB ?? $price ?? 0);
 
-    // Sub Total: gunakan original_price jika ada, jika tidak gunakan price
-    $itemSubTotal = $originalPrice * $qty;
-    // Discount per item
+    // Sub Total: price × qty
+    $itemSubTotal = $price * $qty;
+    // Discount: discount × qty
     $itemDiscount = $discount * $qty;
-    // Setelah diskon
-    $itemAfterDiscount = $itemSubTotal - $itemDiscount;
-    // VAT dari harga setelah diskon
+    // After discount: subtotal - discount
+    $itemAfterDiscount = max($itemSubTotal - $itemDiscount, 0);
+    // VAT from price after discount
     $itemVat = $itemAfterDiscount * ($vatPercentage / 100);
-    // Total per item (harga saat ini = price * qty, bukan original)
-    $itemCurrentTotal = ($price * $qty) + $itemVat;
+    // Total per item: after discount + VAT
+    $itemTotal = $itemAfterDiscount + $itemVat;
 
     $calcTotalDiscount += $itemDiscount;
-    $calcSubTotal += $itemSubTotal;  // HARGA ASLI (sebelum diskon)
+    $calcSubTotal += $itemSubTotal;
     $calcTotalVat += $itemVat;
-    $calcGrandTotal += $itemCurrentTotal;  // Grand Total dari harga saat ini
+    $calcGrandTotal += $itemTotal;
 }
 
-// Calculate Balance Due for DP
+// Calculate Balance Due for DP (difference between original and DP amount)
 $remainingAmount = 0;
-if ($isDP && $calcSubTotal > 0) {
-    $remainingAmount = $calcSubTotal - $calcGrandTotal;
+if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
+    // Original total = DP total / (percentage / 100)
+    $originalTotal = $calcGrandTotal / ($dpPercentage / 100);
+    $remainingAmount = $originalTotal - $calcGrandTotal;
 }
 ?>
 <!DOCTYPE html>
