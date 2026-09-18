@@ -1376,21 +1376,16 @@ class InvoiceResource extends BaseInvoiceResource
 
                                 if ($percentage > 0) {
 
-                                    // grand_total adalah harga setelah DP
-                                    // Hitung kembali harga sebelum DP
-                                    $originalPrice = (float) $record->grand_total
-                                        / ($percentage / 100);
+                                    // DP amount = grand_total (full price) × percentage
+                                    $dpAmount = (float) $record->grand_total * ($percentage / 100);
 
-                                    return 'Rp ' .
+                                    return 'DP ' . $percentage . '% • Rp ' .
                                         number_format(
-                                            $originalPrice,
+                                            $dpAmount,
                                             0,
                                             ',',
                                             '.'
-                                        ) .
-                                        ' (Down Payment ' .
-                                        $percentage .
-                                        '%)';
+                                        );
                                 }
                             }
 
