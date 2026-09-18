@@ -2583,28 +2583,21 @@ class InvoiceResource extends BaseInvoiceResource
                     ->fillForm(
                         function ($record) {
 
-                            // Calculate amount based on payment type
                             $typePayment = $record->type_payment ?? 'full_payment';
                             $grandTotal = (float) $record->grand_total;
                             $paid = (float) $record->paid;
-
-                            // For DP, grand_total is already the DP amount (full price × percentage)
-                            // So remaining = grand_total - paid
                             $amount = max($grandTotal - $paid, 0);
 
-                            // Determine label
-                            $label = 'Amount';
-                            if ($typePayment === 'full_payment') {
-                                $label = 'Full Payment Amount';
-                            } elseif ($typePayment === 'final_payment') {
-                                $label = 'Final Payment Amount';
-                            } elseif (str_starts_with($typePayment, 'dp_')) {
-                                $percentage = (int) str_replace('dp_', '', $typePayment);
-                                $label = 'DP ' . $percentage . '% Amount';
-                            }
+                            $typeLabel = match ($typePayment) {
+                                'full_payment' => 'Full Payment Amount',
+                                'final_payment' => 'Final Payment Amount',
+                                default => (str_starts_with($typePayment, 'dp_')
+                                    ? 'DP ' . (int) str_replace('dp_', '', $typePayment) . '% Amount'
+                                    : 'Amount'),
+                            };
 
                             return [
-                                'total_label' => $label,
+                                'total_label' => $typeLabel,
                                 'grand_total' => $grandTotal,
                                 'paid' => $paid,
                                 'amount' => $amount,
@@ -2666,12 +2659,15 @@ class InvoiceResource extends BaseInvoiceResource
                             'amount'
                         )
                             ->label(
-                                trans(
-                                    'filament-invoices::messages.invoices.actions.amount'
-                                )
+                                fn ($get) => $get('total_label') ?? 'Amount'
                             )
-                            ->required()
-                            ->numeric(),
+                            ->helperText(
+                                fn ($get) => 'Sisa yang harus dibayar: Rp ' . number_format((float) ($get('grand_total') ?? 0) - (float) ($get('paid') ?? 0), 0, ',', '.')
+                            )
+                            ->numeric()
+                            ->default(
+                                fn ($record) => max((float) $record->grand_total - (float) $record->paid, 0)
+                            ),
 
                     ])
                     ->action(
