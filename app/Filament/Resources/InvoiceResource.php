@@ -2581,26 +2581,44 @@ class InvoiceResource extends BaseInvoiceResource
                     ->iconButton()
                     ->color('info')
                     ->fillForm(
-                        fn ($record) => [
+                        function ($record) {
 
-                            'grand_total' =>
-                                $record
-                                    ->grand_total,
+                            // Calculate amount based on payment type
+                            $typePayment = $record->type_payment ?? 'full_payment';
+                            $grandTotal = (float) $record->grand_total;
+                            $paid = (float) $record->paid;
 
-                            'paid' =>
-                                $record
-                                    ->paid,
+                            // For DP, grand_total is already the DP amount (full price × percentage)
+                            // So remaining = grand_total - paid
+                            $amount = max($grandTotal - $paid, 0);
 
-                            'amount' =>
-                                $record
-                                    ->grand_total
-                                -
-                                $record
-                                    ->paid,
+                            // Determine label
+                            $label = 'Amount';
+                            if ($typePayment === 'full_payment') {
+                                $label = 'Full Payment Amount';
+                            } elseif ($typePayment === 'final_payment') {
+                                $label = 'Final Payment Amount';
+                            } elseif (str_starts_with($typePayment, 'dp_')) {
+                                $percentage = (int) str_replace('dp_', '', $typePayment);
+                                $label = 'DP ' . $percentage . '% Amount';
+                            }
 
-                        ]
+                            return [
+                                'total_label' => $label,
+                                'grand_total' => $grandTotal,
+                                'paid' => $paid,
+                                'amount' => $amount,
+                            ];
+                        }
                     )
                     ->form([
+
+                        Forms\Components\TextInput::make(
+                            'total_label'
+                        )
+                            ->label('Type')
+                            ->disabled()
+                            ->dehydrated(),
 
                         Forms\Components\TextInput::make(
                             'grand_total'
