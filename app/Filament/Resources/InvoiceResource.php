@@ -2473,6 +2473,94 @@ class InvoiceResource extends BaseInvoiceResource
 
                 /*
                 |--------------------------------------------------------------------------
+                | DUPLICATE
+                |--------------------------------------------------------------------------
+                */
+
+                Tables\Actions\Action::make(
+                    'duplicate'
+                )
+                    ->iconButton()
+                    ->color('warning')
+                    ->icon(
+                        'heroicon-s-document-duplicate'
+                    )
+                    ->label(
+                        'Duplicate'
+                    )
+                    ->tooltip(
+                        'Duplicate Invoice'
+                    )
+                    ->action(
+                        function (Invoice $record) {
+
+                            // Generate new UUID with next sequence
+                            $newUuid = Invoice::generateUuid(
+                                $record->type ?? 'sale'
+                            );
+
+                            // Create duplicate
+                            $newInvoice = Invoice::create([
+                                'uuid' => $newUuid,
+                                'date' => now(),
+                                'due_date' => now()->addDays(30),
+                                'type' => $record->type ?? 'sale',
+                                'status' => 'draft',
+                                'type_payment' => $record->type_payment ?? 'full_payment',
+                                'nama_perusahaan' => $record->nama_perusahaan,
+                                'nama_pic' => $record->nama_pic,
+                                'telephone' => $record->telephone,
+                                'alamat' => $record->alamat,
+                                'deal_id' => $record->deal_id,
+                                'po_number' => null,
+                                'faktur' => null,
+                                'delivery_note_number' => null,
+                                'subtotal' => $record->subtotal,
+                                'total_discount' => $record->total_discount,
+                                'total_vat' => $record->total_vat,
+                                'grand_total' => $record->grand_total,
+                                'paid' => 0,
+                                'currency_id' => $record->currency_id,
+                                'notes' => $record->notes,
+                                'user_id' => auth()->id(),
+                            ]);
+
+                            // Copy items
+                            foreach ($record->invoicesItems as $item) {
+                                $newInvoice->invoicesItems()->create([
+                                    'item' => $item->item,
+                                    'description' => $item->description,
+                                    'qty' => $item->qty,
+                                    'price' => $item->price,
+                                    'discount' => $item->discount,
+                                    'vat_percentage' => $item->vat_percentage,
+                                    'vat' => $item->vat,
+                                    'total' => $item->total,
+                                    'original_price' => $item->original_price,
+                                ]);
+                            }
+
+                            Notification::make()
+                                ->title(
+                                    'Invoice Duplicated'
+                                )
+                                ->body(
+                                    'New invoice created: ' . $newUuid
+                                )
+                                ->success()
+                                ->send();
+
+                            // Redirect to edit the new invoice
+                            return redirect()->to(
+                                InvoiceResource::getUrl('edit', [
+                                    'record' => $newInvoice
+                                ])
+                            );
+                        }
+                    ),
+
+                /*
+                |--------------------------------------------------------------------------
                 | PAYMENT
                 |--------------------------------------------------------------------------
                 */
