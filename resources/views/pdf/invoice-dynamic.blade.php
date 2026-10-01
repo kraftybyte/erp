@@ -35,9 +35,34 @@ $invoiceItems = $invoice->invoicesItems ?? collect();
 // Calculate if this is a DP invoice
 $typePayment = $invoice->type_payment ?? '';
 $isDP = !empty($typePayment) && str_starts_with($typePayment, 'dp_');
+$isFinalPayment = $typePayment === 'final_payment';
 $dpPercentage = 0;
 if ($isDP) {
     $dpPercentage = (int) str_replace('dp_', '', $typePayment);
+}
+
+// For Final Payment: check if there's DP info in notes (format: "DP: 50% - Rp 20.000.000")
+$dpPaidAmount = 0;
+$dpPercentagePaid = 0;
+$fullTotalAmount = $calcGrandTotal;
+if ($isFinalPayment) {
+    $notes = trim($invoice->notes ?? '');
+    // Parse DP info from notes (format: "DP: 50% - Rp 20.000.000" or "DP 50% - Rp 20.000.000")
+    if (preg_match('/DP[:\s]*(\d+)%\s*[-–:]*\s*[Rr]p\s*([\d.,]+)/i', $notes, $matches)) {
+        $dpPercentagePaid = (int) $matches[1];
+        // Handle both dot (.) and comma (,) as thousand separators
+        $dpPaidAmount = (float) str_replace([',', '.'], '', $matches[2]);
+        // Actually, for Indonesian format: 20.000.000 means 20 million
+        $dpPaidAmount = (float) str_replace('.', '', $matches[2]);
+    }
+    // If no DP info in notes, check shipping field as alternative storage
+    if ($dpPaidAmount == 0) {
+        $dpPaidAmount = (float) ($invoice->shipping ?? 0);
+    }
+    // Calculate full total from DP percentage
+    if ($dpPercentagePaid > 0 && $dpPaidAmount > 0) {
+        $fullTotalAmount = $dpPaidAmount / ($dpPercentagePaid / 100);
+    }
 }
 
 foreach ($invoiceItems as $item) {
@@ -314,6 +339,10 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                             <span style="background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Full Payment</span>
                         @elseif($invoice->type_payment === 'final_payment')
                             <span style="background-color: #6f42c1; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Final Payment</span>
+                            @if($dpPercentagePaid > 0 && $dpPaidAmount > 0)
+                            <br>
+                            <span style="color: #6f42c1; font-size: 9px;">(DP {{ $dpPercentagePaid }}% - Rp {{ number_format($dpPaidAmount, 0, ',', '.') }} sudah dibayar)</span>
+                            @endif
                         @else
                             <span style="background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">Down Payment {{ (int) str_replace('dp_', '', $invoice->type_payment) }}%</span>
                         @endif
@@ -416,7 +445,14 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                             </p>
                         </td>
                         <td style="text-align: right; width: 50%;">
-                            @if($isDP && $dpPercentage > 0)
+                            @if($isFinalPayment && $dpPaidAmount > 0)
+                                {{-- Format Final Payment Invoice - show DP info --}}
+                                <strong>Total Tagihan &emsp;:</strong> Rp{{ number_format($fullTotalAmount, 0, ',', '.') }}
+                                <br>
+                                <strong>DP {{ $dpPercentagePaid }}% (Sudah Bayar) &emsp;:</strong> <span style="color: #28a745;">(-) Rp{{ number_format($dpPaidAmount, 0, ',', '.') }}</span>
+                                <br>
+                                <strong style="font-size: 14px;">Sisa Pembayaran &emsp;:</strong> <span style="font-size: 14px; color: #f04f29;">Rp{{ number_format(max(0, $fullTotalAmount - $dpPaidAmount), 0, ',', '.') }}</span>
+                            @elseif($isDP && $dpPercentage > 0)
                                 {{-- Format DP Invoice --}}
                                 <strong>Grand Total &emsp;:</strong> Rp{{ number_format($originalFullTotal, 0, ',', '.') }}
                                 <br>

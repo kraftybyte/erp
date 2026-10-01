@@ -77,15 +77,17 @@
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.5",
         "phpunit/phpunit": "^11.0",
-        "spatie/laravel-ignition": "^2.8",
-        "spatie/ray": "^1.47"
+        "spatie/laravel-ignition": "^2.8"
     },
     "autoload": {
         "psr-4": {
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        }
+        },
+        "files": [
+            "app/Helpers/RayHelper.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

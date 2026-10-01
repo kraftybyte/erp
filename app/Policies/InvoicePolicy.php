@@ -3,7 +3,7 @@
 namespace App\Policies;
 
 use App\Models\User;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class InvoicePolicy

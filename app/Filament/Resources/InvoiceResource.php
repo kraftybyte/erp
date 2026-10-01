@@ -1008,6 +1008,25 @@ class InvoiceResource extends BaseInvoiceResource
 
                 ]),
 
+            /* =====================================================
+               NOTES
+            ===================================================== */
+
+            Forms\Components\Section::make(
+                'Catatan'
+            )
+                ->schema([
+
+                    Forms\Components\Textarea::make(
+                        'notes'
+                    )
+                        ->label('Notes')
+                        ->rows(3)
+                        ->placeholder('Contoh: DP: 50% - Rp 20.000.000')
+                        ->hint('Akan terisi otomatis saat DP dibayar'),
+
+                ]),
+
         ]);
     }
 
@@ -2731,6 +2750,30 @@ class InvoiceResource extends BaseInvoiceResource
                                             ? 'paid'
                                             : 'partial';
 
+                                    /*
+                                    |--------------------------------------------------------------------------
+                                    | UPDATE NOTES WITH DP INFO
+                                    |--------------------------------------------------------------------------
+                                    */
+
+                                    $updateNotes = false;
+                                    $dpPercentage = 0;
+
+                                    // Check if this is a DP invoice and just became paid
+                                    if ($record->type_payment && str_starts_with($record->type_payment, 'dp_')) {
+                                        $dpPercentage = (int) str_replace('dp_', '', $record->type_payment);
+                                        // If this is the first time becoming paid (wasn't paid before)
+                                        if ($newStatus === 'paid' && $record->paid < $record->grand_total) {
+                                            $updateNotes = true;
+                                        }
+                                    }
+
+                                    // Build notes update
+                                    $notesUpdate = null;
+                                    if ($updateNotes && $dpPercentage > 0) {
+                                        $notesUpdate = "DP: {$dpPercentage}% - Rp " . number_format($newPaidAmount, 0, ',', '.') . "\n";
+                                    }
+
                                     $record->update([
 
                                         'paid' =>
@@ -2738,6 +2781,9 @@ class InvoiceResource extends BaseInvoiceResource
 
                                         'status' =>
                                             $newStatus,
+
+                                        'notes' =>
+                                            $notesUpdate ?? $record->notes,
 
                                     ]);
 
