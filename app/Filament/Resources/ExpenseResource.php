@@ -312,6 +312,28 @@ class ExpenseResource extends Resource
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
                         DB::transaction(function () use ($record, $data) {
+                            /*
+                            | Kunci baris expense-nya, lalu baca ulang statusnya dari database.
+                            | hidden() hanya berlaku saat halaman di-render, sehingga dua orang
+                            | yang membuka daftar bersamaan sama-sama melihat tombolnya dan
+                            | pengajuan bisa terbayar dua kali.
+                            */
+                            $expense = Expense::lockForUpdate()->find($record->id);
+
+                            if (!$expense) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Pengajuan tidak ditemukan.',
+                                ]);
+                            }
+
+                            if ($expense->status !== 'Disetujui') {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => $expense->status === 'Dibayarkan'
+                                        ? 'Pengajuan ini sudah dibayarkan.'
+                                        : "Pengajuan berstatus \"{$expense->status}\" dan tidak bisa dibayarkan.",
+                                ]);
+                            }
+
                             // Get payment account with pessimistic locking
                             $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
                             if (!$account) {
@@ -320,13 +342,12 @@ class ExpenseResource extends Resource
                                 ]);
                             }
 
-                            // Check balance using getBalance() method
-                            $availableBalance = $account->getBalance();
-                            if ($availableBalance < (float) $data['paid']) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
-                                ]);
-                            }
+                            /*
+                            | Saldo rekening sengaja TIDAK dijadikan penghalang: pembayaran
+                            | boleh melebihi saldo tercatat (budget longgar). Saldo tetap
+                            | disinkronkan setelah transaksi, sehingga nilainya bisa minus
+                            | dan selisihnya terlihat apa adanya.
+                            */
 
                             // Create transaction record
                             Transaction::create([
@@ -362,11 +383,18 @@ class ExpenseResource extends Resource
                             ->label('Nominal yang Dibayarkan')
                             ->numeric()
                             ->required()
+                            ->minValue(1)
+                            // Batas atas mengikuti nominal yang diajukan. Pesan errornya sudah
+                            // ada sejak awal, tapi aturannya tidak pernah terpasang.
+                            ->maxValue(fn($record) => (float) $record->amount)
                             ->prefix('Rp')
                             ->default(fn($record) => $record->amount)
+                            ->helperText(fn($record) => 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
                             ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
+                                'max' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
+                                'min' => 'Nominal yang dibayarkan harus lebih dari nol.',
                             ]),
                         Forms\Components\TextInput::make('reference')
                             ->label('Nomor Referensi')

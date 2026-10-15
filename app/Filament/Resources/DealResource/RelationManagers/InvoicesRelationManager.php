@@ -20,8 +20,7 @@ use App\Models\Product;
 use carbon\Carbon;
 use TomatoPHP\FilamentLocations\Models\Currency;
 use App\Providers\Company;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
-use TomatoPHP\FilamentInvoices\Models\InvoiceItem;
+use App\Models\Invoice;
 
     class InvoicesRelationManager extends RelationManager
     {

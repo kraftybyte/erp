@@ -5,7 +5,7 @@ namespace App\Filament\Widgets;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Carbon;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use Illuminate\Support\HtmlString;
 
 

@@ -4,6 +4,7 @@ namespace App\Models;
 use App\Settings\GeneralSettings;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Quotation extends Model
 {
@@ -23,26 +24,34 @@ class Quotation extends Model
         'uuid',
     ];
 
+    /**
+     * Nomor quotation: #DG/013YYMM/XXXXX
+     *
+     * Urutannya sengaja berlanjut lintas bulan (tidak reset seperti invoice),
+     * jadi pencarian nomor tertinggi memang melihat seluruh quotation. Bedanya
+     * sekarang nilai itu dihitung di database, bukan dengan menarik semua baris
+     * ke memory; nomor yang sudah terpakai juga dilewati agar dua permintaan
+     * bersamaan tidak menghasilkan nomor kembar.
+     */
     public static function generateUuid(): string
     {
         $settings = app(GeneralSettings::class);
         $prefix = ($settings->quotation_prefix ?? 'DG');
-        $datePart = now()->format('ym'); // Format: YYMM
+        $awalan = '#' . $prefix . '/013' . now()->format('ym') . '/';
 
-        // Get highest sequence number across ALL quotations (continue sequence)
-        $allQuotations = self::where('uuid', 'like', '#%/%/%')->get();
+        $urutanTertinggi = (int) static::query()
+            ->where('uuid', 'like', '#%/%/%')
+            ->max(DB::raw('CAST(RIGHT(uuid, 5) AS UNSIGNED)'));
 
-        $highestSeq = 0;
-        foreach ($allQuotations as $q) {
-            $seq = intval(substr($q->uuid, -5));
-            if ($seq > $highestSeq) {
-                $highestSeq = $seq;
+        for ($i = $urutanTertinggi + 1; $i <= $urutanTertinggi + 100; $i++) {
+            $kandidat = $awalan . str_pad((string) $i, 5, '0', STR_PAD_LEFT);
+
+            if (! static::where('uuid', $kandidat)->exists()) {
+                return $kandidat;
             }
         }
 
-        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
-
-        return '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
+        return $awalan . str_pad((string) ($urutanTertinggi + 1), 5, '0', STR_PAD_LEFT);
     }
         protected static function booted(): void
     {
@@ -56,9 +65,13 @@ class Quotation extends Model
         return $this->hasMany(QuotationItem::class);
     }
 
+    /**
+     * Ditautkan lewat deal_id, bukan nama perusahaan: pencocokan nama putus
+     * begitu nama Deal diubah dan tercampur bila ada dua Deal bernama sama.
+     */
     public function deal()
     {
-        return $this->belongsTo(Deal::class, 'nama_perusahaan', 'nama_perusahaan');
+        return $this->belongsTo(Deal::class, 'deal_id');
     }
 
     public function user()

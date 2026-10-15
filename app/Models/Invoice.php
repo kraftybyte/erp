@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Support\Facades\DB;
 use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
 
 /**
@@ -25,6 +26,9 @@ class Invoice extends BaseInvoice
 
         // === Deal integration ===
         'deal_id',
+
+        // === Rantai pembayaran: invoice DP -> invoice pelunasan ===
+        'parent_invoice_id',
 
         // === Bank fields ===
         'bank_account',
@@ -104,8 +108,56 @@ class Invoice extends BaseInvoice
     }
 
     /**
+     * Invoice DP yang mendahului invoice pelunasan ini.
+     */
+    public function parentInvoice()
+    {
+        return $this->belongsTo(Invoice::class, 'parent_invoice_id');
+    }
+
+    /**
+     * Invoice-invoice lanjutan (mis. pelunasan) dari invoice DP ini.
+     */
+    public function childInvoices()
+    {
+        return $this->hasMany(Invoice::class, 'parent_invoice_id');
+    }
+
+    /**
+     * Persentase DP, atau null bila invoice ini bukan DP.
+     */
+    public function dpPercentage(): ?int
+    {
+        $tipe = (string) $this->type_payment;
+
+        return str_starts_with($tipe, 'dp_')
+            ? (int) str_replace('dp_', '', $tipe)
+            : null;
+    }
+
+    /**
+     * Nominal yang ditagihkan lewat invoice ini.
+     *
+     * Untuk invoice DP, yang ditagih adalah DP-nya — persentase dari harga penuh —
+     * bukan sisanya. grand_total menyimpan harga penuh pekerjaan.
+     */
+    public function amountDue(): float
+    {
+        $persen = $this->dpPercentage();
+
+        return $persen !== null
+            ? (float) $this->grand_total * ($persen / 100)
+            : (float) $this->grand_total;
+    }
+
+    /**
      * Generate UUID based on type and reset per month
-     * Format: #DG/0132607/XXXXX or #PI/0132607/XXXXX
+     * Format: #SC/0132607/XXXXX atau #PI/0132607/XXXXX
+     *
+     * Nomor urut diambil langsung di database (MAX atas 5 digit terakhir), bukan
+     * dengan menarik seluruh invoice bulan berjalan ke memory. Nomor yang sudah
+     * terpakai juga dilewati, sehingga pemanggilan bersamaan oleh dua pengguna
+     * tidak menghasilkan nomor kembar yang ditolak unique constraint.
      */
     public static function generateUuid(string $type = 'sale'): string
     {
@@ -115,20 +167,26 @@ class Invoice extends BaseInvoice
             default => 'SC',
         };
 
-        // Format: 013YYMM (e.g., 0132607 for July 2026)
-        $datePart = now()->format('ym');
+        // Format: 013YYMM (mis. 0132607 untuk Juli 2026)
+        $awalan = '#' . $prefix . '/013' . now()->format('ym') . '/';
 
-        // Pattern to match: #PREFIX/013YYMM/XXXXX
-        $pattern = '#' . $prefix . '/013' . $datePart . '/%';
+        // Urutan tertinggi bulan ini, dihitung di sisi database.
+        $urutanTertinggi = (int) static::withTrashed()
+            ->where('uuid', 'like', $awalan . '%')
+            ->max(DB::raw('CAST(RIGHT(uuid, 5) AS UNSIGNED)'));
 
-        // Find highest sequence for this month
-        $highestSeq = self::where('uuid', 'like', $pattern)
-            ->get()
-            ->map(fn($inv) => intval(substr($inv->uuid, -5)))
-            ->max() ?? 0;
+        // Lewati nomor yang sudah dipakai — melindungi dari dua permintaan yang
+        // membaca urutan tertinggi yang sama sebelum salah satunya tersimpan.
+        for ($i = $urutanTertinggi + 1; $i <= $urutanTertinggi + 100; $i++) {
+            $kandidat = $awalan . str_pad((string) $i, 5, '0', STR_PAD_LEFT);
 
-        $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
+            if (! static::withTrashed()->where('uuid', $kandidat)->exists()) {
+                return $kandidat;
+            }
+        }
 
-        return '#' . $prefix . '/013' . $datePart . '/' . $newNumber;
+        // Sangat jarang: kembalikan nomor berikutnya dan biarkan unique constraint
+        // yang memutuskan, daripada mengembalikan nomor yang pasti bentrok.
+        return $awalan . str_pad((string) ($urutanTertinggi + 1), 5, '0', STR_PAD_LEFT);
     }
 }

@@ -56,7 +56,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Opcodes\LogViewer\Facades\LogViewer;
 use TomatoPHP\FilamentInvoices\Facades\FilamentInvoices;
-use TomatoPHP\FilamentInvoices\Models\Invoice as TomatoInvoice;
 use TomatoPHP\FilamentInvoices\Services\Contracts\InvoiceFor;
 use TomatoPHP\FilamentInvoices\Services\Contracts\InvoiceFrom;
 

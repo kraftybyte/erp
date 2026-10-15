@@ -2,7 +2,7 @@
 
 namespace App\Filament\Widgets;
 
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use App\Models\Expense;
 use Carbon\Carbon;
 use Filament\Widgets\StatsOverviewWidget\Card;

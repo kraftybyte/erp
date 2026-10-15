@@ -31,6 +31,9 @@ class Transaction extends Model
         'reference_id',
         'transaction_date',
         'category',
+        // Bukti transfer (mis. pengembalian sisa advance). Kolomnya sudah lama ada,
+        // tapi tidak pernah masuk fillable sehingga diam-diam dibuang saat disimpan.
+        'attachment',
     ];
 
     protected $casts = [
@@ -130,7 +133,7 @@ class Transaction extends Model
         }
 
         try {
-            $invoice = \TomatoPHP\FilamentInvoices\Models\Invoice::find($this->reference_id);
+            $invoice = \App\Models\Invoice::find($this->reference_id);
             return $invoice?->uuid;
         } catch (\Exception $e) {
             return null;

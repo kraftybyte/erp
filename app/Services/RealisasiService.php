@@ -389,6 +389,23 @@ class RealisasiService
         }
 
         return DB::transaction(function () use ($advance, $remaining, $attachmentPath) {
+            /*
+            | Cegah pengembalian diproses dua kali.
+            |
+            | getRemainingAmount() dihitung dari (paid - total realisasi); nilainya
+            | tidak berkurang setelah pengembalian dicatat, sehingga syarat
+            | "$remaining > 0" di atas tetap terpenuhi pada pemanggilan kedua.
+            | Satu-satunya penanda yang andal adalah transaksi pengembalian itu sendiri.
+            */
+            $sudahDikembalikan = Transaction::where('reference_type', 'advance_return')
+                ->where('reference_id', $advance->id)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($sudahDikembalikan) {
+                throw new \InvalidArgumentException('Pengembalian untuk advance ini sudah pernah diproses.');
+            }
+
             // Create return transaction
             $transaction = Transaction::create([
                 'payment_account_id' => $advance->payment_account_id,

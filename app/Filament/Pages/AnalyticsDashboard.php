@@ -18,7 +18,7 @@ use Carbon\Carbon;
 use Filament\Pages\Page;
 use Livewire\Attributes\Url;
 use Livewire\WithPagination;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 
 class AnalyticsDashboard extends Page

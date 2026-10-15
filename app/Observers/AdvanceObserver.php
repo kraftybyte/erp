@@ -41,7 +41,7 @@ class AdvanceObserver
         switch ($advance->status) {
 
             // ── 2. Disetujui → notif ke user ──────────────────────
-            case 'Disetujui':
+            case Advance::STATUS_DISETUJUI:
                 NotifHelper::send(
                     $user,
                     'Advance Disetujui ✅',
@@ -53,7 +53,7 @@ class AdvanceObserver
                 break;
 
             // ── 2. Ditolak → notif ke user ────────────────────────
-            case 'Ditolak':
+            case Advance::STATUS_DITOLAK:
                 $alasan = $advance->rejection_reason ? " Alasan: {$advance->rejection_reason}" : '';
                 NotifHelper::send(
                     $user,
@@ -66,7 +66,7 @@ class AdvanceObserver
                 break;
 
             // ── 3. Dibayarkan → notif ke user, minta realisasi ────
-            case 'Dibayarkan':
+            case Advance::STATUS_DIBAYARKAN:
                 $paidBy = $advance->paid_by ? User::find($advance->paid_by) : null;
                 $byName = $paidBy ? trim("{$paidBy->firstname} {$paidBy->lastname}") : 'Finance';
                 $dibayar = 'Rp ' . number_format($advance->paid ?? $advance->amount, 0, ',', '.');
@@ -81,8 +81,10 @@ class AdvanceObserver
                 );
                 break;
 
-            // ── 4. Sudah di-Realisasi User → Finance & Director ───
-            case 'Sudah di-Realisasi User':
+            // ── 4. Sudah direalisasi user → Finance & Director ────
+            // Pakai konstanta, bukan string literal: nilainya pernah berubah
+            // ("Sudah" → "Sedang") dan case ini jadi tidak pernah cocok.
+            case Advance::STATUS_REALIZED_USER:
                 $nama = $user ? trim("{$user->firstname} {$user->lastname}") : 'Seseorang';
 
                 $recipients = User::role(['Finance', 'Director', 'super_admin'])->get()
@@ -99,7 +101,7 @@ class AdvanceObserver
                 break;
 
             // ── 5. Selesai → notif ke user ────────────────────────
-            case 'Selesai':
+            case Advance::STATUS_SELESAI:
                 NotifHelper::send(
                     $user,
                     'Advance Selesai ✅',

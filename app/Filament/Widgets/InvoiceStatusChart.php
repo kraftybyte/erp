@@ -3,7 +3,7 @@
 namespace App\Filament\Widgets;
 
 use Filament\Widgets\ChartWidget;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 
 class InvoiceStatusChart extends ChartWidget
 {

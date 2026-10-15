@@ -4,7 +4,7 @@ namespace App\Filament\Widgets;
 
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Carbon;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use Illuminate\Support\Facades\DB;
 
 class InvoiceRevenueChart extends ChartWidget

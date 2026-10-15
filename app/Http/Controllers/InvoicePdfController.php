@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Settings\GeneralSettings;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 

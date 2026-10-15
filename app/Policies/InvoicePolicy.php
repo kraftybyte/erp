@@ -3,8 +3,11 @@
 namespace App\Policies;
 
 use App\Models\User;
-use App\Models\Invoice;
 use Illuminate\Auth\Access\HandlesAuthorization;
+// Tabel `invoices` dipetakan oleh dua class: App\Models\Invoice (yang dipakai aplikasi)
+// dan model bawaan paket yang menjadi induknya. Type hint diarahkan ke induk agar
+// policy menerima instance mana pun dan tidak melempar TypeError.
+use TomatoPHP\FilamentInvoices\Models\Invoice;
 
 class InvoicePolicy
 {

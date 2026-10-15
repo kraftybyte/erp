@@ -130,91 +130,79 @@ class InvoiceResource extends BaseInvoiceResource
             )
                 ->schema([
 
-                    Forms\Components\Toggle::make(
-                        'is_manual_company'
-                    )
-                        ->label('Input Manual')
-                        ->default(false)
-                        ->live()
-                        ->dehydrated(false),
-
                     /*
                     |--------------------------------------------------------------------------
-                    | COMPANY FROM DEAL - using Deal ID as key (unique)
+                    | PENGISI OTOMATIS DARI DEAL
+                    |--------------------------------------------------------------------------
+                    |
+                    | Hanya alat bantu: memilih Deal akan mengisi field-field di bawah, yang
+                    | tetap bisa disunting. Tidak wajib — invoice hasil convert quotation
+                    | sering tidak punya Deal yang cocok, dan dulu itu membuat form memaksa
+                    | pengguna memilih Deal sebelum bisa menyimpan.
                     |--------------------------------------------------------------------------
                     */
 
                     Forms\Components\Select::make(
                         '_deal_id'
                     )
-                        ->label('Nama PIC')
+                        ->label('Ambil dari Deal')
+                        ->placeholder('Pilih untuk mengisi otomatis (opsional)')
+                        ->helperText('Biarkan kosong bila ingin mengisi sendiri.')
                         ->options(function () {
-                            $options = [];
-                            $deals = Deal::all();
-
-                            foreach ($deals as $deal) {
-                                $namaPic = $deal->nama_pic;
-                                $namaPerusahaan = $deal->nama_perusahaan;
-
-                                // Skip empty values
-                                if (blank($namaPic)) {
-                                    $namaPic = 'Pribadi';
-                                }
-                                if (blank($namaPerusahaan)) {
-                                    $namaPerusahaan = '-';
-                                }
-
-                                // Use Deal ID as key (UNIQUE) to avoid conflicts
-                                $options[$deal->id] = $namaPic . ' (di ' . $namaPerusahaan . ')';
-                            }
-
-                            return $options;
+                            // Hanya kolom yang dipakai, dan dibatasi — Deal::all() memuat
+                            // seluruh tabel ke memory setiap form dibuka.
+                            return Deal::query()
+                                ->select('id', 'nama_pic', 'nama_perusahaan')
+                                ->orderBy('nama_perusahaan')
+                                ->limit(500)
+                                ->get()
+                                ->mapWithKeys(fn ($deal) => [
+                                    $deal->id => (blank($deal->nama_pic) ? 'Pribadi' : $deal->nama_pic)
+                                        . ' (di ' . (blank($deal->nama_perusahaan) ? '-' : $deal->nama_perusahaan) . ')',
+                                ]);
                         })
                         ->searchable()
                         ->live()
-                        ->hidden(
-                            fn ($get) => $get('is_manual_company')
-                        )
-                        ->required(
-                            fn ($get) => !$get('is_manual_company')
-                        )
+                        ->dehydrated(false)
                         ->afterStateUpdated(
                             function ($state, callable $set) {
-                                // State is Deal ID
                                 $deal = Deal::find($state);
 
                                 if ($deal) {
-                                    // Switch to Deal mode
-                                    $set('is_manual_company', false);
-
-                                    // Set all company fields from Deal
-                                    $set('nama_perusahaan', $deal->nama_perusahaan ?? '-');
-                                    $set('nama_pic', $deal->nama_pic ?? '-');
+                                    $set('nama_perusahaan', $deal->nama_perusahaan);
+                                    $set('nama_pic', $deal->nama_pic);
                                     $set('telephone', $deal->telephone ?? '');
                                     $set('alamat', $deal->alamat ?? '');
                                 }
                             }
-                        ),
+                        )
+                        ->columnSpanFull(),
 
                     /*
                     |--------------------------------------------------------------------------
-                    | MANUAL COMPANY
+                    | DATA PELANGGAN
+                    |--------------------------------------------------------------------------
+                    |
+                    | Field-field ini sebelumnya memakai dehydrated(false), sehingga apa pun
+                    | yang diketik pengguna dibuang sebelum sampai ke database — nama invoice
+                    | tidak pernah berubah betapa pun seringnya diisi ulang. Keduanya juga
+                    | disembunyikan kecuali toggle "Input Manual" menyala, sehingga nama yang
+                    | ikut terbawa dari quotation tidak terlihat sama sekali.
                     |--------------------------------------------------------------------------
                     */
 
                     Forms\Components\TextInput::make(
                         'nama_perusahaan'
                     )
+                        ->label('Nama Perusahaan')
+                        ->required()
+                        ->maxLength(255),
+
+                    Forms\Components\TextInput::make(
+                        'nama_pic'
+                    )
                         ->label('Nama PIC')
-                        ->dehydrated(false)
-                        ->hidden(
-                            fn ($get) =>
-                                ! $get('is_manual_company')
-                        )
-                        ->required(
-                            fn ($get) =>
-                                $get('is_manual_company')
-                        ),
+                        ->maxLength(100),
 
                     Forms\Components\TextInput::make(
                         'telephone'
@@ -229,16 +217,6 @@ class InvoiceResource extends BaseInvoiceResource
                         ->label('Alamat')
                         ->rows(2)
                         ->columnSpanFull(),
-
-                    Forms\Components\TextInput::make(
-                        'nama_pic'
-                    )
-                        ->label('Nama PIC')
-                        ->maxLength(100)
-                        ->dehydrated(false)
-                        ->hidden(
-                            fn ($get) => !$get('is_manual_company')
-                        ),
 
                 ])
                 ->columns([
@@ -1158,6 +1136,47 @@ class InvoiceResource extends BaseInvoiceResource
        TABLE
     ========================================================= */
 
+    /**
+     * Cache pencarian Deal selama satu request.
+     *
+     * @var array<string, \App\Models\Deal|null>
+     */
+    protected static array $cacheDeal = [];
+
+    /**
+     * Pencarian Deal cadangan untuk invoice yang tidak menyimpan deal_id.
+     *
+     * Relasi invoice↔deal masih bersandar pada kecocokan nama, jadi hasilnya
+     * disimpan per-request agar perusahaan yang sama tidak dicari berulang
+     * untuk tiap baris tabel.
+     */
+    protected static function cariDealCadangan(?string $namaPerusahaan, ?string $namaPic): ?Deal
+    {
+        $kunci = $namaPerusahaan . '|' . $namaPic;
+
+        if (array_key_exists($kunci, static::$cacheDeal)) {
+            return static::$cacheDeal[$kunci];
+        }
+
+        $deal = Deal::query()
+            ->where('nama_perusahaan', $namaPerusahaan)
+            ->when(filled($namaPic), fn ($query) => $query->orderByRaw(
+                'CASE WHEN nama_pic = ? THEN 0 ELSE 1 END',
+                [$namaPic]
+            ))
+            ->latest('id')
+            ->first();
+
+        return static::$cacheDeal[$kunci] = $deal;
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        // Kolom "Customer / PIC" membaca $record->deal; tanpa eager load di sini
+        // tiap baris memicu query sendiri.
+        return parent::getEloquentQuery()->with('deal');
+    }
+
     public static function table(
         Table $table
     ): Table {
@@ -1267,29 +1286,24 @@ class InvoiceResource extends BaseInvoiceResource
 
                             /*
                             |--------------------------------------------------------------------------
-                            | CARI DEAL via deal_id
+                            | CARI DEAL
+                            |--------------------------------------------------------------------------
+                            |
+                            | Sebelumnya blok ini menjalankan sampai 3 query untuk SETIAP baris
+                            | tabel (50 baris ≈ 150 query). Sekarang:
+                            |   1. deal_id dilayani relasi yang sudah di-eager load (0 query)
+                            |   2. pencarian cadangan disimpan di cache per-request, sehingga
+                            |      perusahaan yang muncul berkali-kali hanya dicari sekali
                             |--------------------------------------------------------------------------
                             */
 
-                            $deal = null;
+                            $deal = $record->deal_id ? $record->deal : null;
 
-                            // First, try to find via deal_id (most accurate)
-                            if ($record->deal_id) {
-                                $deal = Deal::find($record->deal_id);
-                            }
-
-                            // Fallback: find by nama_perusahaan AND nama_pic
-                            if (!$deal) {
-                                $deal = Deal::where('nama_perusahaan', $record->nama_perusahaan)
-                                    ->where('nama_pic', $record->nama_pic)
-                                    ->first();
-                            }
-
-                            // Last fallback: just by nama_perusahaan
-                            if (!$deal) {
-                                $deal = Deal::where('nama_perusahaan', $record->nama_perusahaan)
-                                    ->latest('id')
-                                    ->first();
+                            if (! $deal && filled($record->nama_perusahaan)) {
+                                $deal = static::cariDealCadangan(
+                                    $record->nama_perusahaan,
+                                    $record->nama_pic
+                                );
                             }
 
                             /*
@@ -1395,12 +1409,11 @@ class InvoiceResource extends BaseInvoiceResource
 
                                 if ($percentage > 0) {
 
-                                    // DP amount = grand_total (full price) × percentage
-                                    $dpAmount = (float) $record->grand_total * ($percentage / 100);
-
+                                    // Nominal yang ditagihkan lewat invoice DP ini —
+                                    // satu sumber dengan PDF dan modal pembayaran.
                                     return 'DP ' . $percentage . '% • Rp ' .
                                         number_format(
-                                            $dpAmount,
+                                            $record->amountDue(),
                                             0,
                                             ',',
                                             '.'
@@ -2582,42 +2595,44 @@ class InvoiceResource extends BaseInvoiceResource
                 Tables\Actions\Action::make(
                     'pay'
                 )
-                    ->hidden(
-                        fn ($record) =>
-
-                            (
-                                $record->grand_total ===
-                                $record->paid
-                            )
-                            ||
-                            $record->status ===
-                            'paid'
-                            ||
-                            $record->status ===
-                            'estimate'
-                    )
+                    // Visibilitas diatur sekali saja di akhir rantai: hidden() yang dipanggil
+                    // dua kali membuat yang pertama tertimpa dan tidak pernah berlaku.
                     ->requiresConfirmation()
                     ->iconButton()
                     ->color('info')
                     ->fillForm(
                         function ($record) {
 
-                            $typePayment = $record->type_payment ?? 'full_payment';
+                            /*
+                            |------------------------------------------------------------
+                            | NOMINAL YANG DITAGIHKAN
+                            |------------------------------------------------------------
+                            |
+                            | Untuk invoice DP, yang ditagih adalah uang mukanya —
+                            | persentase dari harga penuh — bukan seluruh grand_total.
+                            | Sebelumnya modal ini berlabel "DP 20% Amount" tetapi
+                            | mengisi nominalnya dengan harga penuh, sehingga angka di
+                            | layar tidak cocok dengan yang tercetak di invoice.
+                            |------------------------------------------------------------
+                            */
+
                             $grandTotal = (float) $record->grand_total;
                             $paid = (float) $record->paid;
-                            $amount = max($grandTotal - $paid, 0);
+                            $persenDp = $record->dpPercentage();
 
-                            $typeLabel = match ($typePayment) {
-                                'full_payment' => 'Full Payment Amount',
-                                'final_payment' => 'Final Payment Amount',
-                                default => (str_starts_with($typePayment, 'dp_')
-                                    ? 'DP ' . (int) str_replace('dp_', '', $typePayment) . '% Amount'
-                                    : 'Amount'),
-                            };
+                            $ditagihkan = $record->amountDue();
+                            $amount = max($ditagihkan - $paid, 0);
+
+                            $typeLabel = $persenDp !== null
+                                ? 'DP ' . $persenDp . '% Amount'
+                                : match ($record->type_payment) {
+                                    'final_payment' => 'Final Payment Amount',
+                                    default => 'Full Payment Amount',
+                                };
 
                             return [
                                 'total_label' => $typeLabel,
-                                'grand_total' => $grandTotal,
+                                'grand_total' => $ditagihkan,
                                 'paid' => $paid,
                                 'amount' => $amount,
                             ];
@@ -2684,8 +2699,10 @@ class InvoiceResource extends BaseInvoiceResource
                                 fn ($get) => 'Sisa yang harus dibayar: Rp ' . number_format((float) ($get('grand_total') ?? 0) - (float) ($get('paid') ?? 0), 0, ',', '.')
                             )
                             ->numeric()
+                            // Untuk invoice DP, sisanya dihitung dari uang muka yang
+                            // ditagihkan, bukan dari harga penuh pekerjaan.
                             ->default(
-                                fn ($record) => max((float) $record->grand_total - (float) $record->paid, 0)
+                                fn ($record) => max($record->amountDue() - (float) $record->paid, 0)
                             ),
 
                     ])
@@ -2701,9 +2718,22 @@ class InvoiceResource extends BaseInvoiceResource
                                     $record
                                 ) {
 
+                                    /*
+                                    |--------------------------------------------------------------------------
+                                    | NOMINAL YANG DITAGIHKAN
+                                    |--------------------------------------------------------------------------
+                                    |
+                                    | Untuk invoice DP, tagihannya adalah uang muka — bukan
+                                    | grand_total yang menyimpan harga penuh pekerjaan. Memakai
+                                    | grand_total di sini membuat invoice DP tidak pernah bisa
+                                    | berstatus lunas sampai klien membayar seluruh pekerjaan.
+                                    |--------------------------------------------------------------------------
+                                    */
+
+                                    $ditagihkan = $record->amountDue();
+
                                     $remainingAmount =
-                                        $record
-                                            ->grand_total
+                                        $ditagihkan
                                         -
                                         $record
                                             ->paid;
@@ -2744,33 +2774,29 @@ class InvoiceResource extends BaseInvoiceResource
                                     */
 
                                     $newStatus =
-                                        $newPaidAmount >=
-                                        $record
-                                            ->grand_total
+                                        $newPaidAmount >= $ditagihkan
                                             ? 'paid'
                                             : 'partial';
 
                                     /*
                                     |--------------------------------------------------------------------------
-                                    | UPDATE NOTES WITH DP INFO
+                                    | CATATAN DP
+                                    |--------------------------------------------------------------------------
+                                    |
+                                    | Dicatat sebagai keterangan yang terbaca manusia. Angka yang
+                                    | dipakai PDF pelunasan diambil dari parent_invoice_id, bukan
+                                    | dari teks ini.
                                     |--------------------------------------------------------------------------
                                     */
 
-                                    $updateNotes = false;
-                                    $dpPercentage = 0;
+                                    $dpPercentage = $record->dpPercentage();
 
-                                    // Check if this is a DP invoice and just became paid
-                                    if ($record->type_payment && str_starts_with($record->type_payment, 'dp_')) {
-                                        $dpPercentage = (int) str_replace('dp_', '', $record->type_payment);
-                                        // If this is the first time becoming paid (wasn't paid before)
-                                        if ($newStatus === 'paid' && $record->paid < $record->grand_total) {
-                                            $updateNotes = true;
-                                        }
-                                    }
-
-                                    // Build notes update
                                     $notesUpdate = null;
-                                    if ($updateNotes && $dpPercentage > 0) {
+                                    if (
+                                        $dpPercentage !== null
+                                        && $newStatus === 'paid'
+                                        && $record->paid < $ditagihkan
+                                    ) {
                                         $notesUpdate = "DP: {$dpPercentage}% - Rp " . number_format($newPaidAmount, 0, ',', '.') . "\n";
                                     }
 
@@ -2831,14 +2857,6 @@ class InvoiceResource extends BaseInvoiceResource
                                         $paymentAccount
                                     ) {
 
-                                        $paymentAccount
-                                            ->decrement(
-                                                'current_balance',
-                                                $data[
-                                                    'amount'
-                                                ]
-                                            );
-
                                         /*
                                         |--------------------------------------------------------------------------
                                         | CREATE TRANSACTION (PEMASUKAN)
@@ -2847,13 +2865,34 @@ class InvoiceResource extends BaseInvoiceResource
 
                                         Transaction::create([
                                             'payment_account_id' => $data['payment_account_id'],
-                                            'user_id' => auth()->id(),
+                                            // Kolomnya bernama created_by, bukan user_id — nilai
+                                            // yang dikirim ke kolom yang tidak ada akan dibuang
+                                            // mass assignment tanpa peringatan.
+                                            'created_by' => auth()->id(),
                                             'type' => 'in',
                                             'category' => 'invoice',
                                             'amount' => $data['amount'],
+                                            // Agar transaksi bisa ditelusuri balik ke invoicenya,
+                                            // sama seperti advance dan expense.
+                                            'reference_type' => 'invoice',
+                                            'reference_id' => $record->id,
                                             'transaction_date' => now(),
                                             'description' => 'Pembayaran Invoice ' . $record->uuid . ' dari ' . ($record->nama_perusahaan ?? '-'),
                                         ]);
+
+                                        /*
+                                        |--------------------------------------------------------------------------
+                                        | SYNC SALDO
+                                        |--------------------------------------------------------------------------
+                                        |
+                                        | Pembayaran invoice = uang MASUK, jadi saldo naik.
+                                        | Dihitung ulang dari transaksi (initial + in - out) agar
+                                        | current_balance tidak pernah menyimpang dari mutasi.
+                                        |--------------------------------------------------------------------------
+                                        */
+
+                                        $paymentAccount
+                                            ->syncBalanceFromTransactions();
                                     }
 
                                     /*
@@ -2942,26 +2981,29 @@ class InvoiceResource extends BaseInvoiceResource
                             'filament-invoices::messages.invoices.actions.pay.label'
                         )
                     )
+                    /*
+                    |--------------------------------------------------------------------------
+                    | VISIBILITAS TOMBOL BAYAR
+                    |--------------------------------------------------------------------------
+                    |
+                    | Perbandingan nominal harus numerik. grand_total dibaca dari MySQL
+                    | sebagai string ("1110000.00") sedangkan paid berupa float, sehingga
+                    | perbandingan identik (===) selalu false dan tombol tetap muncul pada
+                    | invoice yang sudah lunas.
+                    |--------------------------------------------------------------------------
+                    */
                     ->hidden(
                         fn ($record) =>
 
-                            $record->type !==
-                            'sale'
+                            $record->type !== 'sale'
 
                             ||
 
-                            (
-                                $record
-                                    ->grand_total ===
-                                $record
-                                    ->paid
-                            )
+                            (float) $record->paid >= $record->amountDue()
 
                             ||
 
-                            $record
-                                ->status ===
-                            'paid'
+                            in_array($record->status, ['paid', 'cancelled'], true)
                     ),
 
                 /*

@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\PaymentAccount;
 use App\Models\Transaction;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use TomatoPHP\FilamentInvoices\Models\InvoiceMeta;
 use Illuminate\Console\Command;
 

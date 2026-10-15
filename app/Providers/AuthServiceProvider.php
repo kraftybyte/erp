@@ -25,8 +25,10 @@ class AuthServiceProvider extends ServiceProvider
      * @var array<class-string, class-string>
      */
     protected $policies = [
+        // Tabel `invoices` dipetakan oleh dua class. Keduanya didaftarkan supaya
+        // Gate menemukan policy dari sisi mana pun pemanggilnya datang.
         \TomatoPHP\FilamentInvoices\Models\Invoice::class => \App\Policies\InvoicePolicy::class,
-        Invoice::class => InvoicePolicy::class,
+        \App\Models\Invoice::class => \App\Policies\InvoicePolicy::class,
     ];
 
     /**
@@ -39,6 +41,7 @@ class AuthServiceProvider extends ServiceProvider
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(Permission::class, PermissionPolicy::class);
         Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(\App\Models\Invoice::class, InvoicePolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
         Gate::policy(Exception::class, ExceptionPolicy::class);
 

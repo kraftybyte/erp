@@ -8,6 +8,7 @@ use TomatoPHP\FilamentInvoices\Models\InvoicesItem as BaseInvoicesItem;
  * Extended InvoicesItem model with original_price support
  *
  * @property float|null $original_price
+ * @property float|null $vat_percentage
  */
 class InvoicesItem extends BaseInvoicesItem
 {
@@ -22,6 +23,7 @@ class InvoicesItem extends BaseInvoicesItem
         'qty',
         'price',
         'discount',
+        'vat_percentage',
         'vat',
         'total',
         'returned_qty',
@@ -39,5 +41,6 @@ class InvoicesItem extends BaseInvoicesItem
         'is_returned' => 'bool',
         'options' => 'json',
         'original_price' => 'float',
+        'vat_percentage' => 'float',
     ];
 }

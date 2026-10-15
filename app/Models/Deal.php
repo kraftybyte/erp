@@ -8,7 +8,7 @@ use App\Models\Product;
 use App\Models\Task;
 use App\Models\Leads;
 use App\Models\Project;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 
 
 class Deal extends Model
@@ -57,14 +57,26 @@ class Deal extends Model
         );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Invoice & Quotation ditautkan lewat deal_id, bukan nama perusahaan.
+    |--------------------------------------------------------------------------
+    |
+    | Sebelumnya keduanya dicocokkan lewat kolom nama_perusahaan. Tautan seperti
+    | itu putus begitu nama perusahaan diubah, dan mencampur data begitu ada dua
+    | Deal yang namanya sama. deal_id sudah di-backfill lewat migration dan kini
+    | selalu diisi saat invoice/quotation dibuat.
+    |--------------------------------------------------------------------------
+    */
+
     public function invoices()
     {
-        return $this->hasMany(Invoice::class, 'nama_perusahaan', 'nama_perusahaan');
+        return $this->hasMany(Invoice::class, 'deal_id');
     }
 
     public function quotations()
     {
-        return $this->hasMany(Quotation::class, 'nama_perusahaan', 'nama_perusahaan');
+        return $this->hasMany(Quotation::class, 'deal_id');
     }
 
     public function contracts()

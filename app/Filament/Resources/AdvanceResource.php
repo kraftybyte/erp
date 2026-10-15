@@ -272,6 +272,29 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                         $currentUser = Auth::user();
 
                         DB::transaction(function () use ($record, $data, $currentUser) {
+                            /*
+                            | Kunci baris advance-nya, lalu baca ulang statusnya dari database.
+                            | Tombol memang sudah disembunyikan lewat hidden(), tapi itu hanya
+                            | berlaku saat halaman di-render: dua orang yang membuka daftar
+                            | bersamaan sama-sama melihat tombolnya. Tanpa pemeriksaan di sini,
+                            | klik kedua tetap diproses dan advance terbayar dua kali.
+                            */
+                            $advance = Advance::lockForUpdate()->find($record->id);
+
+                            if (!$advance) {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => 'Pengajuan tidak ditemukan.',
+                                ]);
+                            }
+
+                            if ($advance->status !== 'Disetujui') {
+                                throw ValidationException::withMessages([
+                                    'payment_account_id' => $advance->status === 'Dibayarkan'
+                                        ? 'Pengajuan ini sudah dibayarkan.'
+                                        : "Pengajuan berstatus \"{$advance->status}\" dan tidak bisa dibayarkan.",
+                                ]);
+                            }
+
                             // Get payment account with pessimistic locking
                             $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
                             if (!$account) {
@@ -280,13 +303,12 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                                 ]);
                             }
 
-                            // Check balance using getBalance() method
-                            $availableBalance = $account->getBalance();
-                            if ($availableBalance < (float) $data['paid']) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Saldo tidak mencukupi. Sisa: Rp ' . number_format($availableBalance, 0, ',', '.'),
-                                ]);
-                            }
+                            /*
+                            | Saldo rekening sengaja TIDAK dijadikan penghalang: pembayaran
+                            | boleh melebihi saldo tercatat (budget longgar). Saldo tetap
+                            | disinkronkan setelah transaksi, sehingga nilainya bisa minus
+                            | dan selisihnya terlihat apa adanya.
+                            */
 
                             // Create transaction record
                             Transaction::create([
@@ -327,11 +349,18 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                             ->label('Nominal yang Dibayarkan')
                             ->numeric()
                             ->required()
+                            ->minValue(1)
+                            // Batas atas mengikuti nominal yang diajukan. Pesan errornya sudah
+                            // ada sejak awal, tapi aturannya tidak pernah terpasang.
+                            ->maxValue(fn($record) => (float) $record->amount)
                             ->prefix('Rp')
                             ->default(fn($record) => $record->amount)
+                            ->helperText(fn($record) => 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
                             ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
+                                'max' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
+                                'min' => 'Nominal yang dibayarkan harus lebih dari nol.',
                             ]),
                         Forms\Components\TextInput::make('reference_number')
                             ->label('Nomor Referensi')

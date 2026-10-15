@@ -16,8 +16,8 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;
 use Filament\Notifications\Notification;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
-use TomatoPHP\FilamentInvoices\Models\InvoicesItem;
+use App\Models\Invoice;
+use App\Models\InvoicesItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -41,20 +41,12 @@ class QuotationResource extends Resource
        UUID GENERATOR
     =============================== */
 
-    public static function generateUuid(): string
-    {
-        $prefix = '#DG/';
-        $datePart = now()->format('my') . '/';
-
-        $lastQuotation = Quotation::where('uuid', 'like', $prefix . $datePart . '%')
-            ->latest('id')
-            ->first();
-
-        $lastNumber = $lastQuotation ? intval(substr($lastQuotation->uuid, -5)) : 0;
-        $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-
-        return $prefix . $datePart . $newNumber;
-    }
+    /*
+    | Generator nomor quotation ada di Quotation::generateUuid() — itu yang
+    | dipakai form. Versi yang dulu berdiri di sini tidak pernah dipanggil dan
+    | formatnya pun berbeda (#DG/1026/… alih-alih #DG/0132610/…), jadi dihapus
+    | agar tidak ada dua sumber penomoran yang saling bertentangan.
+    */
 
     /* ===============================
        FORM
@@ -89,72 +81,110 @@ class QuotationResource extends Resource
 
             Forms\Components\Section::make('Company Information')
                 ->schema([
-                    Forms\Components\Select::make('nama_perusahaan')
-                    ->label('Nama Klien')
-                    ->options(function () {
-                        $options = [];
 
-                        // Dari Leads
-                        $leads = \App\Models\Leads::select('nama_perusahaan', 'nama_pic')
-                            ->orderBy('nama_perusahaan')
-                            ->get();
+                    /*
+                    |--------------------------------------------------------------------------
+                    | PENGISI OTOMATIS
+                    |--------------------------------------------------------------------------
+                    |
+                    | Dropdown ini hanya alat bantu dan tidak ikut disimpan.
+                    |
+                    | Sebelumnya dropdown-nya menempel langsung pada kolom nama_perusahaan
+                    | dengan nilai gabungan "Perusahaan|PIC", lalu menimpa dirinya sendiri
+                    | dengan nama perusahaan saja. Akibatnya nilai tersimpan tidak pernah
+                    | cocok dengan daftar opsi, sehingga setiap kali quotation dibuka
+                    | kembali field wajib ini tampil kosong dan harus dipilih ulang.
+                    |--------------------------------------------------------------------------
+                    */
 
-                        foreach ($leads as $lead) {
-                            $key = $lead->nama_perusahaan . '|' . ($lead->nama_pic ?? '-');
-                            $options[$key] = $lead->nama_perusahaan . ' — ' . ($lead->nama_pic ?? '-');
-                        }
+                    Forms\Components\Select::make('_kontak')
+                        ->label('Ambil dari Leads / Deal')
+                        ->placeholder('Pilih untuk mengisi otomatis (opsional)')
+                        ->helperText('Biarkan kosong bila ingin mengisi sendiri.')
+                        ->options(function () {
+                            $options = [];
 
-                        // Dari Deal
-                        $deals = \App\Models\Deal::select('nama_perusahaan', 'nama_pic')
-                            ->orderBy('nama_perusahaan')
-                            ->get();
+                            $tambah = function ($baris) use (&$options) {
+                                $perusahaan = $baris->nama_perusahaan;
+                                $pic = $baris->nama_pic ?: '-';
 
-                        foreach ($deals as $deal) {
-                            $key = $deal->nama_perusahaan . '|' . ($deal->nama_pic ?? '-');
-                            if (!isset($options[$key])) {
-                                $options[$key] = $deal->nama_perusahaan . ' — ' . ($deal->nama_pic ?? '-');
+                                if (blank($perusahaan)) {
+                                    return;
+                                }
+
+                                $key = $perusahaan . '|' . $pic;
+                                $options[$key] ??= $perusahaan . ' — ' . $pic;
+                            };
+
+                            \App\Models\Leads::select('nama_perusahaan', 'nama_pic')
+                                ->orderBy('nama_perusahaan')
+                                ->limit(500)
+                                ->get()
+                                ->each($tambah);
+
+                            \App\Models\Deal::select('nama_perusahaan', 'nama_pic')
+                                ->orderBy('nama_perusahaan')
+                                ->limit(500)
+                                ->get()
+                                ->each($tambah);
+
+                            ksort($options);
+
+                            return $options;
+                        })
+                        ->searchable()
+                        ->live()
+                        ->dehydrated(false)
+                        ->afterStateUpdated(function ($state, callable $set) {
+                            if (blank($state)) {
+                                return;
                             }
-                        }
 
-                        ksort($options);
-                        return $options;
-                    })
-                    ->searchable()
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, callable $set) {
-                        // Parse key: "nama_perusahaan|nama_pic"
-                        $parts = explode('|', $state);
-                        $namaPerusahaan = $parts[0] ?? '';
-                        $namaPic = $parts[1] ?? '-';
+                            [$namaPerusahaan, $namaPic] = array_pad(explode('|', $state, 2), 2, '-');
 
-                        // Simpan HANYA nama perusahaan, bukan key lengkap
-                        $set('nama_perusahaan', $namaPerusahaan);
-                        $set('nama_pic', $namaPic);
+                            $set('nama_perusahaan', $namaPerusahaan);
+                            $set('nama_pic', $namaPic === '-' ? null : $namaPic);
 
-                        // Ambil data lengkap dari Leads atau Deal
-                        $lead = \App\Models\Leads::where('nama_perusahaan', $namaPerusahaan)
-                            ->where('nama_pic', $namaPic)
-                            ->first();
+                            $kontak = \App\Models\Leads::where('nama_perusahaan', $namaPerusahaan)
+                                ->where('nama_pic', $namaPic)
+                                ->first()
+                                ?? \App\Models\Deal::where('nama_perusahaan', $namaPerusahaan)
+                                    ->where('nama_pic', $namaPic)
+                                    ->first();
 
-                        $deal = $lead ? null : \App\Models\Deal::where('nama_perusahaan', $namaPerusahaan)
-                            ->where('nama_pic', $namaPic)
-                            ->first();
+                            $set('telephone', $kontak->telephone ?? null);
+                            $set('email', $kontak->email ?? null);
+                        })
+                        ->columnSpanFull(),
 
-                        $contact = $lead ?? $deal;
+                    /*
+                    |--------------------------------------------------------------------------
+                    | DATA KLIEN
+                    |--------------------------------------------------------------------------
+                    |
+                    | Field sungguhan: terisi otomatis saat dropdown dipilih, tetap bisa
+                    | disunting, dan tampil apa adanya saat quotation dibuka kembali.
+                    |--------------------------------------------------------------------------
+                    */
 
-                        if ($contact) {
-                            $set('telephone', $contact->telephone ?? '-');
-                            $set('email', $contact->email ?? '-');
-                        } else {
-                            $set('telephone', '-');
-                            $set('email', '-');
-                        }
-                    })
-                    ->required(),
+                    Forms\Components\TextInput::make('nama_perusahaan')
+                        ->label('Nama Klien')
+                        ->required()
+                        ->maxLength(255),
 
-                    Forms\Components\TextInput::make('telephone'),
-                    Forms\Components\TextInput::make('nama_pic'),
-                    Forms\Components\TextInput::make('email'),
+                    Forms\Components\TextInput::make('nama_pic')
+                        ->label('Nama PIC')
+                        ->maxLength(255),
+
+                    Forms\Components\TextInput::make('telephone')
+                        ->label('Telephone')
+                        ->tel()
+                        ->maxLength(50),
+
+                    Forms\Components\TextInput::make('email')
+                        ->label('Email')
+                        ->email()
+                        ->maxLength(255),
                 ])
                 ->columns(2),
 
@@ -399,39 +429,43 @@ class QuotationResource extends Resource
                     ->hidden(fn($record) => $record->status === 'Converted')
                     ->action(function (Quotation $record) {
 
-                        $deal = Deal::where(
-                            'nama_perusahaan',
-                            $record->nama_perusahaan
-                        )->first();
+                        /*
+                        | Utamakan tautan yang sudah tersimpan di quotation; kecocokan
+                        | nama hanya dipakai bila quotation lama belum punya deal_id.
+                        | Mencocokkan nama perusahaan saja bisa menarik Deal milik PIC
+                        | yang berbeda ketika satu perusahaan punya beberapa Deal.
+                        */
+                        $deal = $record->deal_id
+                            ? Deal::find($record->deal_id)
+                            : Deal::where('nama_perusahaan', $record->nama_perusahaan)
+                                ->when(
+                                    filled($record->nama_pic),
+                                    fn ($query) => $query->orderByRaw(
+                                        'CASE WHEN nama_pic = ? THEN 0 ELSE 1 END',
+                                        [$record->nama_pic]
+                                    )
+                                )
+                                ->first();
 
                         /* ========= DB TRANSACTION ========= */
-                        \DB::transaction(function () use ($record, $deal) {
+                        DB::transaction(function () use ($record, $deal) {
 
                             /* ========= GENERATE PROFORMA UUID (inside transaction, locked) ========= */
-                            $settings = app(GeneralSettings::class);
-                            $datePart = now()->format('my'); // Format: MMYY (bulan dulu, baru tahun)
-
-                            // Determine prefix based on type
-                            $invoiceType = 'estimate';
-                            $prefix = match ($invoiceType) {
-                                'estimate' => 'PI',
-                                'sale' => $settings->invoice_prefix ?? 'INV',
-                                default => $settings->invoice_prefix ?? 'INV',
-                            };
-
-                            // Get highest sequence number by TYPE and MONTH
-                            // Format: #PREFIX/013MMYY/XXXXX
-                            // Filter by prefix (type) AND current month
-                            $monthPattern = $prefix . '/013' . $datePart . '/';
-
-                            $highestSeq = Invoice::where('uuid', 'like', '#' . $monthPattern . '%')
-                                ->lockForUpdate() // kunci baris yang cocok agar tidak ada race condition saat convert bersamaan
-                                ->get()
-                                ->map(fn($inv) => intval(substr($inv->uuid, -5)))
-                                ->max() ?? 0;
-
-                            $newNumber = str_pad($highestSeq + 1, 5, '0', STR_PAD_LEFT);
-                            $uuid = '#' . $monthPattern . $newNumber;
+                            /*
+                            |--------------------------------------------------------------------------
+                            | NOMOR INVOICE
+                            |--------------------------------------------------------------------------
+                            |
+                            | Dulu blok ini menyusun nomornya sendiri dengan format tanggal 'my'
+                            | (MMYY), sementara Invoice::generateUuid() memakai 'ym' (YYMM). Untuk
+                            | bulan yang sama keduanya menghasilkan pola berbeda — mis. Juli 2026
+                            | menjadi 0132607 dan 0130726 — sehingga penomoran terpecah dua seri
+                            | dan nomor urut yang sama terpakai dua kali dalam satu periode.
+                            |
+                            | Sekarang keduanya memakai satu sumber yang sama.
+                            |--------------------------------------------------------------------------
+                            */
+                            $uuid = Invoice::generateUuid('estimate');
 
                             $invoice = Invoice::create([
                                 'uuid'            => $uuid,

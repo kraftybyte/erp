@@ -5,7 +5,7 @@ namespace App\Filament\Widgets;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 
 class RecentInvoicesTable extends BaseWidget
 {

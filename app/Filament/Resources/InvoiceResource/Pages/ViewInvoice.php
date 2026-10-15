@@ -32,24 +32,14 @@ class ViewInvoice extends ViewRecord
         // Eager load invoicesItems relationship for view
         $this->record->load('invoicesItems');
 
-        // Find matching Deal based on nama_perusahaan and nama_pic
-        $deal = Deal::where('nama_perusahaan', $this->record->nama_perusahaan)
-            ->where('nama_pic', $this->record->nama_pic)
-            ->first();
-
-        // Set _deal_id for display purposes
-        $data['_deal_id'] = $deal?->id;
-
-        // If deal found, use Deal's data
-        if ($deal) {
-            $data['is_manual_company'] = false;
-            $data['nama_perusahaan'] = $deal->nama_perusahaan ?? '-';
-            $data['nama_pic'] = $deal->nama_pic ?? '-';
-            $data['telephone'] = $deal->telephone ?? '';
-            $data['alamat'] = $deal->alamat ?? '';
-        } else {
-            $data['is_manual_company'] = true;
-        }
+        /*
+        | Halaman tampilan harus menunjukkan apa yang tercetak di invoice.
+        |
+        | Sebelumnya nama di sini diganti dengan nama Deal yang kebetulan cocok,
+        | sehingga layar bisa menampilkan nama yang berbeda dari yang tertulis di
+        | PDF yang sudah dikirim ke klien.
+        */
+        $data['_deal_id'] = $this->record->deal_id;
 
         return $data;
     }

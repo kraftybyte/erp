@@ -5,7 +5,7 @@ namespace App\Services;
 
 
 use Carbon\Carbon;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 use App\Models\Expense;
 use App\Models\Advance;
 use App\Models\Leads;

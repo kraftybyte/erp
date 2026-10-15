@@ -19,36 +19,42 @@
     $logoPath = $settings['logo'] ?? null;
 
     // ============================================================
-    // CALCULATION - Hitung dari items untuk konsistensi
+    // CALCULATION
     // ============================================================
-    $calcTotalVat = 0;        // SUM((price * qty - discount * qty) * vat%)
-    $calcTotalDiscount = 0;   // SUM(discount * qty)
-    $calcSubTotal = 0;        // SUM(price * qty) - HARGA ASLI sebelum diskon
-    $calcGrandTotal = 0;      // Sub Total + Total VAT
+    //
+    // Rumus per baris: (price * qty) - discount + PPN
+    //
+    // discount adalah nilai TOTAL per baris, bukan per unit — sama seperti form
+    // quotation, form invoice, dan PDF invoice. Sebelumnya berkas ini sendirian
+    // memakai rumus berbeda: diskon dikalikan qty, lalu Grand Total disusun dari
+    // (price * qty) + PPN tanpa memotong diskon sama sekali. Akibatnya PDF
+    // mencantumkan "Total Diskon" tetapi angkanya tidak pernah dikurangkan,
+    // sehingga quotation dan invoice untuk pekerjaan yang sama mencetak nilai
+    // yang berbeda.
+    //
+    // Pembacaan original_price juga dihapus: kolom itu tidak pernah ada di tabel
+    // quotation_items, jadi nilainya selalu jatuh ke price.
+    //
+    $calcTotalVat = 0;        // SUM((price * qty - discount) * vat%)
+    $calcTotalDiscount = 0;   // SUM(discount)
+    $calcSubTotal = 0;        // SUM(price * qty)
+    $calcGrandTotal = 0;      // SUM((price * qty - discount) + vat)
 
     foreach ($quotation->items as $item) {
         $price = (float) ($item->price ?? 0);
         $qty = (float) ($item->qty ?? 1);
-        $discount = (float) ($item->discount ?? 0);
+        $discount = (float) ($item->discount ?? 0);  // Discount TOTAL per baris
         $vatPercentage = (float) ($item->vat_percentage ?? 0);
-        // original_price: harga sebelum DP (untuk tampilkan di subtotal)
-        $originalPrice = (float) ($item->original_price ?? $item->price ?? 0);
 
-        // Sub Total pakai harga asli (sebelum DP)
-        $itemSubTotal = $originalPrice * $qty;
-        // Discount per item
-        $itemDiscount = $discount * $qty;
-        // Setelah diskon
-        $itemAfterDiscount = $itemSubTotal - $itemDiscount;
-        // VAT dari harga setelah diskon
+        $itemSubTotal = $price * $qty;
+        $itemAfterDiscount = max($itemSubTotal - $discount, 0);
         $itemVat = $itemAfterDiscount * ($vatPercentage / 100);
-        // Total per item (harga saat ini = price * qty, bukan original)
-        $itemCurrentTotal = ($price * $qty) + $itemVat;
+        $itemTotal = $itemAfterDiscount + $itemVat;
 
-        $calcTotalDiscount += $itemDiscount;
-        $calcSubTotal += $itemSubTotal;  // HARGA ASLI (sebelum diskon)
+        $calcTotalDiscount += $discount;
+        $calcSubTotal += $itemSubTotal;
         $calcTotalVat += $itemVat;
-        $calcGrandTotal += $itemCurrentTotal;  // Grand Total dari harga saat ini
+        $calcGrandTotal += $itemTotal;
     }
 
     // Helper function to get image data from path
@@ -184,11 +190,11 @@
     @php
         $itemPrice = (float) ($item->price ?? 0);
         $itemQty = (float) ($item->qty ?? 1);
-        $itemDiscount = (float) ($item->discount ?? 0);
+        $itemDiscount = (float) ($item->discount ?? 0);  // Discount TOTAL per baris
         $itemVatPct = (float) ($item->vat_percentage ?? 0);
         $itemSubTotal = $itemPrice * $itemQty;
-        $itemTotalDiscount = $itemDiscount * $itemQty;
-        $itemAfterDiscount = $itemSubTotal - $itemTotalDiscount;
+        // Diskon tidak dikalikan qty: nilainya sudah total untuk baris ini.
+        $itemAfterDiscount = max($itemSubTotal - $itemDiscount, 0);
         $itemVat = $itemAfterDiscount * ($itemVatPct / 100);
         $itemTotal = $itemAfterDiscount + $itemVat;
     @endphp
@@ -210,10 +216,10 @@
 
         {{-- Discount --}}
         <td style="text-align: center; font-size: 11px; padding: 10px;">
-            @if($itemTotalDiscount == 0)
+            @if($itemDiscount == 0)
                 -
             @else
-                Rp{{ number_format($itemTotalDiscount, 0, ',', '.') }}
+                Rp{{ number_format($itemDiscount, 0, ',', '.') }}
             @endif
         </td>
 
@@ -236,38 +242,47 @@
         </table>
     </div>
 
-    {{-- Terms & Conditions (selalu tampil) --}}
-    @if(count($terms) > 0)
+    {{--
+        Terms & Conditions bersifat opsional, ringkasan total tidak.
+
+        Sebelumnya keduanya terbungkus dalam satu @if(count($terms) > 0), sehingga
+        quotation yang settings-nya belum punya Terms & Conditions terkirim ke klien
+        TANPA Sub Total maupun Grand Total sama sekali.
+    --}}
     <div style="padding: 15px 25px;">
         <table style="width: 100%; border-collapse: collapse;">
             <tr>
                 <td style="width: 50%; vertical-align: top;">
-                    <div style="font-size: 9px; line-height: 1.5;">
-                        <strong>Terms & Conditions:</strong><br>
-                        @foreach($terms as $i => $termText)
-                            {{ $i + 1 }}. {{ $termText }}<br>
-                        @endforeach
-                    </div>
+                    @if(count($terms) > 0)
+                        <div style="font-size: 9px; line-height: 1.5;">
+                            <strong>Terms &amp; Conditions:</strong><br>
+                            @foreach($terms as $i => $termText)
+                                {{ $i + 1 }}. {{ $termText }}<br>
+                            @endforeach
+                        </div>
+                    @endif
                 </td>
                 <td style="width: 50%; text-align: right; font-size: 12px;">
+                    {{--
+                        Urutan mengikuti cara angkanya dihitung — Sub Total, dikurangi
+                        diskon, lalu ditambah PPN — supaya penerima bisa menjumlahkan
+                        sendiri dan sampai pada Grand Total yang sama.
+                    --}}
                     <strong>Sub Total:</strong> Rp{{ number_format($calcSubTotal, 0, ',', '.') }}<br>
-                    @if($calcTotalVat > 0)
-                        <strong>Total VAT:</strong> Rp{{ number_format($calcTotalVat, 0, ',', '.') }}<br>
-                    @endif
                     @if($calcTotalDiscount > 0)
                         <strong>Total Diskon:</strong> -Rp{{ number_format($calcTotalDiscount, 0, ',', '.') }}<br>
                     @endif
+                    @if($calcTotalVat > 0)
+                        <strong>Total VAT:</strong> Rp{{ number_format($calcTotalVat, 0, ',', '.') }}<br>
+                    @endif
                     <div style="padding-top: 6px;">
-                    <strong style="font-size: 14px;">
-                        Grand Total:
-                    </strong>
-                    Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
-                </div>
+                        <strong style="font-size: 14px;">Grand Total:</strong>
+                        Rp{{ number_format($calcGrandTotal, 0, ',', '.') }}
+                    </div>
                 </td>
             </tr>
         </table>
     </div>
-    @endif
 
     {{-- Signature --}}
     <div style="padding: 40px 25px 30px;">

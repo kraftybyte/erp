@@ -117,4 +117,61 @@ class Advance extends Model
     {
         return $this->status !== self::STATUS_SELESAI;
     }
+
+    /**
+     * Warna badge mengikuti urutan alur advance, bukan ColorHelper::status()
+     * yang generik: di sana status realisasi tidak dikenali dan jatuh ke abu-abu.
+     *
+     * abu  = belum bergerak, kuning = menunggu tindakan,
+     * biru = sedang berjalan, hijau = tuntas, merah = berhenti.
+     */
+    public function getStatusBadgeClass(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING        => 'gray',
+            self::STATUS_DISETUJUI      => 'warning',
+            self::STATUS_DIBAYARKAN     => 'info',
+            self::STATUS_REALIZING      => 'info',
+            self::STATUS_REALIZED_USER  => 'warning',
+            self::STATUS_READY_TO_CLOSE => 'warning',
+            self::STATUS_SELESAI        => 'success',
+            self::STATUS_DITOLAK        => 'danger',
+            default                     => 'gray',
+        };
+    }
+
+    /**
+     * Label status untuk ditampilkan ke pengguna.
+     */
+    public function getStatusLabel(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING        => 'Pending',
+            self::STATUS_DISETUJUI      => 'Disetujui',
+            self::STATUS_DIBAYARKAN     => 'Dibayarkan',
+            self::STATUS_REALIZING      => 'Sedang di-Realisasi',
+            self::STATUS_REALIZED_USER  => 'Menunggu Verifikasi Finance',
+            self::STATUS_READY_TO_CLOSE => 'Siap Diselesaikan',
+            self::STATUS_SELESAI        => 'Selesai',
+            self::STATUS_DITOLAK        => 'Ditolak',
+            default                     => (string) $this->status,
+        };
+    }
+
+    /**
+     * Berapa persen dana yang sudah dipertanggungjawabkan lewat realisasi.
+     * Dibatasi 0–100 supaya overrun tidak membuat progress bar melebihi penuh.
+     */
+    public function getProgressPercentage(): float
+    {
+        $paid = (float) $this->paid;
+
+        if ($paid <= 0) {
+            return 0.0;
+        }
+
+        $totalRealisasi = $this->realizasis->flatMap->items->sum('subtotal');
+
+        return round(min(($totalRealisasi / $paid) * 100, 100), 2);
+    }
 }

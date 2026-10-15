@@ -6,7 +6,7 @@ use Carbon\Carbon;
 use App\Models\Leads;
 use App\Models\Deal;
 use App\Models\Quotation;
-use TomatoPHP\FilamentInvoices\Models\Invoice;
+use App\Models\Invoice;
 
 class FunnelIntelligenceEngine
 {
