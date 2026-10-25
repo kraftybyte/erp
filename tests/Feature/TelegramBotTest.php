@@ -170,11 +170,9 @@ class TelegramBotTest extends TestCase
         $this->send($this->textUpdate('Beli properti shooting'));
         $this->assertSame('project', Draft::load($this->chatId)->awaiting);
 
-        // Mencari project dengan mengetik namanya.
+        // Mengetik nama klien saat diminta project: satu yang cocok langsung terpilih.
         $this->send($this->textUpdate('Tes Telegram'));
-        $this->assertStringContainsString('Pilih project', $this->lastText());
-
-        $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+        $this->assertSame($project->id, Draft::load($this->chatId)->projectId);
         $this->assertStringContainsString('kategori', $this->lastText());
 
         $this->send($this->tap("{$draft->id}:category:6")); // Project Support
@@ -246,6 +244,87 @@ class TelegramBotTest extends TestCase
             ->count();
 
         $this->assertSame(1, $panggilanAi);
+    }
+
+    // =================================================================
+    // Mengenali pesan tanpa AI
+    // =================================================================
+
+    public function test_contoh_pesan_langsung_jadi_ringkasan_tanpa_ai(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('expense 150rb grab ke kantor klien nestory'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertTrue($draft->isComplete(), 'Semua isian harus terbaca tanpa bertanya.');
+        $this->assertSame('expense', $draft->type);
+        $this->assertSame(150_000, $draft->amount);
+        $this->assertSame('Transport', $draft->category);
+        $this->assertSame($project->id, $draft->projectId);
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+    }
+
+    public function test_salah_ketik_nama_klien_tetap_dikenali(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('bensin 50rb ke nestori'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($project->id, $draft->projectId);
+        $this->assertSame('expense', $draft->type, 'Tanpa kata advance, pesan bernominal dianggap expense.');
+    }
+
+    public function test_beberapa_project_yang_cocok_ditawarkan_sebagai_pilihan(): void
+    {
+        $this->user();
+        $konten = $this->project('PT Zentrova Abadi', 'Konten Instagram');
+        $video  = $this->project('PT Zentrova Abadi', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 50rb ke zentrova'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertNull($draft->projectId);
+        $this->assertEqualsCanonicalizing([$konten->id, $video->id], $draft->projectCandidates);
+        $this->assertStringContainsString('Maksud kamu yang mana', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:project:{$video->id}"));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($video->id, $draft->projectId);
+        $this->assertSame([], $draft->projectCandidates);
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+    }
+
+    public function test_project_yang_masih_berjalan_diutamakan(): void
+    {
+        $this->user();
+        $this->project('PT Zentrova Abadi', 'Konten 2025', 'completed');
+        $berjalan = $this->project('PT Zentrova Abadi', 'Konten 2026');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 50rb ke zentrova'));
+
+        $this->assertSame($berjalan->id, Draft::load($this->chatId)->projectId);
+    }
+
+    public function test_kata_umum_di_nama_project_tidak_dianggap_nama_klien(): void
+    {
+        $this->user();
+        $this->project('Kantor Digital Media', 'Konten Video');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 50rb ke kantor klien'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertNull($draft->projectId);
+        $this->assertSame([], $draft->projectCandidates);
     }
 
     // =================================================================
@@ -355,12 +434,15 @@ class TelegramBotTest extends TestCase
         return $user;
     }
 
-    private function project(): Project
-    {
+    private function project(
+        string $perusahaan = 'PT Tes Telegram',
+        string $nama = 'Video Profile Tes',
+        string $status = 'in_progress',
+    ): Project {
         return Project::create([
-            'nama_project'    => 'Video Profile Tes',
-            'nama_perusahaan' => 'PT Tes Telegram',
-            'status'          => 'in_progress',
+            'nama_project'    => $nama,
+            'nama_perusahaan' => $perusahaan,
+            'status'          => $status,
         ]);
     }
 

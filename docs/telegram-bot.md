@@ -83,9 +83,22 @@ Link berlaku 15 menit dan hanya bisa dipakai sekali. Hanya akun yang punya izin
 
 ## AI (Gemini)
 
-Pesan bebas dibaca oleh Gemini. Bila Gemini tidak tersedia (key kosong, saldo
-prabayar habis, atau API error), bot **tetap jalan**: nominal dan jenis dibaca
-dengan aturan sederhana, lalu sisanya ditanyakan lewat tombol.
+Pesan dibaca oleh dua pembaca sekaligus:
+
+- **Pembaca aturan** (selalu jalan, tanpa biaya): nominal (`150rb`, `1,5jt`,
+  `Rp 150.000`), jenis (kata advance/kasbon/uang muka; selain itu pesan
+  bernominal dianggap expense), kategori dari kata kunci
+  (`App\Services\Telegram\CategoryGuesser`: grab/bensin/tol → Transport,
+  kuota → Komunikasi, canva → Software, …), dan project dari nama klien
+  (`App\Services\Telegram\ProjectMatcher`: tidak peka huruf besar-kecil,
+  toleran salah ketik satu huruf, mencari di semua project). Bila beberapa
+  project sama cocoknya, bot hanya menawarkan kandidat itu.
+- **Gemini** (bila aktif): hasilnya diutamakan, dan isian yang tidak diisi AI
+  diisi pembaca aturan.
+
+Jadi `expense 150rb grab ke kantor klien nestory` langsung menjadi ringkasan
+lengkap walau Gemini mati atau saldonya habis. Untuk menambah kata kunci
+kategori, ubah daftar di `CategoryGuesser`.
 
 Cek cara bot membaca sebuah pesan tanpa membuka Telegram:
 

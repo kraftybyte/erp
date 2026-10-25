@@ -28,9 +28,16 @@ class TelegramParse extends Command
 
         $result = $parser->parse($this->argument('text'), $projects);
 
+        $label = fn (?int $id) => ($project = Project::find($id))
+            ? "#{$id} " . trim("{$project->nama_perusahaan} | {$project->nama_project}", ' |')
+            : null;
+
+        $result['project_id']         = $label($result['project_id']);
+        $result['project_candidates'] = collect($result['project_candidates'])->map($label)->filter()->implode("\n") ?: null;
+
         $this->table(['Field', 'Hasil'], collect($result)->map(fn ($value, $field) => [$field, $value ?? '—'])->values()->all());
 
-        $this->comment('Bila Gemini gagal, hasil di atas berasal dari pembaca sederhana. Lihat storage/logs/laravel.log untuk alasannya.');
+        $this->comment('Bila Gemini gagal, hasil di atas berasal dari pembaca aturan saja. Lihat storage/logs/laravel.log untuk alasannya.');
 
         return self::SUCCESS;
     }

@@ -25,6 +25,9 @@ final class Draft
         public ?string $date = null,
         // Field yang sedang ditanyakan; balasan teks berikutnya mengisi field ini.
         public ?string $awaiting = null,
+        // Project yang sama-sama cocok dengan pesan; ditawarkan lebih dulu
+        // daripada daftar semua project.
+        public array $projectCandidates = [],
     ) {}
 
     public static function start(?string $type = null): self
@@ -60,6 +63,8 @@ final class Draft
         $this->projectId   = $parsed['project_id'] ?? $this->projectId;
         $this->category    = $parsed['category'] ?? $this->category;
         $this->date        = $parsed['date'] ?? $this->date;
+
+        $this->projectCandidates = $this->projectId ? [] : ($parsed['project_candidates'] ?? $this->projectCandidates);
 
         return $this;
     }

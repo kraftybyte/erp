@@ -34,6 +34,7 @@ class TelegramBot
         private TelegramClient $telegram,
         private SubmissionParser $parser,
         private TelegramLinker $linker,
+        private ProjectMatcher $matcher,
     ) {}
 
     public function handle(array $update): void
@@ -152,7 +153,7 @@ class TelegramBot
                 break;
 
             case 'project':
-                $this->showProjectSearch($chatId, $draft, $text);
+                $this->showProjectSearch($chatId, $user, $draft, $text);
 
                 return;
         }
@@ -190,8 +191,9 @@ class TelegramBot
                 break;
 
             case 'project':
-                $draft->projectId = Project::whereKey((int) $value)->exists() ? (int) $value : null;
-                $draft->awaiting  = null;
+                $draft->projectId         = Project::whereKey((int) $value)->exists() ? (int) $value : null;
+                $draft->projectCandidates = [];
+                $draft->awaiting          = null;
                 break;
 
             case 'page':
@@ -207,7 +209,7 @@ class TelegramBot
                 match ($value) {
                     'amount'      => $draft->amount = null,
                     'description' => $draft->description = null,
-                    'project'     => $draft->projectId = null,
+                    'project'     => [$draft->projectId, $draft->projectCandidates] = [null, []],
                     'category'    => $draft->category = null,
                     default       => null,
                 };
@@ -270,7 +272,9 @@ class TelegramBot
         }
 
         if (! $draft->projectId) {
-            $this->showProjects($chatId, $messageId, $draft, 0);
+            $draft->projectCandidates
+                ? $this->showProjectCandidates($chatId, $messageId, $draft)
+                : $this->showProjects($chatId, $messageId, $draft, 0);
 
             return;
         }
@@ -343,18 +347,56 @@ class TelegramBot
         );
     }
 
-    private function showProjectSearch(int|string $chatId, Draft $draft, string $query): void
+    private function showProjectCandidates(int|string $chatId, ?int $messageId, Draft $draft): void
     {
+        $projects = ProjectMatcher::projects($draft->projectCandidates);
+
+        if ($projects->isEmpty()) {
+            $draft->projectCandidates = [];
+            $this->showProjects($chatId, $messageId, $draft, 0);
+
+            return;
+        }
+
+        $rows = $projects
+            ->map(fn (Project $project) => [$this->button(Str::limit($this->projectLabel($project), 60), $draft, 'project', $project->id)])
+            ->all();
+
+        $rows[] = [$this->button('📋 Project lain', $draft, 'page', 0), $this->button('❌ Batal', $draft, 'cancel')];
+
+        $draft->awaiting = 'project';
+        $draft->save($chatId);
+
+        $this->show($chatId, $messageId, 'Ada beberapa project yang cocok. Maksud kamu yang mana?', $rows);
+    }
+
+    private function showProjectSearch(int|string $chatId, User $user, Draft $draft, string $query): void
+    {
+        // Pencocokan nama klien yang toleran salah ketik dulu; bila hanya satu
+        // yang cocok, langsung dipakai tanpa perlu menekan tombol lagi.
+        $match = $this->matcher->match($query);
+
+        if ($match['project_id']) {
+            $draft->projectId         = $match['project_id'];
+            $draft->projectCandidates = [];
+            $draft->awaiting          = null;
+            $this->proceed($chatId, $user, $draft);
+
+            return;
+        }
+
         $like = '%' . addcslashes($query, '%_\\') . '%';
 
-        $projects = Project::with('deal')
-            ->where(fn ($q) => $q
-                ->where('nama_project', 'like', $like)
-                ->orWhere('nama_perusahaan', 'like', $like)
-                ->orWhereHas('deal', fn ($deal) => $deal->where('nama_perusahaan', 'like', $like)))
-            ->latest('id')
-            ->limit(self::PROJECTS_PER_PAGE)
-            ->get();
+        $projects = $match['candidates']
+            ? ProjectMatcher::projects($match['candidates'])
+            : Project::with('deal')
+                ->where(fn ($q) => $q
+                    ->where('nama_project', 'like', $like)
+                    ->orWhere('nama_perusahaan', 'like', $like)
+                    ->orWhereHas('deal', fn ($deal) => $deal->where('nama_perusahaan', 'like', $like)))
+                ->latest('id')
+                ->limit(self::PROJECTS_PER_PAGE)
+                ->get();
 
         $rows = $projects
             ->map(fn (Project $project) => [$this->button(Str::limit($this->projectLabel($project), 60), $draft, 'project', $project->id)])
