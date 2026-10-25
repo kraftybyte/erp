@@ -286,14 +286,17 @@
                 </div>
                 @endif
 
-                {{-- Lampiran pengajuan, mis. struk/penawaran yang dikirim lewat bot Telegram --}}
-                @if($record->attachment)
-                <div class="mt-4">
-                    <a href="{{ asset('storage/' . $record->attachment) }}"
+                {{-- Lampiran pengajuan, mis. penawaran/referensi yang dikirim lewat bot Telegram --}}
+                @php($lampiran = $record->attachmentPaths())
+                @if(count($lampiran))
+                <div class="mt-4 flex flex-wrap gap-2">
+                    @foreach($lampiran as $path)
+                    <a href="{{ asset('storage/' . $path) }}"
                        target="_blank"
                        class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 transition text-white px-4 py-2 rounded-lg text-sm font-medium">
-                        Lihat Lampiran
+                        {{ count($lampiran) > 1 ? 'Lampiran ' . $loop->iteration : 'Lihat Lampiran' }}
                     </a>
+                    @endforeach
                 </div>
                 @endif
             </div>

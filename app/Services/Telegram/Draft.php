@@ -116,7 +116,8 @@ final class Draft
             // Foto susulan: nominal & keterangan yang sudah ditulis milik struk
             // pertama. Dalam satu album, nominal di caption adalah total album
             // dan tetap di $amount untuk dicocokkan dengan jumlah per struk.
-            if (! $sameAlbum) {
+            // Advance tidak dihitung per lampiran: nominalnya tetap nominal advance.
+            if (! $sameAlbum && $this->type !== 'advance') {
                 $first['amount'] = $this->amount;
                 $first['name']   = $this->description;
                 $this->amount    = null;
@@ -195,7 +196,9 @@ final class Draft
                 // Nama item per struk opsional; kosong memakai keterangan umum.
                 'realisasi' => $this->advanceId && $amountsDone,
                 'expense'   => $amountsDone && $this->description && $this->projectId && $this->category && $this->date,
-                // Advance hanya menyimpan satu lampiran.
+                // Lampiran advance hanya dokumen pendukung (penawaran, referensi),
+                // bukan item biaya: cukup satu nominal advance.
+                'advance'   => $this->amount && $this->description && $this->projectId && $this->category && $this->date,
                 default     => false,
             };
         }

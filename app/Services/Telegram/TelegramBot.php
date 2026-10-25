@@ -738,27 +738,9 @@ class TelegramBot
             return;
         }
 
-        // Advance hanya menyimpan satu lampiran; struk lain tidak boleh hilang
-        // diam-diam, jadi user diminta memilih sendiri yang dihapus.
-        if ($draft->isMulti() && $draft->type === 'advance') {
-            $this->showPanel(
-                $chatId,
-                $messageId,
-                $draft,
-                "Advance hanya bisa menyimpan <b>1 lampiran</b>, sedangkan draft ini berisi {$draft->receiptCount()} struk.\n\n"
-                    . $this->receiptLines($draft)
-                    . "\n\nHapus struk yang tidak dipakai, atau jadikan expense/realisasi.",
-                [
-                    ...$this->receiptButtons($draft, edit: false),
-                    [$this->button('💰 Jadikan Expense', $draft, 'type', 'expense'), $this->button('🧾 Jadikan Realisasi', $draft, 'type', 'realisasi')],
-                    [$this->button('❌ Batal', $draft, 'cancel')],
-                ]
-            );
-
-            return;
-        }
-
-        if ($draft->isMulti()) {
+        // Expense: satu pengajuan per struk, jadi nominal per struk. Advance:
+        // lampiran hanya pendukung, cukup satu nominal advance.
+        if ($draft->isMulti() && $draft->type === 'expense') {
             if (! $this->fillReceiptAmounts($chatId, $draft)) {
                 return;
             }
@@ -806,7 +788,7 @@ class TelegramBot
             ? "⚠️ Project ini masih punya advance terbuka. Bila biaya ini dibayar dari advance itu, pilih <b>Jadikan realisasi</b> supaya tidak tercatat dua kali.\n"
             : '';
 
-        if ($draft->isMulti()) {
+        if ($draft->isMulti() && $draft->type === 'expense') {
             $count = $draft->receiptCount();
 
             $rows = [
@@ -853,6 +835,11 @@ class TelegramBot
 
         if ($openForProject->isNotEmpty()) {
             array_splice($rows, 1, 0, [[$this->button('🧾 Jadikan realisasi advance', $draft, 'type', 'realisasi')]]);
+        }
+
+        // Beberapa lampiran advance: tiap file bisa dihapus bila salah kirim.
+        if ($draft->isMulti()) {
+            array_splice($rows, 1, 0, $this->receiptButtons($draft, edit: false));
         }
 
         $this->showPanel(
@@ -1404,15 +1391,21 @@ class TelegramBot
 
         $files = $stored['files'];
 
-        // Satu struk = satu pengajuan dengan strukny sendiri (kolom lampiran
-        // expense hanya muat satu file).
-        $entries = $draft->isMulti()
+        // Expense: satu struk = satu pengajuan (kolom lampiran expense hanya
+        // muat satu file). Advance: satu pengajuan dengan semua lampirannya.
+        $entries = $draft->isMulti() && $draft->type === 'expense'
             ? collect($draft->receipts)->map(fn (array $receipt, int $index) => [
                 'amount'      => $receipt['amount'],
                 'description' => $this->receiptName($draft, $index),
                 'path'        => $files[$index]['path'],
+                'paths'       => [$files[$index]['path']],
             ])->all()
-            : [['amount' => $draft->amount, 'description' => $draft->description, 'path' => $files[0]['path'] ?? null]];
+            : [[
+                'amount'      => $draft->amount,
+                'description' => $draft->description,
+                'path'        => $files[0]['path'] ?? null,
+                'paths'       => array_column($files, 'path'),
+            ]];
 
         try {
             $records = DB::transaction(function () use ($draft, $user, $entries) {
@@ -1429,7 +1422,11 @@ class TelegramBot
                     ];
 
                     if ($draft->type === 'advance') {
-                        $records[] = Advance::create($attributes + ['keterangan_advance' => $entry['description'], 'status' => Advance::STATUS_PENDING]);
+                        $records[] = Advance::create($attributes + [
+                            'keterangan_advance' => $entry['description'],
+                            'attachments'        => $entry['paths'] ?: null,
+                            'status'             => Advance::STATUS_PENDING,
+                        ]);
 
                         continue;
                     }
@@ -1475,7 +1472,7 @@ class TelegramBot
         $this->show(
             $chatId,
             $messageId,
-            $draft->isMulti()
+            $draft->isMulti() && $draft->type === 'expense'
                 ? '✅ <b>' . count($records) . " expense terkirim</b> dan menunggu persetujuan Finance.\n\n"
                     . $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\nKetik /status untuk memantau."
                 : "✅ <b>{$type['label']} terkirim</b> dan menunggu persetujuan Finance.\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
@@ -1640,6 +1637,10 @@ class TelegramBot
 
     private function attachmentLabel(Draft $draft): string
     {
+        if ($draft->isMulti()) {
+            return "📎 {$draft->receiptCount()} file";
+        }
+
         return match ($draft->attachment['ext'] ?? null) {
             null    => 'belum ada',
             'pdf'   => '📎 PDF struk',

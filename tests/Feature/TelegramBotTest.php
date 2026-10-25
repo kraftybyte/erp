@@ -810,21 +810,78 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Draft Realisasi', $this->lastText());
     }
 
-    public function test_advance_dengan_banyak_struk_diminta_memilih_satu(): void
+    public function test_advance_dengan_5_gambar_jadi_satu_pengajuan_dengan_semua_lampiran(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('adv1', 'advance 2jt sewa kamera nestory', album: 'g5'));
+        foreach (['adv2', 'adv3', 'adv4', 'adv5'] as $foto) {
+            $this->send($this->photoUpdate($foto, album: 'g5'));
+        }
+
+        // Lampiran advance hanya pendukung: tidak ada pertanyaan nominal per gambar.
+        $this->assertFalse(
+            collect(Http::recorded())->contains(fn ($pair) => isset($pair[0]->data()['reply_parameters'])),
+            'Nominal tidak ditanyakan per gambar untuk advance.'
+        );
+
+        $draft = Draft::load($this->chatId);
+        $this->assertTrue($draft->isComplete());
+        $this->assertSame(2_000_000, $draft->amount);
+        $this->assertStringContainsString('Draft Advance', $this->lastText());
+        $this->assertStringContainsString('5 file', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $advances = Advance::where('user_id', $user->id)->get();
+        $this->assertCount(1, $advances, 'Satu pengajuan, bukan lima.');
+
+        $advance = $advances->first();
+        $this->assertEquals(2_000_000, $advance->amount);
+        $this->assertCount(5, $advance->attachments);
+        $this->assertSame($advance->attachments[0], $advance->attachment, 'Kolom lama tetap berisi lampiran pertama.');
+        foreach ($advance->attachmentPaths() as $path) {
+            Storage::disk('public')->assertExists($path);
+        }
+    }
+
+    public function test_lampiran_advance_yang_salah_bisa_dihapus(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('b1', 'advance 2jt sewa kamera nestory', album: 'g7'));
+        $this->send($this->photoUpdate('b2', album: 'g7'));
+        $this->send($this->photoUpdate('b3', album: 'g7'));
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:rdel:1"));
+
+        $this->assertSame(['b1', 'b3'], array_column(Draft::load($this->chatId)->receipts, 'file_id'));
+        $this->assertStringContainsString('2 file', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+        $this->assertCount(2, Advance::where('user_id', $user->id)->sole()->attachments);
+    }
+
+    public function test_foto_susulan_advance_tidak_mengubah_nominal_advance(): void
     {
         $this->user();
         $this->project('PT Nestory Indonesia', 'Video Profile');
         $this->fakeApis(gemini: null);
 
-        $this->send($this->photoUpdate('a1', 'advance 2jt sewa kamera nestory', album: 'g5'));
-        $this->send($this->photoUpdate('a2', album: 'g5'));
+        $this->send($this->photoUpdate('c1', 'advance 2jt sewa kamera nestory'));
+        $this->send($this->photoUpdate('c2'));
 
-        $this->assertStringContainsString('hanya bisa menyimpan', $this->lastText());
         $draft = Draft::load($this->chatId);
-        $this->assertFalse($draft->isComplete(), 'Tidak bisa dikirim dengan dua lampiran.');
-
-        $this->send($this->tap("{$draft->id}:rdel:1"));
-        $this->assertStringContainsString('Draft Advance', $this->lastText());
+        $this->assertSame(2, $draft->receiptCount());
+        $this->assertSame(2_000_000, $draft->amount);
+        $this->assertTrue($draft->isComplete());
     }
 
     public function test_nominal_tiap_struk_album_dibaca_gemini(): void

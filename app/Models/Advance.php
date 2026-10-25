@@ -37,6 +37,7 @@ class Advance extends Model
         'category',
         'amount',
         'attachment',
+        'attachments',
         'reference_number',
         'status',
         'rejection_reason',
@@ -60,9 +61,20 @@ class Advance extends Model
         'submission_date' => 'date',
         'deleted_at' => 'datetime',
         'paid_at' => 'datetime',
+        'attachments' => 'array',
     ];
 
     protected $dates = ['deleted_at'];
+
+    /**
+     * Semua lampiran pengajuan; data lama hanya punya kolom `attachment`.
+     *
+     * @return array<int, string>
+     */
+    public function attachmentPaths(): array
+    {
+        return $this->attachments ?: array_filter([$this->attachment]);
+    }
 
     public function user(): BelongsTo
     {

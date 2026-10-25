@@ -78,8 +78,11 @@ Bot : 🧾 Draft Realisasi — 3 struk
   strukny sendiri (bukan semua file di item pertama).
 - **Expense**: satu pengajuan per struk, karena kolom lampiran expense hanya
   muat satu file.
-- **Advance**: hanya satu lampiran; bila lebih, bot meminta struk lain dihapus
-  dulu, tidak dibuang diam-diam.
+- **Advance**: satu pengajuan dengan semua lampirannya (penawaran, referensi,
+  foto barang). Lampiran hanya pendukung, jadi nominal tidak ditanyakan per
+  gambar; cukup nominal advance. Disimpan di kolom `advances.attachments`
+  (kolom `attachment` tetap berisi lampiran pertama) dan tampil sebagai
+  tombol Lampiran 1…n di halaman detail advance.
 
 Pengaman supaya tidak salah masuk:
 
