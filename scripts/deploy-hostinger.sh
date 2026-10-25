@@ -9,8 +9,10 @@
 # file di server yang tidak ada di repo (tidak ada penghapusan).
 #
 # Pemakaian:
-#   deploy-hostinger.sh <folder_situs> <commit> plan    # hanya memeriksa
-#   deploy-hostinger.sh <folder_situs> <commit> apply   # backup, sinkron, migrate
+#   deploy-hostinger.sh <folder_situs> <commit> plan         # hanya memeriksa
+#   deploy-hostinger.sh <folder_situs> <commit> apply        # backup, sinkron, migrate
+#   deploy-hostinger.sh <folder_situs> <commit> rollback     # kembalikan kode
+#   deploy-hostinger.sh <folder_situs> <commit> rollback-db  # kembalikan kode + database
 #
 # Hasil kerja dan backup ada di ~/erp-deploy (di luar public_html).
 
@@ -27,6 +29,7 @@ BACKUP="$WORK/backup-$SHA"
 
 EXCLUDES=(
     --exclude=.git
+    --exclude=/.claude/
     --exclude=.env
     --exclude=/storage/
     --exclude=/public/storage
@@ -63,13 +66,22 @@ changed_files() {
     rsync -rlcn --out-format='%n' "${EXCLUDES[@]}" "$STAGE/" "$SITE/" | grep -v '/$' || true
 }
 
-# Migration (termasuk settings migration) di commit tujuan yang belum
-# tercatat di tabel migrations database server.
+# Migration yang akan dijalankan `artisan migrate` setelah sinkron: semua
+# file di folder migration (dari repo maupun yang hanya ada di server) yang
+# belum tercatat di tabel migrations.
 pending_migrations() {
     local ran
     ran=$(cd "$SITE" && "$PHP" artisan tinker --execute='echo implode(PHP_EOL, DB::table("migrations")->pluck("migration")->all());' 2>/dev/null)
-    (cd "$STAGE" && ls database/migrations/*.php database/settings/*.php 2>/dev/null) \
-        | xargs -n1 basename | sed 's/\.php$//' | sort \
+
+    if [ -z "$ran" ]; then
+        echo "GAGAL membaca tabel migrations di database server" >&2
+        exit 1
+    fi
+
+    {
+        (cd "$STAGE" && ls database/migrations/*.php database/settings/*.php 2>/dev/null)
+        (cd "$SITE" && ls database/migrations/*.php database/settings/*.php 2>/dev/null)
+    } | xargs -n1 basename | sed 's/\.php$//' | sort -u \
         | grep -vxF -f <(printf '%s\n' "$ran") || true
 }
 
@@ -89,11 +101,15 @@ plan() {
         echo "== public/storage: $( [ -d "$SITE/public/storage" ] && echo folder biasa || echo tidak ada)"
     fi
 
-    local changed
+    local changed total=0 new=0 f
     changed=$(changed_files)
+    while read -r f; do
+        [ -n "$f" ] || continue
+        total=$((total + 1))
+        if [ ! -e "$SITE/$f" ]; then new=$((new + 1)); fi
+    done <<< "$changed"
     echo
-    echo "== File yang akan diubah/ditambah: $(printf '%s\n' "$changed" | grep -c . || true)"
-    echo "   (baru: $(printf '%s\n' "$changed" | while read -r f; do [ -n "$f" ] && [ ! -e "$SITE/$f" ] && echo "$f"; done | grep -c . || true))"
+    echo "== File yang akan diubah/ditambah: $total (baru: $new)"
 
     echo
     echo "== File di server yang tidak ada di repo (dibiarkan, tidak dihapus):"
@@ -136,8 +152,15 @@ apply() {
 
     echo "== 2/6 Backup file yang akan ditimpa"
     changed_files > "$BACKUP/changed-files.txt"
-    (cd "$SITE" && while read -r f; do [ -e "$f" ] && echo "$f"; done < "$BACKUP/changed-files.txt") > "$BACKUP/overwritten-files.txt"
-    (cd "$SITE" && while read -r f; do [ -e "$f" ] || echo "$f"; done < "$BACKUP/changed-files.txt") > "$BACKUP/new-files.txt"
+    : > "$BACKUP/overwritten-files.txt"
+    : > "$BACKUP/new-files.txt"
+    while read -r f; do
+        if [ -e "$SITE/$f" ]; then
+            echo "$f" >> "$BACKUP/overwritten-files.txt"
+        else
+            echo "$f" >> "$BACKUP/new-files.txt"
+        fi
+    done < "$BACKUP/changed-files.txt"
     (cd "$SITE" && tar -czf "$BACKUP/code-before.tar.gz" -T "$BACKUP/overwritten-files.txt")
     echo "   $(wc -l < "$BACKUP/overwritten-files.txt") file ditimpa, $(wc -l < "$BACKUP/new-files.txt") file baru"
 
@@ -167,10 +190,56 @@ apply() {
     echo "SELESAI: commit $SHA aktif. Backup: $BACKUP"
 }
 
+# Kembalikan kode (dan database, bila diminta) ke kondisi sebelum apply.
+rollback() {
+    local with_db=$1 f
+
+    if [ ! -f "$BACKUP/code-before.tar.gz" ]; then
+        echo "Tidak ada backup untuk $SHA di $BACKUP" >&2
+        exit 1
+    fi
+
+    (cd "$SITE" && "$PHP" artisan down --retry=60) || true
+
+    echo "== Kembalikan file yang ditimpa"
+    (cd "$SITE" && tar -xzf "$BACKUP/code-before.tar.gz")
+
+    echo "== Hapus file yang ditambahkan apply"
+    while read -r f; do
+        # Hanya path relatif hasil rsync; jangan pernah keluar dari folder situs.
+        case "$f" in ''|/*|*..*) continue ;; esac
+        rm -f "$SITE/$f"
+        # Folder yang dibuat apply ikut dihapus selama kosong; berhenti di
+        # folder pertama yang masih berisi.
+        (cd "$SITE" && rmdir -p "$(dirname "$f")" 2>/dev/null) || true
+    done < "$BACKUP/new-files.txt"
+
+    if [ "$with_db" = 1 ]; then
+        echo "== Pulihkan database"
+        local port
+        port=$(env_value DB_PORT)
+        gunzip -c "$BACKUP/database.sql.gz" | MYSQL_PWD=$(env_value DB_PASSWORD) mysql \
+            -h "$(env_value DB_HOST)" -P "${port:-3306}" -u "$(env_value DB_USERNAME)" "$(env_value DB_DATABASE)"
+    fi
+
+    if [ -f "$SITE/composer.phar" ]; then
+        (cd "$SITE" && "$PHP" composer.phar dump-autoload -o --no-interaction 2>&1 | tail -1)
+    else
+        (cd "$SITE" && composer dump-autoload -o --no-interaction 2>&1 | tail -1)
+    fi
+    (cd "$SITE" && "$PHP" artisan optimize:clear)
+    (cd "$SITE" && "$PHP" artisan up)
+
+    rm -f "$WORK/attempted-$SHA" "$WORK/applied-$SHA"
+    echo "ROLLBACK SELESAI"
+}
+
 PHP=$(pick_php)
 
 case "$ACTION" in
-    plan)  plan ;;
-    apply) apply ;;
-    *)     echo "Aksi tidak dikenal: $ACTION (plan | apply)" >&2; exit 1 ;;
+    plan)        plan ;;
+    apply)       apply ;;
+    rollback)    rollback 0 ;;
+    rollback-db) rollback 1 ;;
+    *)           echo "Aksi tidak dikenal: $ACTION (plan | apply | rollback | rollback-db)" >&2; exit 1 ;;
 esac
