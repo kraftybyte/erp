@@ -68,14 +68,16 @@ class GeminiService
      *
      * Mengembalikan null bila API gagal atau jawabannya bukan JSON, supaya
      * pemanggil bisa beralih ke jalur tanpa AI alih-alih ikut gagal.
+     *
+     * @param  array<int, array{mime: string, data: string}>  $files  gambar/PDF (isi mentah) yang ikut dibaca
      */
-    public function extractJson(string $prompt, array $schema): ?array
+    public function extractJson(string $prompt, array $schema, array $files = []): ?array
     {
         $response = $this->generate($prompt, [
             'temperature'        => 0,
             'responseMimeType'   => 'application/json',
             'responseJsonSchema' => $schema,
-        ], timeout: 15);
+        ], timeout: $files ? 30 : 15, files: $files);
 
         if (! $response) {
             return null;
@@ -94,7 +96,7 @@ class GeminiService
         return $data;
     }
 
-    private function generate(string $prompt, array $generationConfig = [], int $timeout = 30): ?Response
+    private function generate(string $prompt, array $generationConfig = [], int $timeout = 30, array $files = []): ?Response
     {
         if (! $this->isConfigured()) {
             Log::warning('API key Gemini belum diisi (Settings → Integrasi)');
@@ -102,7 +104,12 @@ class GeminiService
             return null;
         }
 
-        $payload = ['contents' => [['parts' => [['text' => $prompt]]]]];
+        $parts = [['text' => $prompt]];
+        foreach ($files as $file) {
+            $parts[] = ['inlineData' => ['mimeType' => $file['mime'], 'data' => base64_encode($file['data'])]];
+        }
+
+        $payload = ['contents' => [['parts' => $parts]]];
 
         if ($generationConfig) {
             $payload['generationConfig'] = $generationConfig;

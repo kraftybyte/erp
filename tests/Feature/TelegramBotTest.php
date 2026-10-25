@@ -13,6 +13,7 @@ use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Spatie\Permission\PermissionRegistrar;
@@ -29,6 +30,9 @@ class TelegramBotTest extends TestCase
     use DatabaseTransactions;
 
     private const SECRET = 'rahasia-tes-webhook';
+
+    // Cukup untuk dikenali sebagai JPEG oleh finfo.
+    private const JPEG = "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9";
 
     private int $chatId = 990_000_001;
 
@@ -328,6 +332,156 @@ class TelegramBotTest extends TestCase
     }
 
     // =================================================================
+    // Struk / invoice
+    // =================================================================
+
+    public function test_struk_dulu_lalu_keterangan_tersimpan_sebagai_lampiran_expense(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-1'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame('details', $draft->awaiting);
+        $this->assertSame('struk-1', $draft->attachment['file_id'], 'Ukuran foto terbesar yang dipakai.');
+        $this->assertStringContainsString('Struk diterima', $this->lastText());
+
+        $this->send($this->textUpdate('expense 150rb grab ke kantor klien nestory'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertTrue($draft->isComplete());
+        $this->assertSame('struk-1', $draft->attachment['file_id']);
+        $this->assertStringContainsString('foto struk', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expense = Expense::where('user_id', $user->id)->latest('id')->first();
+        $this->assertNotNull($expense);
+        $this->assertSame($project->id, $expense->project_id);
+        $this->assertStringStartsWith('expense/invoice/', $expense->attachment);
+        $this->assertStringEndsWith('.jpg', $expense->attachment);
+        Storage::disk('public')->assertExists($expense->attachment);
+
+        // Tombol upload invoice di ERP (yang mengisi item) hilang bila lampiran
+        // sudah ada, jadi item pembelian harus ikut dibuat.
+        $this->assertSame(1, $expense->itemExpenses()->count());
+        $this->assertEquals(150_000, $expense->itemExpenses()->first()->price);
+    }
+
+    public function test_foto_dengan_caption_langsung_diproses(): void
+    {
+        Storage::fake('public');
+        $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-2', 'expense 150rb grab ke kantor klien nestory'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertTrue($draft->isComplete());
+        $this->assertSame('struk-2', $draft->attachment['file_id']);
+    }
+
+    public function test_foto_susulan_dilampirkan_ke_draft_yang_ada(): void
+    {
+        $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('expense 150rb grab ke kantor klien nestory'));
+        $this->assertStringContainsString('Kirim foto struk sekarang', $this->lastText());
+        $id = Draft::load($this->chatId)->id;
+
+        $this->send($this->photoUpdate('struk-3'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($id, $draft->id, 'Foto susulan tidak membuat draft baru.');
+        $this->assertSame('struk-3', $draft->attachment['file_id']);
+        $this->assertStringContainsString('foto struk', $this->lastText());
+    }
+
+    public function test_album_hanya_foto_pertama_yang_dipakai(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('album-1', album: 'grup-9'));
+        $this->send($this->photoUpdate('album-2', album: 'grup-9'));
+
+        $this->assertSame('album-1', Draft::load($this->chatId)->attachment['file_id']);
+    }
+
+    public function test_format_atau_ukuran_file_yang_tidak_didukung_ditolak(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->documentUpdate('application/zip'));
+        $this->assertStringContainsString('belum didukung', $this->lastText());
+
+        $this->send($this->documentUpdate('application/pdf', 6 * 1024 * 1024));
+        $this->assertStringContainsString('lebih dari 5 MB', $this->lastText());
+
+        $this->assertNull(Draft::load($this->chatId));
+    }
+
+    public function test_isi_file_yang_bukan_gambar_tidak_disimpan(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null, file: '<html><script>alert(1)</script></html>');
+
+        $this->send($this->photoUpdate('palsu', 'expense 150rb grab ke kantor klien nestory'));
+        $draft = Draft::load($this->chatId);
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertStringContainsString('gagal diambil', $this->lastText());
+        $this->assertSame(0, Expense::where('user_id', $user->id)->count());
+        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertNotNull(Draft::load($this->chatId), 'Draft disimpan supaya user bisa kirim ulang fotonya.');
+    }
+
+    public function test_struk_ikut_dibaca_gemini_bila_aktif(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->aiResult(
+            type: 'expense', amount: 87_500, description: 'Grab ke kantor Nestory', category: 'Transport', projectId: $project->id,
+        ));
+
+        $this->send($this->photoUpdate('struk-ai', 'grab ke kantor klien nestory'));
+
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'generativelanguage')
+            && data_get($request->data(), 'contents.0.parts.1.inlineData.mimeType') === 'image/jpeg'
+            && data_get($request->data(), 'contents.0.parts.1.inlineData.data') === base64_encode(self::JPEG));
+
+        $this->assertSame(87_500, Draft::load($this->chatId)->amount, 'Nominal dari struk dipakai bila pesan tidak menyebutnya.');
+    }
+
+    public function test_struk_advance_tersimpan_tanpa_item(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('penawaran', 'advance 2jt sewa kamera shooting nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertTrue($draft->isComplete());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $advance = Advance::where('user_id', $user->id)->latest('id')->first();
+        $this->assertStringStartsWith('advance/attachment/', $advance->attachment);
+        Storage::disk('public')->assertExists($advance->attachment);
+    }
+
+    // =================================================================
     // Notifikasi status
     // =================================================================
 
@@ -384,11 +538,13 @@ class TelegramBotTest extends TestCase
     // Helper
     // =================================================================
 
-    private function fakeApis(?array $gemini = null): void
+    private function fakeApis(?array $gemini = null, string $file = self::JPEG): void
     {
         Http::fake([
-            'api.telegram.org/*/getMe' => Http::response(['ok' => true, 'result' => ['username' => 'erp_tes_bot']]),
-            'api.telegram.org/*'       => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+            'api.telegram.org/*/getMe'   => Http::response(['ok' => true, 'result' => ['username' => 'erp_tes_bot']]),
+            'api.telegram.org/*/getFile' => Http::response(['ok' => true, 'result' => ['file_path' => 'photos/struk.jpg', 'file_size' => strlen($file)]]),
+            'api.telegram.org/file/*'    => Http::response($file),
+            'api.telegram.org/*'         => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
             'generativelanguage.googleapis.com/*' => $gemini
                 ? Http::response(['candidates' => [['content' => ['parts' => [['text' => json_encode($gemini)]]]]]])
                 : Http::response(['error' => ['code' => 402, 'message' => 'Your prepayment credits are depleted.']], 402),
@@ -451,6 +607,37 @@ class TelegramBotTest extends TestCase
         $this->postJson('/api/telegram/webhook', $update, [
             'X-Telegram-Bot-Api-Secret-Token' => self::SECRET,
         ])->assertOk();
+    }
+
+    private function photoUpdate(string $fileId, ?string $caption = null, ?string $album = null): array
+    {
+        $update = $this->textUpdate('');
+        unset($update['message']['text']);
+
+        // Telegram mengirim beberapa ukuran; yang terakhir paling besar.
+        $update['message']['photo'] = [
+            ['file_id' => "{$fileId}-kecil", 'file_size' => 900, 'width' => 90, 'height' => 90],
+            ['file_id' => $fileId, 'file_size' => 48_000, 'width' => 1280, 'height' => 960],
+        ];
+
+        if ($caption !== null) {
+            $update['message']['caption'] = $caption;
+        }
+
+        if ($album !== null) {
+            $update['message']['media_group_id'] = $album;
+        }
+
+        return $update;
+    }
+
+    private function documentUpdate(string $mime, int $size = 10_000): array
+    {
+        $update = $this->textUpdate('');
+        unset($update['message']['text']);
+        $update['message']['document'] = ['file_id' => 'dok-1', 'mime_type' => $mime, 'file_size' => $size, 'file_name' => 'berkas'];
+
+        return $update;
     }
 
     private function textUpdate(string $text): array

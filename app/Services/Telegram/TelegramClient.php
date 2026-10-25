@@ -106,6 +106,37 @@ class TelegramClient
         ]));
     }
 
+    /**
+     * Unduh file yang dikirim user (foto/dokumen). Null bila gagal atau lebih
+     * besar dari $maxBytes.
+     */
+    public function download(string $fileId, int $maxBytes): ?string
+    {
+        $file = $this->call('getFile', ['file_id' => $fileId]);
+
+        if (! is_array($file) || empty($file['file_path']) || ($file['file_size'] ?? 0) > $maxBytes) {
+            return null;
+        }
+
+        $token = IntegrationSettings::telegramBotToken();
+
+        try {
+            $response = Http::timeout(30)->get("https://api.telegram.org/file/bot{$token}/{$file['file_path']}");
+        } catch (ConnectionException $e) {
+            Log::warning('Gagal mengunduh file Telegram', ['error' => str_replace($token, '***', $e->getMessage())]);
+
+            return null;
+        }
+
+        if (! $response->successful() || strlen($response->body()) > $maxBytes) {
+            Log::warning('Gagal mengunduh file Telegram', ['status' => $response->status()]);
+
+            return null;
+        }
+
+        return $response->body();
+    }
+
     public function typing(int|string $chatId): void
     {
         $this->call('sendChatAction', ['chat_id' => $chatId, 'action' => 'typing']);

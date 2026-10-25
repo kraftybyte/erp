@@ -3,10 +3,12 @@
 Karyawan bisa mengajukan expense dan advance lewat chat Telegram:
 
 ```
-User: expense 150rb grab ke kantor klien PT Maju
+User: [foto struk]
+Bot : 📎 Struk diterima. Sekarang tulis keterangannya…
+User: expense 150rb grab ke kantor klien nestory
 Bot : 📝 Draft Expense
-      Tanggal: 25 Okt 2026 · Project: PT Maju | Video Profile
-      Kategori: Transport · Nominal: Rp 150.000
+      Tanggal: 25 Okt 2026 · Project: PT Nestory Indonesia | Video Profile
+      Kategori: Transport · Nominal: Rp 150.000 · Lampiran: 📎 foto struk
       [✅ Kirim] [✏️ Nominal] [✏️ Keterangan] [📁 Project] [🏷 Kategori] ...
 ```
 
@@ -14,6 +16,20 @@ Belum ada yang tersimpan sampai user menekan **Kirim**. Setelah itu record dibua
 dengan status `Pending`, persis seperti dari form, sehingga notifikasi ke Finance
 dan Director tetap jalan. Saat statusnya berubah (disetujui, ditolak, dibayarkan,
 selesai), pengaju juga mendapat kabar di Telegram.
+
+### Struk / invoice
+
+- Boleh dikirim lebih dulu (lalu keterangan), bersama caption, atau menyusul
+  setelah draft jadi. Foto, JPG, PNG, WebP, atau PDF, maksimal 5 MB. Dari album,
+  hanya foto pertama yang dipakai.
+- Struk baru diunduh ke ERP saat **Kirim**, ke `storage/app/public/expense/invoice/…`
+  atau `advance/attachment/…`. Jenis file diperiksa dari isinya, bukan dari label
+  Telegram, karena file ini bisa dibuka lewat link publik.
+- Expense dengan struk otomatis mendapat 1 item pembelian (keterangan + nominal),
+  karena tombol "Upload Invoice Pembelian" di ERP — yang biasanya mengisi item —
+  hilang begitu lampiran ada. Setelah disetujui, Finance bisa langsung membayar.
+- Bila Gemini aktif, isi struk ikut dibaca: total (hanya bila pesan tidak
+  menyebut nominal), tanggal, dan nama toko.
 
 Perintah bot: `/expense`, `/advance`, `/status` (5 pengajuan terakhir), `/batal`, `/bantuan`.
 
@@ -151,5 +167,4 @@ Bila token bocor: BotFather → `/revoke`, tempel token baru di Settings → Int
 | `app/Livewire/TelegramConnection.php` | Bagian Telegram di halaman Profil |
 | `tests/Feature/TelegramBotTest.php` | Tes alur end-to-end |
 
-Belum didukung: foto struk. Foto yang dikirim ke bot belum disimpan; lampiran
-tetap diunggah dari ERP.
+Satu pengajuan menyimpan satu lampiran, mengikuti kolom `attachment` di ERP.

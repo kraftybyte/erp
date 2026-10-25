@@ -28,7 +28,16 @@ final class Draft
         // Project yang sama-sama cocok dengan pesan; ditawarkan lebih dulu
         // daripada daftar semua project.
         public array $projectCandidates = [],
+        // Foto/berkas struk: hanya file_id Telegram. File-nya baru diunduh ke
+        // ERP saat Kirim, supaya draft yang dibatalkan tidak meninggalkan file.
+        // @var array{file_id: string, mime: string, ext: string, group: ?string}|null
+        public ?array $attachment = null,
     ) {}
+
+    public function isEmpty(): bool
+    {
+        return ! $this->type && ! $this->amount && ! $this->description && ! $this->projectId && ! $this->category;
+    }
 
     public static function start(?string $type = null): self
     {

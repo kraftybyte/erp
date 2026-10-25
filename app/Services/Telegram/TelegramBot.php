@@ -8,9 +8,14 @@ use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\GeminiService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Menangani update webhook Telegram: menghubungkan akun, menyusun draft
@@ -25,6 +30,16 @@ class TelegramBot
 
     private const PROJECT_CHOICES = 50;
 
+    // Sama dengan batas dan jenis file upload invoice di ERP.
+    private const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+    private const ATTACHMENT_TYPES = [
+        'image/jpeg'      => 'jpg',
+        'image/png'       => 'png',
+        'image/webp'      => 'webp',
+        'application/pdf' => 'pdf',
+    ];
+
     private const TYPES = [
         'expense' => ['label' => 'Expense', 'icon' => '💰', 'hint' => 'reimburse', 'model' => Expense::class, 'path' => 'expenses'],
         'advance' => ['label' => 'Advance', 'icon' => '💸', 'hint' => 'uang muka', 'model' => Advance::class, 'path' => 'advances'],
@@ -35,6 +50,7 @@ class TelegramBot
         private SubmissionParser $parser,
         private TelegramLinker $linker,
         private ProjectMatcher $matcher,
+        private GeminiService $gemini,
     ) {}
 
     public function handle(array $update): void
@@ -88,8 +104,18 @@ class TelegramBot
             return;
         }
 
-        if (isset($message['photo']) || isset($message['document'])) {
-            $this->telegram->sendMessage($chatId, 'Foto dan file belum bisa disimpan lewat bot. Lampirkan struk dari ERP setelah pengajuan disetujui.');
+        $file = $this->incomingFile($message);
+
+        if (isset($file['error'])) {
+            $this->telegram->sendMessage($chatId, $file['error']);
+
+            return;
+        }
+
+        if ($file) {
+            $this->receiveAttachment($chatId, $user, $file, $text, $command, $argument);
+
+            return;
         }
 
         if ($text === '') {
@@ -97,7 +123,7 @@ class TelegramBot
         }
 
         match ($command) {
-            'expense', 'advance' => $this->startDraft($chatId, $user, $argument, $command),
+            'expense', 'advance' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
             'status'             => $this->sendStatus($chatId, $user),
             'batal'              => $this->cancel($chatId),
             null                 => $this->handleText($chatId, $user, $text),
@@ -107,6 +133,13 @@ class TelegramBot
 
     private function handleText(int|string $chatId, User $user, string $text): void
     {
+        // Struk sudah dikirim lebih dulu; pesan ini keterangannya.
+        if ($draft = $this->draftAwaitingDetails($chatId)) {
+            $this->startDraft($chatId, $user, $text, null, $draft);
+
+            return;
+        }
+
         $draft = Draft::load($chatId);
 
         if ($draft?->awaiting) {
@@ -119,18 +152,158 @@ class TelegramBot
         $this->startDraft($chatId, $user, $text, null);
     }
 
-    private function startDraft(int|string $chatId, User $user, string $text, ?string $type): void
+    private function startDraft(int|string $chatId, User $user, string $text, ?string $type, ?Draft $draft = null): void
     {
-        $draft = Draft::start($type);
+        $draft ??= Draft::start($type);
+        $draft->type = $type ?? $draft->type;
 
         if ($text !== '') {
             $this->telegram->typing($chatId);
-            $draft->fill($this->parser->parse($text, $this->projectChoices()));
+            $draft->fill($this->parser->parse($text, $this->projectChoices(), $this->receiptForAi($draft)));
             // Perintah /expense atau /advance lebih kuat dari tebakan AI.
             $draft->type = $type ?? $draft->type;
         }
 
         $this->proceed($chatId, $user, $draft);
+    }
+
+    private function draftAwaitingDetails(int|string $chatId): ?Draft
+    {
+        $draft = Draft::load($chatId);
+
+        if ($draft?->awaiting !== 'details') {
+            return null;
+        }
+
+        $draft->awaiting = null;
+
+        return $draft;
+    }
+
+    // =================================================================
+    // Lampiran struk
+    // =================================================================
+
+    /**
+     * Foto atau dokumen di pesan sebagai lampiran draft, ['error' => pesan]
+     * bila tidak bisa dipakai, atau null bila pesan tidak membawa file.
+     */
+    private function incomingFile(array $message): ?array
+    {
+        if (! empty($message['photo'])) {
+            // Telegram mengirim beberapa ukuran; yang terakhir paling besar.
+            $photo = end($message['photo']);
+            $file  = ['file_id' => $photo['file_id'], 'mime' => 'image/jpeg', 'size' => $photo['file_size'] ?? 0];
+        } elseif (! empty($message['document'])) {
+            $document = $message['document'];
+            $file     = ['file_id' => $document['file_id'], 'mime' => $document['mime_type'] ?? '', 'size' => $document['file_size'] ?? 0];
+        } else {
+            return null;
+        }
+
+        if (! isset(self::ATTACHMENT_TYPES[$file['mime']])) {
+            return ['error' => 'Format file ini belum didukung. Kirim sebagai <b>foto</b>, atau berkas JPG, PNG, WebP, atau PDF.'];
+        }
+
+        if ($file['size'] > self::MAX_ATTACHMENT_BYTES) {
+            return ['error' => 'Ukuran file lebih dari 5 MB. Kirim sebagai <b>foto</b> supaya dikecilkan otomatis oleh Telegram.'];
+        }
+
+        return [
+            'file_id' => $file['file_id'],
+            'mime'    => $file['mime'],
+            'ext'     => self::ATTACHMENT_TYPES[$file['mime']],
+            'group'   => $message['media_group_id'] ?? null,
+        ];
+    }
+
+    private function receiveAttachment(int|string $chatId, User $user, array $file, string $text, ?string $command, string $argument): void
+    {
+        $draft = Draft::load($chatId);
+
+        // Album dikirim sebagai beberapa pesan. Satu pengajuan menyimpan satu
+        // lampiran, jadi hanya foto pertama dari album yang dipakai.
+        if ($file['group'] && ($draft?->attachment['group'] ?? null) === $file['group']) {
+            return;
+        }
+
+        // Foto dengan caption: caption-nya keterangan pengajuan.
+        if ($text !== '') {
+            $type = in_array($command, ['expense', 'advance'], true) ? $command : null;
+
+            $draft = Draft::start($type);
+            $draft->attachment = $file;
+            $this->startDraft($chatId, $user, $type ? $argument : $text, $type, $draft);
+
+            return;
+        }
+
+        // Foto susulan untuk draft yang sedang disusun.
+        if ($draft && ! $draft->isEmpty()) {
+            $replaced = (bool) $draft->attachment;
+            $draft->attachment = $file;
+            $this->telegram->sendMessage($chatId, $replaced ? '📎 Lampiran diganti dengan foto terbaru.' : '📎 Struk dilampirkan ke draft.');
+            $this->proceed($chatId, $user, $draft);
+
+            return;
+        }
+
+        // Struk lebih dulu: simpan, lalu tunggu keterangannya.
+        $draft = Draft::start();
+        $draft->attachment = $file;
+        $draft->awaiting   = 'details';
+        $draft->save($chatId);
+
+        $this->telegram->sendMessage(
+            $chatId,
+            "📎 Struk diterima.\n\nSekarang tulis keterangannya, misalnya:\n<i>expense 150rb grab ke kantor klien nestory</i>",
+            [[$this->button('❌ Batal', $draft, 'cancel')]]
+        );
+    }
+
+    /**
+     * Isi struk untuk dibaca Gemini bersama keterangannya. Hanya diunduh bila
+     * Gemini aktif; tanpa AI struk cukup dilampirkan.
+     */
+    private function receiptForAi(Draft $draft): ?array
+    {
+        if (! $draft->attachment || ! $this->gemini->isConfigured()) {
+            return null;
+        }
+
+        $data = $this->telegram->download($draft->attachment['file_id'], self::MAX_ATTACHMENT_BYTES);
+
+        return $data === null ? null : ['mime' => $draft->attachment['mime'], 'data' => $data];
+    }
+
+    /**
+     * Unduh struk dari Telegram ke disk public ERP. Null bila gagal diunduh
+     * atau isinya bukan gambar/PDF.
+     */
+    private function storeAttachment(Draft $draft): ?string
+    {
+        $data = $this->telegram->download($draft->attachment['file_id'], self::MAX_ATTACHMENT_BYTES);
+
+        if ($data === null) {
+            return null;
+        }
+
+        // File ini bisa dibuka lewat link publik /storage, jadi jenisnya
+        // diperiksa dari isinya, bukan dari label yang dikirim Telegram.
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($data);
+
+        if (! isset(self::ATTACHMENT_TYPES[$mime])) {
+            Log::warning('Lampiran Telegram ditolak: isi file tidak cocok', ['mime' => $mime]);
+
+            return null;
+        }
+
+        $folder = $draft->type === 'advance' ? 'advance/attachment' : 'expense/invoice';
+        $path   = $folder . '/' . now()->format('Y/m/d') . '/' . Str::uuid() . '.' . self::ATTACHMENT_TYPES[$mime];
+
+        Storage::disk('public')->put($path, $data);
+
+        return $path;
     }
 
     private function answerPrompt(int|string $chatId, User $user, Draft $draft, string $text): void
@@ -293,7 +466,9 @@ class TelegramBot
         $this->show(
             $chatId,
             $messageId,
-            "📝 <b>Draft {$type['label']}</b>\n\n{$this->details($draft)}\n\nPeriksa lagi, lalu tekan <b>Kirim</b>.",
+            "📝 <b>Draft {$type['label']}</b>\n\n{$this->details($draft)}\n\n"
+                . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang supaya admin tidak perlu upload.\n")
+                . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             [
                 [$this->button('✅ Kirim', $draft, 'submit')],
                 [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description')],
@@ -447,17 +622,56 @@ class TelegramBot
             return;
         }
 
+        // Struk diunduh sebelum apa pun disimpan: lebih baik user mengirim ulang
+        // fotonya daripada pengajuan masuk tanpa lampiran yang dikiranya ada.
+        $path = null;
+        if ($draft->attachment) {
+            $path = $this->storeAttachment($draft);
+
+            if ($path === null) {
+                $this->telegram->sendMessage($chatId, 'Struk gagal diambil dari Telegram. Kirim ulang fotonya, lalu tekan <b>Kirim</b> lagi.');
+
+                return;
+            }
+        }
+
         $attributes = [
             'user_id'         => $user->id,
             'submission_date' => $draft->date,
             'project_id'      => $draft->projectId,
             'category'        => $draft->category,
             'amount'          => $draft->amount,
+            'attachment'      => $path,
         ];
 
-        $record = $draft->type === 'advance'
-            ? Advance::create($attributes + ['keterangan_advance' => $draft->description, 'status' => Advance::STATUS_PENDING])
-            : Expense::create($attributes + ['keterangan_expense' => $draft->description, 'status' => ExpenseStatus::Pending->value]);
+        try {
+            $record = DB::transaction(function () use ($draft, $attributes, $path) {
+                if ($draft->type === 'advance') {
+                    return Advance::create($attributes + ['keterangan_advance' => $draft->description, 'status' => Advance::STATUS_PENDING]);
+                }
+
+                $expense = Expense::create($attributes + ['keterangan_expense' => $draft->description, 'status' => ExpenseStatus::Pending->value]);
+
+                // Tombol "Upload Invoice Pembelian" di ERP — yang juga mengisi item
+                // pembelian — hilang begitu lampiran ada, jadi itemnya dibuat di sini.
+                if ($path) {
+                    $expense->itemExpenses()->create([
+                        'name'        => Str::limit($draft->description, 100, ''),
+                        'description' => $draft->description,
+                        'quantity'    => 1,
+                        'price'       => $draft->amount,
+                    ]);
+                }
+
+                return $expense;
+            });
+        } catch (Throwable $e) {
+            if ($path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            throw $e;
+        }
 
         Draft::forget($chatId);
 
@@ -549,11 +763,12 @@ class TelegramBot
     private function helpText(): string
     {
         return <<<'HTML'
-        Tulis pengajuan dalam satu pesan, misalnya:
-        • <i>expense 150rb grab ke kantor klien PT Maju</i>
+        1. Kirim <b>foto struk/invoice</b> (boleh dilewati).
+        2. Tulis keterangannya dalam satu pesan, misalnya:
+        • <i>expense 150rb grab ke kantor klien nestory</i>
         • <i>advance 2jt beli properti shooting video profile</i>
 
-        Bot menyiapkan draft dan menanyakan yang kurang. Tidak ada yang tersimpan sebelum kamu menekan <b>Kirim</b>.
+        Bot mengenali kategori dan project-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi. Tidak ada yang tersimpan sebelum kamu menekan <b>Kirim</b>.
 
         /expense – ajukan expense (reimburse)
         /advance – ajukan advance (uang muka)
@@ -591,6 +806,11 @@ class TelegramBot
             'Kategori: ' . e($draft->category),
             'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             'Keterangan: ' . e($draft->description),
+            'Lampiran: ' . match ($draft->attachment['ext'] ?? null) {
+                null    => 'belum ada',
+                'pdf'   => '📎 PDF struk',
+                default => '📎 foto struk',
+            },
         ]);
     }
 

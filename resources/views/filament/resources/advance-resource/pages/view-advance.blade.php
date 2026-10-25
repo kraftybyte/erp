@@ -285,6 +285,17 @@
                     </div>
                 </div>
                 @endif
+
+                {{-- Lampiran pengajuan, mis. struk/penawaran yang dikirim lewat bot Telegram --}}
+                @if($record->attachment)
+                <div class="mt-4">
+                    <a href="{{ asset('storage/' . $record->attachment) }}"
+                       target="_blank"
+                       class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 transition text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        Lihat Lampiran
+                    </a>
+                </div>
+                @endif
             </div>
         </div>
 
