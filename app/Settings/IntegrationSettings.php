@@ -25,6 +25,11 @@ class IntegrationSettings extends Settings
     // Dibuat otomatis setiap webhook didaftarkan; tidak tampil di form.
     public ?string $telegram_webhook_secret;
 
+    // Bot laporan keuangan: bot terpisah (token sendiri) dari bot pengajuan.
+    public ?string $finance_bot_token;
+
+    public ?string $finance_webhook_secret;
+
     public static function group(): string
     {
         return 'integrations';
@@ -32,7 +37,17 @@ class IntegrationSettings extends Settings
 
     public static function encrypted(): array
     {
-        return ['gemini_api_key', 'telegram_bot_token', 'telegram_webhook_secret'];
+        return ['gemini_api_key', 'telegram_bot_token', 'telegram_webhook_secret', 'finance_bot_token', 'finance_webhook_secret'];
+    }
+
+    public static function financeBotToken(): ?string
+    {
+        return self::resolve('finance_bot_token', 'services.telegram.finance_bot_token');
+    }
+
+    public static function financeWebhookSecret(): ?string
+    {
+        return self::resolve('finance_webhook_secret', 'services.telegram.finance_webhook_secret');
     }
 
     public static function geminiApiKey(): ?string

@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WablasController;
 use App\Http\Controllers\PushNotificationController;
+use App\Http\Controllers\FinanceWebhookController;
 use App\Http\Controllers\TelegramWebhookController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 
@@ -40,3 +41,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::post('/telegram/webhook', TelegramWebhookController::class)
     ->withoutMiddleware(ThrottleRequests::class)
     ->name('telegram.webhook');
+
+// Bot laporan keuangan: bot terpisah dengan secret sendiri.
+Route::post('/telegram/finance-webhook', FinanceWebhookController::class)
+    ->withoutMiddleware(ThrottleRequests::class)
+    ->name('telegram.finance-webhook');

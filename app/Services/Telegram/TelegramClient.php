@@ -16,11 +16,35 @@ use Illuminate\Support\Facades\Log;
  */
 class TelegramClient
 {
-    private const USERNAME_CACHE = 'telegram:bot-username';
+    /**
+     * @param  \Closure(): ?string|null  $tokenResolver  token bot; default bot pengajuan
+     */
+    public function __construct(private ?\Closure $tokenResolver = null) {}
+
+    /**
+     * Client untuk bot laporan keuangan (token terpisah dari bot pengajuan).
+     */
+    public static function forFinance(): self
+    {
+        return new self(fn () => IntegrationSettings::financeBotToken());
+    }
+
+    public function token(): ?string
+    {
+        return $this->tokenResolver
+            ? ($this->tokenResolver)()
+            : IntegrationSettings::telegramBotToken();
+    }
+
+    private function usernameCacheKey(): string
+    {
+        // Per token, supaya link "Hubungkan Telegram" tidak tertukar antar bot.
+        return 'telegram:bot-username:' . md5((string) $this->token());
+    }
 
     public function isConfigured(): bool
     {
-        return filled(IntegrationSettings::telegramBotToken());
+        return filled($this->token());
     }
 
     public function call(string $method, array $params = []): mixed
@@ -29,7 +53,7 @@ class TelegramClient
             return null;
         }
 
-        $token = IntegrationSettings::telegramBotToken();
+        $token = $this->token();
 
         try {
             $response = Http::timeout(10)->post("https://api.telegram.org/bot{$token}/{$method}", $params);
@@ -125,7 +149,7 @@ class TelegramClient
             return null;
         }
 
-        $token = IntegrationSettings::telegramBotToken();
+        $token = $this->token();
 
         try {
             $response = Http::timeout(30)->get("https://api.telegram.org/file/bot{$token}/{$file['file_path']}");
@@ -155,7 +179,7 @@ class TelegramClient
             return null;
         }
 
-        return Cache::remember(self::USERNAME_CACHE, now()->addDay(), fn () => $this->call('getMe')['username'] ?? null);
+        return Cache::remember($this->usernameCacheKey(), now()->addDay(), fn () => $this->call('getMe')['username'] ?? null);
     }
 
     /**
@@ -164,7 +188,7 @@ class TelegramClient
      */
     public function forgetBotUsername(): void
     {
-        Cache::forget(self::USERNAME_CACHE);
+        Cache::forget($this->usernameCacheKey());
     }
 
     private function message(string $html): array

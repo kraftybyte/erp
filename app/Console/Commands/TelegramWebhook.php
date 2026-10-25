@@ -11,13 +11,14 @@ use RuntimeException;
  */
 class TelegramWebhook extends Command
 {
-    protected $signature = 'telegram:webhook {action=set : set | info | delete}';
+    protected $signature = 'telegram:webhook {action=set : set | info | delete} {--finance : bot laporan keuangan, bukan bot pengajuan}';
 
     protected $description = 'Daftarkan, cek, atau cabut webhook bot Telegram';
 
     public function handle(TelegramWebhookManager $webhook): int
     {
-        $action = $this->argument('action');
+        $webhook = $this->option('finance') ? TelegramWebhookManager::forFinance() : $webhook;
+        $action  = $this->argument('action');
 
         if (! in_array($action, ['set', 'info', 'delete'], true)) {
             $this->error('Pilihan yang tersedia: set, info, delete.');

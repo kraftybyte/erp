@@ -24,7 +24,29 @@ class TelegramWebhookManager
         ['command' => 'bantuan', 'description' => 'Cara pakai'],
     ];
 
-    public function __construct(private TelegramClient $telegram) {}
+    public const FINANCE_COMMANDS = [
+        ['command' => 'ringkasan', 'description' => 'Ringkasan advance, expense, invoice'],
+        ['command' => 'expense',   'description' => 'Detail expense'],
+        ['command' => 'advance',   'description' => 'Detail advance & realisasi'],
+        ['command' => 'invoice',   'description' => 'Detail invoice & piutang'],
+        ['command' => 'piutang',   'description' => 'Invoice yang belum lunas'],
+        ['command' => 'pending',   'description' => 'Pengajuan yang menunggu proses'],
+    ];
+
+    /**
+     * Default: bot pengajuan. Bot laporan keuangan lewat forFinance().
+     */
+    public function __construct(
+        private TelegramClient $telegram,
+        private string $route = 'telegram.webhook',
+        private string $secretProperty = 'telegram_webhook_secret',
+        private array $commands = self::COMMANDS,
+    ) {}
+
+    public static function forFinance(): self
+    {
+        return new self(TelegramClient::forFinance(), 'telegram.finance-webhook', 'finance_webhook_secret', self::FINANCE_COMMANDS);
+    }
 
     /**
      * @return string URL webhook yang didaftarkan
@@ -55,11 +77,11 @@ class TelegramWebhookManager
         }
 
         $settings = app(IntegrationSettings::class);
-        $settings->telegram_webhook_secret = $secret;
+        $settings->{$this->secretProperty} = $secret;
         $settings->save();
 
         // Menu perintah di Telegram, supaya tidak perlu diatur manual di BotFather.
-        $this->telegram->call('setMyCommands', ['commands' => self::COMMANDS]);
+        $this->telegram->call('setMyCommands', ['commands' => $this->commands]);
         $this->telegram->forgetBotUsername();
 
         return $url;
@@ -105,7 +127,7 @@ class TelegramWebhookManager
      */
     public function webhookUrl(): string
     {
-        return rtrim((string) config('app.url'), '/') . route('telegram.webhook', absolute: false);
+        return rtrim((string) config('app.url'), '/') . route($this->route, absolute: false);
     }
 
     private function ensureConfigured(): void

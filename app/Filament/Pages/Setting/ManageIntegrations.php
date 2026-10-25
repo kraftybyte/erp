@@ -19,7 +19,7 @@ use Illuminate\Support\HtmlString;
 use RuntimeException;
 
 /**
- * Settings → Integrasi: kunci Gemini dan bot Telegram.
+ * Settings → Integrasi: kunci Gemini, bot pengajuan, dan bot laporan keuangan.
  *
  * Kunci yang tersimpan tidak pernah dikirim ke browser. Isiannya tampil kosong
  * dan hanya mengganti nilai lama bila diisi.
@@ -34,14 +34,22 @@ class ManageIntegrations extends SettingsPage
 
     protected static ?string $navigationIcon = 'heroicon-o-puzzle-piece';
 
-    private const SECRETS = ['gemini_api_key', 'telegram_bot_token'];
+    private const SECRETS = ['gemini_api_key', 'telegram_bot_token', 'finance_bot_token'];
 
     /**
-     * Hasil TelegramWebhookManager::status(), atau ['error' => pesan].
+     * Kolom token per bot: 'main' = bot pengajuan, 'finance' = bot laporan.
      */
-    public ?array $telegramStatus = null;
+    private const BOT_TOKENS = ['main' => 'telegram_bot_token', 'finance' => 'finance_bot_token'];
 
-    private ?string $previousToken = null;
+    /**
+     * Per bot: hasil TelegramWebhookManager::status(), ['error' => pesan], atau null.
+     *
+     * @var array<string, array|null>
+     */
+    public array $botStatus = ['main' => null, 'finance' => null];
+
+    /** @var array<string, ?string> */
+    private array $previousTokens = [];
 
     public static function getNavigationLabel(): string
     {
@@ -67,7 +75,8 @@ class ManageIntegrations extends SettingsPage
     {
         parent::mount();
 
-        $this->loadTelegramStatus();
+        $this->loadStatus('main');
+        $this->loadStatus('finance');
     }
 
     public function form(Form $form): Form
@@ -99,47 +108,66 @@ class ManageIntegrations extends SettingsPage
                         ])->columnSpanFull(),
                     ]),
 
-                Forms\Components\Section::make('Bot Telegram')
-                    ->description('Karyawan mengajukan expense & advance lewat chat. Masing-masing menghubungkan akunnya dari halaman Profil.')
-                    ->icon('heroicon-o-chat-bubble-left-right')
-                    ->schema([
-                        Forms\Components\TextInput::make('telegram_bot_token')
-                            ->label('Token bot')
-                            ->password()
-                            ->autocomplete('off')
-                            ->placeholder(fn () => $this->secretPlaceholder(IntegrationSettings::telegramBotToken()))
-                            ->helperText('Dari @BotFather. Setelah token baru disimpan, webhook langsung didaftarkan.'),
-                        Forms\Components\Placeholder::make('telegram_status')
-                            ->label('Status')
-                            ->content(fn () => $this->telegramStatusView())
-                            ->visible(fn () => $this->telegramStatus !== null),
-                        Forms\Components\Actions::make([
-                            Action::make('checkTelegram')
-                                ->label('Cek status')
-                                ->icon('heroicon-o-arrow-path')
-                                ->color('gray')
-                                ->action(fn () => $this->loadTelegramStatus()),
-                            Action::make('registerWebhook')
-                                ->label('Daftarkan ulang webhook')
-                                ->icon('heroicon-o-link')
-                                ->color('gray')
-                                ->action(fn () => $this->registerWebhook()),
-                            Action::make('removeWebhook')
-                                ->label('Matikan bot')
-                                ->icon('heroicon-o-power')
-                                ->color('danger')
-                                ->requiresConfirmation()
-                                ->modalDescription('Bot berhenti menerima pesan sampai webhook didaftarkan lagi. Token tetap tersimpan.')
-                                ->action(fn () => $this->removeWebhook()),
-                        ]),
-                    ]),
+                $this->botSection(
+                    'main',
+                    'Bot Telegram — pengajuan',
+                    'Karyawan mengajukan expense, advance, dan realisasi lewat chat. Masing-masing menghubungkan akunnya dari halaman Profil.',
+                    'heroicon-o-chat-bubble-left-right',
+                    IntegrationSettings::telegramBotToken(),
+                ),
+
+                $this->botSection(
+                    'finance',
+                    'Bot Telegram — laporan keuangan',
+                    'Bot terpisah, hanya membaca: ringkasan advance, expense, dan invoice untuk Director, Finance, dan super_admin. Akun yang sudah terhubung di bot pengajuan otomatis dikenali.',
+                    'heroicon-o-chart-bar',
+                    IntegrationSettings::financeBotToken(),
+                ),
             ])
             ->statePath('data');
     }
 
+    private function botSection(string $bot, string $title, string $description, string $icon, ?string $token): Forms\Components\Section
+    {
+        return Forms\Components\Section::make($title)
+            ->description($description)
+            ->icon($icon)
+            ->schema([
+                Forms\Components\TextInput::make(self::BOT_TOKENS[$bot])
+                    ->label('Token bot')
+                    ->password()
+                    ->autocomplete('off')
+                    ->placeholder(fn () => $this->secretPlaceholder($token))
+                    ->helperText('Dari @BotFather' . ($bot === 'finance' ? ', bot yang berbeda dari bot pengajuan' : '') . '. Setelah token baru disimpan, webhook langsung didaftarkan.'),
+                Forms\Components\Placeholder::make("{$bot}_status")
+                    ->label('Status')
+                    ->content(fn () => $this->statusView($bot))
+                    ->visible(fn () => $this->botStatus[$bot] !== null),
+                Forms\Components\Actions::make([
+                    Action::make("{$bot}Check")
+                        ->label('Cek status')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->action(fn () => $this->loadStatus($bot)),
+                    Action::make("{$bot}Register")
+                        ->label('Daftarkan ulang webhook')
+                        ->icon('heroicon-o-link')
+                        ->color('gray')
+                        ->action(fn () => $this->registerWebhook($bot)),
+                    Action::make("{$bot}Remove")
+                        ->label('Matikan bot')
+                        ->icon('heroicon-o-power')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalDescription('Bot berhenti menerima pesan sampai webhook didaftarkan lagi. Token tetap tersimpan.')
+                        ->action(fn () => $this->removeWebhook($bot)),
+                ]),
+            ]);
+    }
+
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        return Arr::except($data, [...self::SECRETS, 'telegram_webhook_secret']);
+        return Arr::except($data, [...self::SECRETS, 'telegram_webhook_secret', 'finance_webhook_secret']);
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
@@ -156,7 +184,9 @@ class ManageIntegrations extends SettingsPage
 
     protected function beforeSave(): void
     {
-        $this->previousToken = IntegrationSettings::telegramBotToken();
+        foreach (array_keys(self::BOT_TOKENS) as $bot) {
+            $this->previousTokens[$bot] = $this->client($bot)->token();
+        }
     }
 
     protected function afterSave(): void
@@ -165,10 +195,22 @@ class ManageIntegrations extends SettingsPage
             $this->data[$field] = null;
         }
 
-        if (IntegrationSettings::telegramBotToken() !== $this->previousToken) {
-            app(TelegramClient::class)->forgetBotUsername();
-            $this->registerWebhook();
+        foreach (array_keys(self::BOT_TOKENS) as $bot) {
+            if ($this->client($bot)->token() !== ($this->previousTokens[$bot] ?? null)) {
+                $this->client($bot)->forgetBotUsername();
+                $this->registerWebhook($bot);
+            }
         }
+    }
+
+    private function client(string $bot): TelegramClient
+    {
+        return $bot === 'finance' ? TelegramClient::forFinance() : app(TelegramClient::class);
+    }
+
+    private function manager(string $bot): TelegramWebhookManager
+    {
+        return $bot === 'finance' ? TelegramWebhookManager::forFinance() : app(TelegramWebhookManager::class);
     }
 
     private function testGemini(?string $key, ?string $model): void
@@ -188,50 +230,52 @@ class ManageIntegrations extends SettingsPage
         Notification::make()->danger()->title('Gemini belum bisa dipakai')->body($error)->persistent()->send();
     }
 
-    private function registerWebhook(): void
+    private function registerWebhook(string $bot): void
     {
-        try {
-            $url = app(TelegramWebhookManager::class)->register();
+        $name = $bot === 'finance' ? 'Bot laporan keuangan' : 'Bot pengajuan';
 
-            Notification::make()->success()->title('Bot Telegram aktif')->body("Webhook terdaftar di {$url}")->send();
+        try {
+            $url = $this->manager($bot)->register();
+
+            Notification::make()->success()->title("{$name} aktif")->body("Webhook terdaftar di {$url}")->send();
         } catch (RuntimeException $e) {
-            Notification::make()->danger()->title('Webhook belum terdaftar')->body($e->getMessage())->persistent()->send();
+            Notification::make()->danger()->title("Webhook {$name} belum terdaftar")->body($e->getMessage())->persistent()->send();
         }
 
-        $this->loadTelegramStatus();
+        $this->loadStatus($bot);
     }
 
-    private function removeWebhook(): void
+    private function removeWebhook(string $bot): void
     {
         try {
-            app(TelegramWebhookManager::class)->remove();
+            $this->manager($bot)->remove();
 
             Notification::make()->success()->title('Bot dimatikan')->send();
         } catch (RuntimeException $e) {
             Notification::make()->danger()->title('Gagal mematikan bot')->body($e->getMessage())->send();
         }
 
-        $this->loadTelegramStatus();
+        $this->loadStatus($bot);
     }
 
-    private function loadTelegramStatus(): void
+    private function loadStatus(string $bot): void
     {
-        if (! app(TelegramClient::class)->isConfigured()) {
-            $this->telegramStatus = null;
+        if (! $this->client($bot)->isConfigured()) {
+            $this->botStatus[$bot] = null;
 
             return;
         }
 
         try {
-            $this->telegramStatus = app(TelegramWebhookManager::class)->status();
+            $this->botStatus[$bot] = $this->manager($bot)->status();
         } catch (RuntimeException $e) {
-            $this->telegramStatus = ['error' => $e->getMessage()];
+            $this->botStatus[$bot] = ['error' => $e->getMessage()];
         }
     }
 
-    private function telegramStatusView(): HtmlString
+    private function statusView(string $bot): HtmlString
     {
-        $status = $this->telegramStatus;
+        $status = $this->botStatus[$bot];
 
         if (isset($status['error'])) {
             return new HtmlString('<span class="text-danger-600 dark:text-danger-400">' . e($status['error']) . '</span>');

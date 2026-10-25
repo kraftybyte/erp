@@ -116,6 +116,30 @@ class IntegrationSettingsTest extends TestCase
         $this->assertSame('gemini-3.5-flash', $settings->gemini_model);
     }
 
+    public function test_token_bot_finance_mendaftarkan_webhook_finance_sendiri(): void
+    {
+        $this->fakeSettings(['telegram_bot_token' => '111:PENGAJUAN']);
+        config(['services.telegram.finance_bot_token' => null]);
+        $this->fakeTelegram();
+
+        Livewire::actingAs($this->admin())
+            ->test(ManageIntegrations::class)
+            ->set('data.finance_bot_token', '333:FINANCE')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertSet('data.finance_bot_token', null);
+
+        $settings = app(IntegrationSettings::class);
+        $this->assertSame('333:FINANCE', $settings->finance_bot_token);
+        $this->assertSame(64, strlen((string) $settings->finance_webhook_secret));
+        $this->assertNull($settings->telegram_webhook_secret, 'Secret bot pengajuan tidak tersentuh.');
+
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'bot333:FINANCE/setWebhook')
+            && $request['url'] === 'https://erp.test/api/telegram/finance-webhook'
+            && $request['secret_token'] === $settings->finance_webhook_secret);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'bot111:PENGAJUAN/setWebhook'));
+    }
+
     public function test_menyimpan_token_baru_langsung_mendaftarkan_webhook(): void
     {
         $this->fakeSettings(['telegram_bot_token' => null]);
@@ -157,6 +181,8 @@ class IntegrationSettingsTest extends TestCase
             'gemini_model'            => 'gemini-3.5-flash-lite',
             'telegram_bot_token'      => null,
             'telegram_webhook_secret' => null,
+            'finance_bot_token'       => null,
+            'finance_webhook_secret'  => null,
         ]);
     }
 

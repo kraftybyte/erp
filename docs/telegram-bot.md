@@ -224,6 +224,39 @@ Bila token bocor: BotFather → `/revoke`, tempel token baru di Settings → Int
 
 ---
 
+## Bot laporan keuangan (terpisah)
+
+Bot kedua, **hanya membaca**, untuk Director, Finance, dan super_admin: ringkasan
+advance, expense, dan invoice **sepanjang waktu**. Token, webhook
+(`/api/telegram/finance-webhook`), dan secret-nya terpisah dari bot pengajuan.
+
+Setup:
+
+1. BotFather → `/newbot` (mis. `SigncareFinanceBot`) → `/setjoingroups` → **Disable**.
+2. Settings → Integrasi → **Bot Telegram — laporan keuangan** → tempel token → **Simpan**.
+   Lewat SSH: `php artisan telegram:webhook --finance` (juga `info`, `delete`).
+3. Pengguna menghubungkan akun Telegram **sekali** lewat bot pengajuan (Profil →
+   Hubungkan Telegram). ID chat pribadi sama di semua bot, jadi bot laporan
+   langsung mengenalinya. Role diperiksa ulang di setiap pesan dan tombol.
+
+Perintah: `/ringkasan`, `/advance`, `/expense`, `/invoice`, `/piutang`, `/pending`.
+
+Definisi angka (`App\Services\FinanceOverview`):
+
+| Angka | Definisi |
+|---|---|
+| Expense sudah dibayar | Status Dibayarkan/Selesai. Status yang dipakai, bukan kolom `paid` (pada data lama kolom itu bisa terisi walau baru disetujui). |
+| Advance dicairkan | Status Dibayarkan, Sedang di-Realisasi (User), Siap Diselesaikan, Selesai |
+| Belum dipertanggungjawabkan | Per advance yang belum selesai: dicairkan − direalisasi − sisa yang dikembalikan |
+| Invoice ditagihkan | Invoice penjualan (bukan proforma) yang tidak draft/batal, sebesar `Invoice::amountDue()`: invoice DP hanya persentase DP-nya, sisanya lewat invoice pelunasan — `grand_total` mentah akan menghitung dobel |
+| Piutang | Per invoice: ditagihkan − dibayar; lewat jatuh tempo bila `due_date` sudah lewat |
+| Ditolak | Ditampilkan terpisah, tidak masuk total |
+
+Catatan: angka "pengeluaran" di Payment Dashboard ERP memakai definisi lain
+(semua pengajuan termasuk yang ditolak/pending), jadi bisa berbeda dari bot.
+
+---
+
 ## Peta kode
 
 | Berkas | Isi |

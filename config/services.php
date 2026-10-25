@@ -31,6 +31,9 @@ return [
         // Dikirim Telegram di header X-Telegram-Bot-Api-Secret-Token pada setiap
         // webhook; request tanpa nilai ini ditolak.
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
+        // Bot laporan keuangan (terpisah dari bot pengajuan).
+        'finance_bot_token'      => env('TELEGRAM_FINANCE_BOT_TOKEN'),
+        'finance_webhook_secret' => env('TELEGRAM_FINANCE_WEBHOOK_SECRET'),
     ],
 
     'meta' => [
