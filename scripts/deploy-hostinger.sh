@@ -78,11 +78,14 @@ pending_migrations() {
         exit 1
     fi
 
+    # File sementara, bukan <( ... ): hosting CloudLinux tidak menyediakan /dev/fd.
+    printf '%s\n' "$ran" > "$WORK/ran-migrations.txt"
+
     {
         (cd "$STAGE" && ls database/migrations/*.php database/settings/*.php 2>/dev/null)
         (cd "$SITE" && ls database/migrations/*.php database/settings/*.php 2>/dev/null)
     } | xargs -n1 basename | sed 's/\.php$//' | sort -u \
-        | grep -vxF -f <(printf '%s\n' "$ran") || true
+        | grep -vxF -f "$WORK/ran-migrations.txt" || true
 }
 
 env_value() {
@@ -113,10 +116,9 @@ plan() {
 
     echo
     echo "== File di server yang tidak ada di repo (dibiarkan, tidak dihapus):"
-    comm -23 \
-        <(cd "$SITE" && find app config database routes resources lang -type f 2>/dev/null | sort) \
-        <(cd "$STAGE" && find app config database routes resources lang -type f 2>/dev/null | sort) \
-        | sed 's/^/   /'
+    (cd "$SITE" && find app config database routes resources lang -type f 2>/dev/null | sort) > "$WORK/server-files.txt"
+    (cd "$STAGE" && find app config database routes resources lang -type f 2>/dev/null | sort) > "$WORK/repo-files.txt"
+    comm -23 "$WORK/server-files.txt" "$WORK/repo-files.txt" | sed 's/^/   /'
 
     echo
     echo "== Migration yang akan dijalankan:"
