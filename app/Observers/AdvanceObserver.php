@@ -48,7 +48,8 @@ class AdvanceObserver
                     "Pengajuan advance {$nominal} kamu telah disetujui. Menunggu pembayaran dari Finance.",
                     'heroicon-o-check-circle',
                     'success',
-                    $url
+                    $url,
+                    telegram: true
                 );
                 break;
 
@@ -61,7 +62,8 @@ class AdvanceObserver
                     "Pengajuan advance {$nominal} kamu ditolak.{$alasan}",
                     'heroicon-o-x-circle',
                     'danger',
-                    $url
+                    $url,
+                    telegram: true
                 );
                 break;
 
@@ -77,7 +79,8 @@ class AdvanceObserver
                     "Advance {$dibayar} telah dibayarkan oleh {$byName}. Silakan lakukan realisasi setelah selesai.",
                     'heroicon-o-banknotes',
                     'success',
-                    $url
+                    $url,
+                    telegram: true
                 );
                 break;
 
@@ -108,7 +111,8 @@ class AdvanceObserver
                     "Advance {$nominal} kamu telah selesai diverifikasi oleh Finance.",
                     'heroicon-o-check-badge',
                     'success',
-                    $url
+                    $url,
+                    telegram: true
                 );
                 break;
         }

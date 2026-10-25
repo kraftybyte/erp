@@ -69,6 +69,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'password' => 'hashed',
         'push_subscription' => 'array',
         'push_enabled' => 'boolean',
+        'telegram_linked_at' => 'datetime',
     ];
 
     /**

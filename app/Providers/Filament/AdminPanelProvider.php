@@ -6,6 +6,7 @@ use App\Filament\Pages\Auth\EmailVerification;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Livewire\MyProfileExtended;
+use App\Livewire\TelegramConnection;
 use App\Settings\GeneralSettings;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -120,6 +121,7 @@ class AdminPanelProvider extends PanelProvider
                     )
                     ->myProfileComponents([
                         'personal_info' => MyProfileExtended::class,
+                        'telegram'      => TelegramConnection::class,
                     ]),
             ]);
     }

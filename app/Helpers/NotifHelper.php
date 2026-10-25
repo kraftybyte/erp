@@ -2,6 +2,7 @@
 
 namespace App\Helpers;
 
+use App\Services\Telegram\TelegramNotifier;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 
@@ -13,7 +14,9 @@ class NotifHelper
         string $body = '',
         string $icon = 'heroicon-o-bell',
         string $color = 'info',
-        string $url = ''
+        string $url = '',
+        // Ikut kirim ke Telegram penerima yang sudah menghubungkan akunnya.
+        bool $telegram = false
     ): void {
         if (!$user) return;
 
@@ -39,6 +42,10 @@ class NotifHelper
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            if ($telegram) {
+                app(TelegramNotifier::class)->send($u, $title, $body, $url);
+            }
         }
     }
 }

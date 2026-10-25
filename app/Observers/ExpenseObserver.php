@@ -45,7 +45,8 @@ class ExpenseObserver
                     "Pengajuan expense {$nominal} kamu telah disetujui. Silakan upload invoice pembelian.",
                     'heroicon-o-check-circle',
                     'success',
-                    $url
+                    $url,
+                    telegram: true
                 );
             }
 
@@ -57,7 +58,8 @@ class ExpenseObserver
                     "Pengajuan expense {$nominal} kamu ditolak.{$alasan}",
                     'heroicon-o-x-circle',
                     'danger',
-                    $url
+                    $url,
+                    telegram: true
                 );
             }
 
@@ -73,7 +75,8 @@ class ExpenseObserver
                     "Expense kamu sebesar {$nominal} telah dibayarkan oleh {$byName}.",
                     'heroicon-o-banknotes',
                     'success',
-                    $url
+                    $url,
+                    telegram: true
                 );
             }
         }

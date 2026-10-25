@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\FinanceCategory;
 use App\Filament\Resources\ExpenseResource\Pages;
 use App\Filament\Resources\ExpenseResource\RelationManagers;
 use App\Helpers\ColorHelper;
@@ -43,16 +44,7 @@ class ExpenseResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $categories = [
-            'Marketing' => 'Marketing',
-            'Transport' => 'Transport',
-            'Operasional Kantor' => 'Operasional Kantor',
-            'Komunikasi' => 'Komunikasi',
-            'Software' => 'Software',
-            'Entertainment' => 'Entertainment',
-            'Project Support' => 'Project Support',
-            'Biaya Lain' => 'Biaya Lain',
-        ];
+        $categories = FinanceCategory::options();
 
         return $form
             ->schema([

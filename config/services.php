@@ -18,8 +18,19 @@ return [
         'api_key' => env('WABLAS_API_KEY'),
     ],
 
+    // Gemini & Telegram diatur di Settings → Integrasi (App\Settings\IntegrationSettings).
+    // Nilai di bawah hanya cadangan bila isian di sana kosong.
     'gemini' => [
-        'key' => env('GEMINI_API_KEY'),
+        'key'   => env('GEMINI_API_KEY'),
+        // gemini-2.0-flash sudah dimatikan Google per 1 Juni 2026.
+        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+    ],
+
+    'telegram' => [
+        'bot_token'      => env('TELEGRAM_BOT_TOKEN'),
+        // Dikirim Telegram di header X-Telegram-Bot-Api-Secret-Token pada setiap
+        // webhook; request tanpa nilai ini ditolak.
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
     ],
 
     'meta' => [
