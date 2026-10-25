@@ -55,6 +55,46 @@ Bot : 🧾 Draft Realisasi
   Expense yang ditulis jelas tetap diberi peringatan dan tombol "Jadikan realisasi".
 - `/status` menampilkan progres setiap advance terbuka.
 
+### Banyak struk sekaligus
+
+Kirim beberapa foto sebagai **album** dengan satu caption, atau kirim foto
+susulan ke draft yang sedang disusun.
+
+```
+User: [album 3 foto] realisasi nestory
+Bot : (membalas foto 1) Struk 1 ☝️ — berapa nominalnya?
+User: 120rb sewa lighting
+Bot : (membalas foto 2) Struk 2 ☝️ — berapa nominalnya?
+…
+Bot : 🧾 Draft Realisasi — 3 struk
+      1. 📎 Sewa lighting — Rp 120.000
+      2. 📎 Konsumsi kru — Rp 85.000
+      3. 📎 Parkir — Rp 15.000
+      Total: Rp 220.000 · Sisa advance: Rp 2.000.000 → Rp 1.780.000
+      [✅ Kirim 3 struk] [✏️ 1][✏️ 2][✏️ 3] [🗑 1][🗑 2][🗑 3]
+```
+
+- **Realisasi**: 1 batch, satu item per struk, dan setiap item menyimpan
+  strukny sendiri (bukan semua file di item pertama).
+- **Expense**: satu pengajuan per struk, karena kolom lampiran expense hanya
+  muat satu file.
+- **Advance**: hanya satu lampiran; bila lebih, bot meminta struk lain dihapus
+  dulu, tidak dibuang diam-diam.
+
+Pengaman supaya tidak salah masuk:
+
+- Nominal ditanyakan per struk sambil **membalas foto yang dimaksud**. Bila
+  Gemini aktif, nominal tiap struk dibaca otomatis dan tetap tampil untuk diperiksa.
+- Nominal di caption album dianggap **total**; bila berbeda dengan jumlah per
+  struk, ringkasan memberi peringatan. Pada foto susulan, nominal yang sudah
+  ditulis tetap milik struk pertama.
+- Struk yang **persis sama** (dikirim ulang/di-forward) ditolak, di draft yang
+  sama maupun bila pernah dikirim sebelumnya. Catatannya di tabel
+  `telegram_receipts` (bukan cache, supaya tidak hilang saat deploy), dicatat
+  dalam transaksi yang sama dengan pengajuannya.
+- Bila satu struk gagal diunduh saat Kirim, struk lain yang sudah terunggah
+  dihapus lagi dan tidak ada yang tersimpan.
+
 ### PIC
 
 Project satu klien sering hanya beda di PIC-nya. Bila beberapa project cocok,

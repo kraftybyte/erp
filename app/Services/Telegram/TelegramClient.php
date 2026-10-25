@@ -66,12 +66,19 @@ class TelegramClient
     /**
      * @param  array<int, array<int, array{text: string, callback_data?: string, url?: string}>>  $buttons  baris-baris tombol inline
      */
-    public function sendMessage(int|string $chatId, string $html, array $buttons = []): ?array
+    /**
+     * @param  int|null  $replyTo  pesan yang dikutip, mis. foto struk yang sedang ditanyakan nominalnya
+     */
+    public function sendMessage(int|string $chatId, string $html, array $buttons = [], ?int $replyTo = null): ?array
     {
         $params = $this->message($html) + ['chat_id' => $chatId];
 
         if ($buttons) {
             $params['reply_markup'] = ['inline_keyboard' => $buttons];
+        }
+
+        if ($replyTo) {
+            $params['reply_parameters'] = ['message_id' => $replyTo, 'allow_sending_without_reply' => true];
         }
 
         $result = $this->call('sendMessage', $params);

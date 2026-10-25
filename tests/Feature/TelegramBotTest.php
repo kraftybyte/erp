@@ -14,6 +14,7 @@ use App\Services\Telegram\TelegramLinker;
 use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -405,7 +406,7 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('foto struk', $this->lastText());
     }
 
-    public function test_album_hanya_foto_pertama_yang_dipakai(): void
+    public function test_semua_foto_album_masuk_draft_yang_sama(): void
     {
         $this->user();
         $this->fakeApis(gemini: null);
@@ -413,7 +414,9 @@ class TelegramBotTest extends TestCase
         $this->send($this->photoUpdate('album-1', album: 'grup-9'));
         $this->send($this->photoUpdate('album-2', album: 'grup-9'));
 
-        $this->assertSame('album-1', Draft::load($this->chatId)->attachment['file_id']);
+        $draft = Draft::load($this->chatId);
+        $this->assertSame(['album-1', 'album-2'], array_column($draft->receipts, 'file_id'));
+        $this->assertStringContainsString('2 struk diterima', $this->lastText());
     }
 
     public function test_format_atau_ukuran_file_yang_tidak_didukung_ditolak(): void
@@ -655,6 +658,191 @@ class TelegramBotTest extends TestCase
     }
 
     // =================================================================
+    // Banyak struk (batch)
+    // =================================================================
+
+    public function test_album_realisasi_jadi_satu_batch_dengan_struk_per_item(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $foto = [
+            $this->photoUpdate('r1', 'realisasi nestory', album: 'g1'),
+            $this->photoUpdate('r2', album: 'g1'),
+            $this->photoUpdate('r3', album: 'g1'),
+        ];
+        array_map(fn ($update) => $this->send($update), $foto);
+
+        // Nominal ditanyakan per struk sambil membalas foto yang dimaksud.
+        $this->assertLastQuestionRepliesTo($foto[0]);
+        $this->send($this->textUpdate('120rb sewa lighting'));
+        $this->assertLastQuestionRepliesTo($foto[1]);
+        $this->send($this->textUpdate('85rb konsumsi kru'));
+        $this->assertLastQuestionRepliesTo($foto[2]);
+        $this->send($this->textUpdate('15000'));
+
+        $this->assertStringContainsString('Draft Realisasi — 3 struk', $this->lastText());
+        $this->assertStringContainsString('Rp 220.000', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $batch = Realisasi::where('advance_id', $advance->id)->with('items.files')->sole();
+        $this->assertSame(['Sewa lighting', 'Konsumsi kru'], $batch->items->take(2)->pluck('name')->all());
+        $this->assertEquals([120_000, 85_000, 15_000], $batch->items->pluck('price')->map(fn ($p) => (float) $p)->all());
+
+        foreach ($batch->items as $item) {
+            $this->assertCount(1, $item->files, 'Setiap item punya strukny sendiri.');
+            Storage::disk('public')->assertExists($item->files->first()->filepath);
+        }
+
+        $this->assertSame(3, DB::table('telegram_receipts')->where('user_id', $user->id)->count());
+    }
+
+    public function test_total_di_caption_dicocokkan_dengan_jumlah_struk(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('t1', 'realisasi 250rb nestory', album: 'g2'));
+        $this->send($this->photoUpdate('t2', album: 'g2'));
+        $this->send($this->textUpdate('120rb'));
+        $this->send($this->textUpdate('100rb'));
+
+        $this->assertStringContainsString('Jumlah struk Rp 220.000 berbeda dengan Rp 250.000', $this->lastText());
+    }
+
+    public function test_album_expense_jadi_beberapa_pengajuan_dengan_struk_masing_masing(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('e1', 'expense grab nestory', album: 'g3'));
+        $this->send($this->photoUpdate('e2', album: 'g3'));
+        $this->send($this->textUpdate('45rb grab berangkat'));
+        $this->send($this->textUpdate('30rb grab pulang'));
+
+        $this->assertStringContainsString('Draft Expense — 2 struk', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expenses = Expense::where('user_id', $user->id)->orderBy('id')->get();
+        $this->assertCount(2, $expenses);
+        $this->assertEquals([45_000, 30_000], $expenses->pluck('amount')->map(fn ($a) => (float) $a)->all());
+        $this->assertSame(['Grab berangkat', 'Grab pulang'], $expenses->pluck('keterangan_expense')->all());
+        $this->assertNotSame($expenses[0]->attachment, $expenses[1]->attachment, 'Masing-masing dengan strukny sendiri.');
+        $this->assertStringContainsString('2 expense terkirim', $this->lastText());
+    }
+
+    public function test_struk_yang_sama_tidak_bisa_masuk_dua_kali_di_draft(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('sama'));
+        $this->send($this->photoUpdate('sama'));
+
+        $this->assertStringContainsString('sudah ada di draft', $this->lastText());
+        $this->assertSame(1, Draft::load($this->chatId)->receiptCount());
+    }
+
+    public function test_struk_yang_sudah_pernah_dikirim_ditolak(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('lama', 'expense 150rb grab ke kantor klien nestory'));
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->send($this->photoUpdate('lama', 'expense 150rb grab lagi nestory'));
+
+        $this->assertStringContainsString('sudah pernah dikirim', $this->lastText());
+        $this->assertSame(1, Expense::where('user_id', $user->id)->count());
+    }
+
+    public function test_foto_susulan_jadi_struk_kedua_dan_nominal_struk_pertama_tetap(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('s1', 'realisasi 350rb sewa lighting nestory'));
+        $this->send($this->photoUpdate('s2'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame(350_000, $draft->receipts[0]['amount'], 'Nominal yang sudah ditulis milik struk pertama.');
+        $this->assertSame('Sewa lighting nestory', $draft->receipts[0]['name']);
+        $this->assertNull($draft->amount, 'Bukan total album, jadi tidak dicocokkan.');
+        $this->assertSame('receipt:1', $draft->awaiting, 'Hanya struk kedua yang ditanyakan.');
+    }
+
+    public function test_nominal_struk_bisa_diubah_dan_struk_bisa_dihapus(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('u1', 'realisasi nestory', album: 'g4'));
+        $this->send($this->photoUpdate('u2', album: 'g4'));
+        $this->send($this->textUpdate('100rb lighting'));
+        $this->send($this->textUpdate('50rb parkir'));
+        $draft = Draft::load($this->chatId);
+
+        $this->send($this->tap("{$draft->id}:ramt:0"));
+        $this->assertStringContainsString('Struk 1', $this->lastText());
+        $this->send($this->textUpdate('130rb'));
+        $this->assertSame(130_000, Draft::load($this->chatId)->receipts[0]['amount']);
+
+        // Tinggal satu struk: kembali ke draft biasa dengan nominal struk itu.
+        $this->send($this->tap("{$draft->id}:rdel:1"));
+        $draft = Draft::load($this->chatId);
+        $this->assertFalse($draft->isMulti());
+        $this->assertSame(130_000, $draft->amount);
+        $this->assertSame('u1', $draft->attachment['file_id']);
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_advance_dengan_banyak_struk_diminta_memilih_satu(): void
+    {
+        $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('a1', 'advance 2jt sewa kamera nestory', album: 'g5'));
+        $this->send($this->photoUpdate('a2', album: 'g5'));
+
+        $this->assertStringContainsString('hanya bisa menyimpan', $this->lastText());
+        $draft = Draft::load($this->chatId);
+        $this->assertFalse($draft->isComplete(), 'Tidak bisa dikirim dengan dua lampiran.');
+
+        $this->send($this->tap("{$draft->id}:rdel:1"));
+        $this->assertStringContainsString('Draft Advance', $this->lastText());
+    }
+
+    public function test_nominal_tiap_struk_album_dibaca_gemini(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: ['type' => 'realisasi', 'amount' => 75_000, 'name' => 'Toko Lampu', 'description' => null, 'category' => null, 'project_id' => null, 'date' => null]);
+
+        $this->send($this->photoUpdate('ai1', 'realisasi nestory', album: 'g6'));
+        $this->send($this->photoUpdate('ai2', album: 'g6'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame([75_000, 75_000], array_column($draft->receipts, 'amount'));
+        $this->assertTrue($draft->isComplete(), 'Tidak ada nominal yang perlu ditanyakan.');
+        $this->assertStringContainsString('Draft Realisasi — 2 struk', $this->lastText());
+    }
+
+    // =================================================================
     // Notifikasi status
     // =================================================================
 
@@ -805,8 +993,8 @@ class TelegramBotTest extends TestCase
 
         // Telegram mengirim beberapa ukuran; yang terakhir paling besar.
         $update['message']['photo'] = [
-            ['file_id' => "{$fileId}-kecil", 'file_size' => 900, 'width' => 90, 'height' => 90],
-            ['file_id' => $fileId, 'file_size' => 48_000, 'width' => 1280, 'height' => 960],
+            ['file_id' => "{$fileId}-kecil", 'file_unique_id' => "{$fileId}-kecil-u", 'file_size' => 900, 'width' => 90, 'height' => 90],
+            ['file_id' => $fileId, 'file_unique_id' => "{$fileId}-u", 'file_size' => 48_000, 'width' => 1280, 'height' => 960],
         ];
 
         if ($caption !== null) {
@@ -855,6 +1043,20 @@ class TelegramBotTest extends TestCase
                 ],
             ],
         ];
+    }
+
+    /**
+     * Pertanyaan nominal terakhir harus membalas (mengutip) foto struk yang dimaksud.
+     */
+    private function assertLastQuestionRepliesTo(array $photoUpdate): void
+    {
+        $question = collect(Http::recorded())
+            ->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => str_ends_with($request->url(), '/sendMessage') && isset($request->data()['reply_parameters']))
+            ->last();
+
+        $this->assertNotNull($question, 'Belum ada pertanyaan yang membalas foto.');
+        $this->assertSame($photoUpdate['message']['message_id'], $question->data()['reply_parameters']['message_id']);
     }
 
     /**

@@ -91,6 +91,12 @@ class RealisasiService
                     // subtotal calculated automatically via model boot
                 ]);
 
+                // Bukti per item (mis. satu struk per item dari bot Telegram),
+                // supaya Finance tahu struk mana untuk item mana.
+                if (! empty($itemData['files'])) {
+                    $this->attachFiles($item, $itemData['files']);
+                }
+
                 if ($firstItem === null) {
                     $firstItem = $item;
                 }
