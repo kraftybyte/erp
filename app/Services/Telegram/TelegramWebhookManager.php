@@ -18,7 +18,8 @@ class TelegramWebhookManager
     public const COMMANDS = [
         ['command' => 'expense', 'description' => 'Ajukan expense (reimburse)'],
         ['command' => 'advance', 'description' => 'Ajukan advance (uang muka)'],
-        ['command' => 'status',  'description' => '5 pengajuan terakhir'],
+        ['command' => 'realisasi', 'description' => 'Laporkan pemakaian advance'],
+        ['command' => 'status',  'description' => 'Pengajuan terakhir & progres advance'],
         ['command' => 'batal',   'description' => 'Batalkan draft'],
         ['command' => 'bantuan', 'description' => 'Cara pakai'],
     ];

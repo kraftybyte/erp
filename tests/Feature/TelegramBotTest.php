@@ -6,7 +6,9 @@ use App\Livewire\TelegramConnection;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Project;
+use App\Models\Realisasi;
 use App\Models\User;
+use App\Services\RealisasiService;
 use App\Services\Telegram\Draft;
 use App\Services\Telegram\TelegramLinker;
 use App\Settings\IntegrationSettings;
@@ -482,6 +484,177 @@ class TelegramBotTest extends TestCase
     }
 
     // =================================================================
+    // PIC
+    // =================================================================
+
+    public function test_project_kembar_ditampilkan_dengan_pic(): void
+    {
+        $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile', pic: 'Budi Santoso');
+        $this->project('PT Nestory Indonesia', 'Konten Instagram', pic: 'Sari Dewi');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 50rb ke nestory'));
+
+        $this->assertStringContainsString('PIC: Budi Santoso', $this->lastText());
+        $this->assertStringContainsString('PIC: Sari Dewi', $this->lastText());
+    }
+
+    public function test_nama_pic_di_pesan_memilih_project_yang_tepat(): void
+    {
+        $this->user();
+        $budi = $this->project('PT Nestory Indonesia', 'Video Profile', pic: 'Budi Santoso');
+        $this->project('PT Nestory Indonesia', 'Konten Instagram', pic: 'Sari Dewi');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 50rb ke nestory pak budi'));
+
+        $this->assertSame($budi->id, Draft::load($this->chatId)->projectId);
+    }
+
+    // =================================================================
+    // Realisasi advance
+    // =================================================================
+
+    public function test_realisasi_dengan_struk_masuk_sebagai_batch_advance(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $advance = $this->openAdvance($user, $project, 2_000_000);
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-real', 'realisasi 350rb sewa lighting nestory'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame('realisasi', $draft->type);
+        $this->assertSame($advance->id, $draft->advanceId);
+        $this->assertTrue($draft->isComplete());
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString('Rp 1.650.000', $this->lastText(), 'Sisa setelah realisasi ditampilkan.');
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $batch = Realisasi::where('advance_id', $advance->id)->with('items.files')->first();
+        $this->assertNotNull($batch);
+        $this->assertSame($user->id, $batch->uploaded_by, 'Tercatat atas nama pengirim, bukan user id 1.');
+        $this->assertEquals(350_000, $batch->items->first()->price);
+
+        $file = $batch->items->first()->files->first();
+        $this->assertStringStartsWith("realisasi/{$advance->id}/", $file->filepath);
+        Storage::disk('public')->assertExists($file->filepath);
+
+        $this->assertSame(Advance::STATUS_REALIZED_USER, $advance->fresh()->status);
+        $this->assertStringContainsString('Realisasi terkirim', $this->lastText());
+        $this->assertStringContainsString('Sisa Rp 1.650.000', $this->lastText());
+    }
+
+    public function test_beberapa_advance_terbuka_ditawarkan_lengkap_dengan_pic(): void
+    {
+        $user  = $this->user();
+        $video = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile', pic: 'Budi Santoso'));
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Konten Instagram', pic: 'Sari Dewi'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi 100rb parkir nestory'));
+
+        $this->assertStringContainsString('advance yang mana', $this->lastText());
+        $this->assertStringContainsString('PIC Budi Santoso', $this->lastText());
+        $this->assertStringContainsString('PIC Sari Dewi', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:adv:{$video->id}"));
+
+        $this->assertSame($video->id, Draft::load($this->chatId)->advanceId);
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_expense_untuk_project_yang_punya_advance_terbuka_ditanyakan_dulu(): void
+    {
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $advance = $this->openAdvance($user, $project);
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('grab 150rb ke kantor klien nestory'));
+
+        $this->assertStringContainsString('dibayar dari advance tersebut', $this->lastText());
+        $draft = Draft::load($this->chatId);
+
+        // Pilih "expense baru": tidak ditanya lagi, tapi ringkasan tetap mengingatkan.
+        $this->send($this->tap("{$draft->id}:type:expense"));
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+        $this->assertStringContainsString('masih punya advance terbuka', $this->lastText());
+
+        // Berubah pikiran dari ringkasan: jadikan realisasi.
+        $this->send($this->tap("{$draft->id}:type:realisasi"));
+        $this->assertSame($advance->id, Draft::load($this->chatId)->advanceId);
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_expense_yang_ditulis_jelas_tidak_ditanya_tapi_diberi_peringatan(): void
+    {
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->openAdvance($user, $project);
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('expense 150rb grab ke kantor klien nestory'));
+
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+        $this->assertStringContainsString('masih punya advance terbuka', $this->lastText());
+    }
+
+    public function test_realisasi_tanpa_advance_terbuka_dijelaskan(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi 100rb parkir'));
+
+        $this->assertStringContainsString('tidak punya advance yang bisa direalisasi', $this->lastText());
+        $this->assertNull(Draft::load($this->chatId));
+    }
+
+    public function test_advance_milik_orang_lain_tidak_bisa_direalisasi(): void
+    {
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $milikku = $this->openAdvance($user, $project);
+        $orang   = $this->openAdvance($this->user(linked: false), $project);
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi 100rb parkir nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($milikku->id, $draft->advanceId, 'Hanya advance milik sendiri yang dicocokkan.');
+
+        // Tombol palsu yang menunjuk advance orang lain diabaikan.
+        $this->send($this->tap("{$draft->id}:adv:{$orang->id}"));
+        $this->assertNotSame($orang->id, Draft::load($this->chatId)->advanceId);
+    }
+
+    public function test_overrun_yang_belum_disetujui_menahan_realisasi_berikutnya(): void
+    {
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $advance = $this->openAdvance($user, $project, 1_000_000);
+
+        app(RealisasiService::class)->createBatch(
+            $advance,
+            ['uploaded_by' => $user->id],
+            [['name' => 'Sewa kamera', 'quantity' => 1, 'price' => 1_200_000]]
+        );
+
+        $this->fakeApis(gemini: null);
+        $this->send($this->textUpdate('realisasi 50rb parkir nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertStringContainsString('menyetujui overrun', $this->lastText());
+        $this->assertSame(1, Realisasi::where('advance_id', $advance->id)->count());
+    }
+
+    // =================================================================
     // Notifikasi status
     // =================================================================
 
@@ -594,11 +767,27 @@ class TelegramBotTest extends TestCase
         string $perusahaan = 'PT Tes Telegram',
         string $nama = 'Video Profile Tes',
         string $status = 'in_progress',
+        ?string $pic = null,
     ): Project {
         return Project::create([
             'nama_project'    => $nama,
             'nama_perusahaan' => $perusahaan,
             'status'          => $status,
+            'nama_pic'        => $pic,
+        ]);
+    }
+
+    private function openAdvance(User $user, Project $project, int $paid = 2_000_000): Advance
+    {
+        return Advance::create([
+            'user_id'            => $user->id,
+            'submission_date'    => today(),
+            'project_id'         => $project->id,
+            'keterangan_advance' => "Advance {$project->nama_project}",
+            'category'           => 'Project Support',
+            'amount'             => $paid,
+            'paid'               => $paid,
+            'status'             => Advance::STATUS_DIBAYARKAN,
         ]);
     }
 

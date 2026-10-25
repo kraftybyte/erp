@@ -28,6 +28,8 @@ class ProjectMatcher
         'expense', 'advance',
     ];
 
+    private const HONORIFICS = ['pak', 'bapak', 'bpk', 'ibu', 'mas', 'mbak', 'kak', 'bang', 'mr', 'mrs', 'ms'];
+
     private const MAX_CANDIDATES = 6;
 
     /**
@@ -101,7 +103,25 @@ class ProjectMatcher
             }
         }
 
+        // Nama PIC hanya penentu di antara project yang kliennya sudah cocok
+        // ("nestory pak budi"); sendirian tidak dipakai karena nama orang
+        // sering sama dan bisa muncul di pesan untuk alasan lain.
+        if ($score >= 2) {
+            $picTokens = collect($this->tokens(self::pic($project)))
+                ->reject(fn ($token) => in_array($token, self::HONORIFICS, true));
+
+            $score += $picTokens->filter(fn ($token) => in_array($token, $words, true))->count() * 2;
+        }
+
         return (int) $score;
+    }
+
+    /**
+     * PIC klien: dari project, atau dari deal-nya bila di project kosong.
+     */
+    public static function pic(Project $project): ?string
+    {
+        return $project->nama_pic ?: $project->deal?->nama_pic;
     }
 
     private function similarity(string $token, string $word): int

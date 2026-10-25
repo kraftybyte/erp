@@ -32,6 +32,12 @@ final class Draft
         // ERP saat Kirim, supaya draft yang dibatalkan tidak meninggalkan file.
         // @var array{file_id: string, mime: string, ext: string, group: ?string}|null
         public ?array $attachment = null,
+        // Realisasi: advance milik user yang dilaporkan pemakaiannya.
+        public ?int $advanceId = null,
+        public array $advanceCandidates = [],
+        // Jenis sudah dipastikan user (ditulis sendiri atau dipilih lewat tombol),
+        // jadi bot tidak lagi bertanya "realisasi atau expense?".
+        public bool $typeConfirmed = false,
     ) {}
 
     public function isEmpty(): bool
@@ -74,12 +80,18 @@ final class Draft
         $this->date        = $parsed['date'] ?? $this->date;
 
         $this->projectCandidates = $this->projectId ? [] : ($parsed['project_candidates'] ?? $this->projectCandidates);
+        $this->typeConfirmed     = $this->typeConfirmed || ($parsed['type_explicit'] ?? false);
 
         return $this;
     }
 
     public function isComplete(): bool
     {
+        // Realisasi mengikuti project & kategori advance-nya.
+        if ($this->type === 'realisasi') {
+            return $this->advanceId && $this->amount && $this->description;
+        }
+
         return $this->type && $this->amount && $this->description && $this->projectId && $this->category && $this->date;
     }
 

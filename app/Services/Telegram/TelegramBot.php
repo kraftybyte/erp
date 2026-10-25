@@ -9,7 +9,10 @@ use App\Models\Expense;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\GeminiService;
+use App\Services\RealisasiService;
+use InvalidArgumentException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -40,9 +43,12 @@ class TelegramBot
         'application/pdf' => 'pdf',
     ];
 
+    // 'model' dipakai untuk cek izin create; realisasi tidak membuat record baru
+    // milik user lain, cukup advance-nya milik pengirim sendiri.
     private const TYPES = [
-        'expense' => ['label' => 'Expense', 'icon' => '💰', 'hint' => 'reimburse', 'model' => Expense::class, 'path' => 'expenses'],
-        'advance' => ['label' => 'Advance', 'icon' => '💸', 'hint' => 'uang muka', 'model' => Advance::class, 'path' => 'advances'],
+        'expense'   => ['label' => 'Expense', 'icon' => '💰', 'model' => Expense::class],
+        'advance'   => ['label' => 'Advance', 'icon' => '💸', 'model' => Advance::class],
+        'realisasi' => ['label' => 'Realisasi', 'icon' => '🧾', 'model' => null],
     ];
 
     public function __construct(
@@ -51,6 +57,8 @@ class TelegramBot
         private TelegramLinker $linker,
         private ProjectMatcher $matcher,
         private GeminiService $gemini,
+        private OpenAdvances $advances,
+        private RealisasiService $realisasi,
     ) {}
 
     public function handle(array $update): void
@@ -123,7 +131,7 @@ class TelegramBot
         }
 
         match ($command) {
-            'expense', 'advance' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
+            'expense', 'advance', 'realisasi' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
             'status'             => $this->sendStatus($chatId, $user),
             'batal'              => $this->cancel($chatId),
             null                 => $this->handleText($chatId, $user, $text),
@@ -156,11 +164,13 @@ class TelegramBot
     {
         $draft ??= Draft::start($type);
         $draft->type = $type ?? $draft->type;
+        // Perintah /expense, /advance, /realisasi adalah pilihan user sendiri.
+        $draft->typeConfirmed = $draft->typeConfirmed || $type !== null;
 
         if ($text !== '') {
             $this->telegram->typing($chatId);
             $draft->fill($this->parser->parse($text, $this->projectChoices(), $this->receiptForAi($draft)));
-            // Perintah /expense atau /advance lebih kuat dari tebakan AI.
+            // Perintah lebih kuat dari tebakan AI.
             $draft->type = $type ?? $draft->type;
         }
 
@@ -229,7 +239,7 @@ class TelegramBot
 
         // Foto dengan caption: caption-nya keterangan pengajuan.
         if ($text !== '') {
-            $type = in_array($command, ['expense', 'advance'], true) ? $command : null;
+            $type = array_key_exists((string) $command, self::TYPES) ? $command : null;
 
             $draft = Draft::start($type);
             $draft->attachment = $file;
@@ -256,7 +266,7 @@ class TelegramBot
 
         $this->telegram->sendMessage(
             $chatId,
-            "📎 Struk diterima.\n\nSekarang tulis keterangannya, misalnya:\n<i>expense 150rb grab ke kantor klien nestory</i>",
+            "📎 Struk diterima.\n\nSekarang tulis keterangannya, misalnya:\n• <i>expense 150rb grab ke kantor klien nestory</i>\n• <i>realisasi 350rb sewa lighting nestory</i>",
             [[$this->button('❌ Batal', $draft, 'cancel')]]
         );
     }
@@ -279,8 +289,10 @@ class TelegramBot
     /**
      * Unduh struk dari Telegram ke disk public ERP. Null bila gagal diunduh
      * atau isinya bukan gambar/PDF.
+     *
+     * @return array{path: string, size: int, mime: string, ext: string}|null
      */
-    private function storeAttachment(Draft $draft): ?string
+    private function storeAttachment(Draft $draft, string $folder): ?array
     {
         $data = $this->telegram->download($draft->attachment['file_id'], self::MAX_ATTACHMENT_BYTES);
 
@@ -298,12 +310,12 @@ class TelegramBot
             return null;
         }
 
-        $folder = $draft->type === 'advance' ? 'advance/attachment' : 'expense/invoice';
-        $path   = $folder . '/' . now()->format('Y/m/d') . '/' . Str::uuid() . '.' . self::ATTACHMENT_TYPES[$mime];
+        $ext  = self::ATTACHMENT_TYPES[$mime];
+        $path = "{$folder}/" . Str::uuid() . ".{$ext}";
 
         Storage::disk('public')->put($path, $data);
 
-        return $path;
+        return ['path' => $path, 'size' => strlen($data), 'mime' => $mime, 'ext' => $ext];
     }
 
     private function answerPrompt(int|string $chatId, User $user, Draft $draft, string $text): void
@@ -360,8 +372,19 @@ class TelegramBot
 
         switch ($action) {
             case 'type':
-                $draft->type = array_key_exists($value, self::TYPES) ? $value : $draft->type;
+                $draft->type          = array_key_exists($value, self::TYPES) ? $value : $draft->type;
+                $draft->typeConfirmed = true;
                 break;
+
+            case 'adv':
+                $draft->advanceId         = $this->advances->find($user, (int) $value)?->id;
+                $draft->advanceCandidates = [];
+                break;
+
+            case 'advlist':
+                $this->showAdvanceChoices($chatId, $messageId, $draft, $this->advances->forUser($user), all: true);
+
+                return;
 
             case 'project':
                 $draft->projectId         = Project::whereKey((int) $value)->exists() ? (int) $value : null;
@@ -383,6 +406,7 @@ class TelegramBot
                     'amount'      => $draft->amount = null,
                     'description' => $draft->description = null,
                     'project'     => [$draft->projectId, $draft->projectCandidates] = [null, []],
+                    'advance'     => [$draft->advanceId, $draft->advanceCandidates] = [null, []],
                     'category'    => $draft->category = null,
                     default       => null,
                 };
@@ -414,11 +438,25 @@ class TelegramBot
     {
         if (! $draft->type) {
             $draft->save($chatId);
-            $this->show($chatId, $messageId, 'Ini pengajuan apa?', [
+
+            $rows = [
                 [$this->button('💰 Expense — sudah bayar, minta ganti', $draft, 'type', 'expense')],
                 [$this->button('💸 Advance — minta uang dulu', $draft, 'type', 'advance')],
-                [$this->button('❌ Batal', $draft, 'cancel')],
-            ]);
+            ];
+
+            if ($this->advances->forUser($user)->isNotEmpty()) {
+                $rows[] = [$this->button('🧾 Realisasi — laporan pemakaian advance', $draft, 'type', 'realisasi')];
+            }
+
+            $rows[] = [$this->button('❌ Batal', $draft, 'cancel')];
+
+            $this->show($chatId, $messageId, 'Ini pengajuan apa?', $rows);
+
+            return;
+        }
+
+        if ($draft->type === 'realisasi') {
+            $this->proceedRealisasi($chatId, $user, $draft, $messageId);
 
             return;
         }
@@ -452,6 +490,18 @@ class TelegramBot
             return;
         }
 
+        // Cegah klaim ganda: biaya untuk project yang masih punya advance
+        // terbuka bisa jadi sudah dibayar dari advance itu.
+        $openForProject = $draft->type === 'expense'
+            ? $this->advances->forUser($user)->where('project_id', $draft->projectId)->values()
+            : collect();
+
+        if ($openForProject->isNotEmpty() && ! $draft->typeConfirmed) {
+            $this->askExpenseOrRealisasi($chatId, $messageId, $draft, $openForProject);
+
+            return;
+        }
+
         if (! $draft->category) {
             $this->showCategories($chatId, $messageId, $draft);
 
@@ -463,18 +513,262 @@ class TelegramBot
 
         $other = $draft->type === 'expense' ? 'advance' : 'expense';
 
+        $rows = [
+            [$this->button('✅ Kirim', $draft, 'submit')],
+            [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description')],
+            [$this->button('📁 Project', $draft, 'edit', 'project'), $this->button('🏷 Kategori', $draft, 'edit', 'category')],
+            [$this->button('🔁 Jadikan ' . self::TYPES[$other]['label'], $draft, 'type', $other), $this->button('❌ Batal', $draft, 'cancel')],
+        ];
+
+        if ($openForProject->isNotEmpty()) {
+            array_splice($rows, 1, 0, [[$this->button('🧾 Jadikan realisasi advance', $draft, 'type', 'realisasi')]]);
+        }
+
         $this->show(
             $chatId,
             $messageId,
             "📝 <b>Draft {$type['label']}</b>\n\n{$this->details($draft)}\n\n"
+                . ($openForProject->isNotEmpty()
+                    ? "⚠️ Project ini masih punya advance terbuka. Bila biaya ini dibayar dari advance itu, pilih <b>Jadikan realisasi</b> supaya tidak tercatat dua kali.\n"
+                    : '')
                 . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang supaya admin tidak perlu upload.\n")
+                . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
+            $rows
+        );
+    }
+
+    private function askExpenseOrRealisasi(int|string $chatId, ?int $messageId, Draft $draft, Collection $open): void
+    {
+        $draft->save($chatId);
+
+        $list = $open
+            ->map(fn (Advance $advance) => '• ' . e(Str::limit((string) $advance->keterangan_advance, 60))
+                . ' — sisa ' . $this->rupiah($this->advances->remaining($advance)))
+            ->implode("\n");
+
+        $this->show(
+            $chatId,
+            $messageId,
+            "Kamu punya advance terbuka untuk project ini:\n{$list}\n\nApakah pengeluaran ini dibayar dari advance tersebut?",
+            [
+                [$this->button('🧾 Ya, realisasi advance', $draft, 'type', 'realisasi')],
+                [$this->button('💰 Bukan, expense baru', $draft, 'type', 'expense')],
+                [$this->button('❌ Batal', $draft, 'cancel')],
+            ]
+        );
+    }
+
+    // =================================================================
+    // Realisasi advance
+    // =================================================================
+
+    private function proceedRealisasi(int|string $chatId, User $user, Draft $draft, ?int $messageId): void
+    {
+        $open = $this->advances->forUser($user);
+
+        if ($open->isEmpty()) {
+            Draft::forget($chatId);
+            $this->show($chatId, $messageId, 'Kamu tidak punya advance yang bisa direalisasi. Realisasi bisa diisi setelah advance berstatus <b>Dibayarkan</b>.');
+
+            return;
+        }
+
+        // Advance yang dipilih harus tetap milik user dan masih terbuka.
+        if ($draft->advanceId && ! $open->contains('id', $draft->advanceId)) {
+            $draft->advanceId = null;
+        }
+
+        if (! $draft->advanceId && ! $draft->advanceCandidates) {
+            $match = $this->advances->match($user, $draft->projectId);
+            $draft->advanceId         = $match['advance_id'];
+            $draft->advanceCandidates = $match['candidates'];
+        }
+
+        if (! $draft->advanceId) {
+            $this->showAdvanceChoices($chatId, $messageId, $draft, $open->whereIn('id', $draft->advanceCandidates)->values());
+
+            return;
+        }
+
+        if (! $draft->amount) {
+            $this->ask($chatId, $messageId, $draft, 'amount', 'Berapa nominal di struk ini? Contoh: <i>350rb</i>');
+
+            return;
+        }
+
+        if (! $draft->description) {
+            $this->ask($chatId, $messageId, $draft, 'description', 'Untuk apa? Tulis nama barang/jasanya, misalnya <i>Sewa lighting</i>.');
+
+            return;
+        }
+
+        $draft->awaiting = null;
+        $draft->save($chatId);
+
+        $advance   = $open->firstWhere('id', $draft->advanceId);
+        $remaining = $this->advances->remaining($advance);
+        $after     = $remaining - $draft->amount;
+
+        $this->show(
+            $chatId,
+            $messageId,
+            "🧾 <b>Draft Realisasi</b>\n\n{$this->realisasiDetails($draft, $advance, $remaining)}\n\n"
+                . ($after < -RealisasiService::EXACT_MATCH_TOLERANCE
+                    ? '⚠️ Melebihi sisa advance ' . $this->rupiah(abs($after)) . ". Butuh persetujuan Finance, dan realisasi berikutnya ditahan sampai disetujui.\n"
+                    : '')
+                . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang sebagai bukti untuk Finance.\n")
                 . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             [
                 [$this->button('✅ Kirim', $draft, 'submit')],
                 [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description')],
-                [$this->button('📁 Project', $draft, 'edit', 'project'), $this->button('🏷 Kategori', $draft, 'edit', 'category')],
-                [$this->button('🔁 Jadikan ' . self::TYPES[$other]['label'], $draft, 'type', $other), $this->button('❌ Batal', $draft, 'cancel')],
+                [$this->button('🔁 Advance lain', $draft, 'advlist'), $this->button('💰 Jadikan Expense', $draft, 'type', 'expense')],
+                [$this->button('❌ Batal', $draft, 'cancel')],
             ]
+        );
+    }
+
+    /**
+     * Daftar bernomor dengan detail lengkap (project, PIC, sisa) di teks, dan
+     * tombol pendek bernomor — tombol Telegram memotong teks panjang.
+     *
+     * @param  Collection<int, Advance>  $choices
+     */
+    private function showAdvanceChoices(int|string $chatId, ?int $messageId, Draft $draft, Collection $choices, bool $all = false): void
+    {
+        $choices = $choices->take(8)->values();
+
+        $lines = $choices
+            ->map(fn (Advance $advance, int $index) => ($index + 1) . '. ' . $this->advanceSummary($advance))
+            ->implode("\n\n");
+
+        $rows = $choices
+            ->map(fn (Advance $advance, int $index) => [$this->button(
+                ($index + 1) . '. ' . Str::limit((string) $advance->keterangan_advance, 28) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
+                $draft,
+                'adv',
+                $advance->id
+            )])
+            ->all();
+
+        if (! $all) {
+            $rows[] = [$this->button('📋 Advance lain', $draft, 'advlist')];
+        }
+        $rows[] = [$this->button('❌ Batal', $draft, 'cancel')];
+
+        $draft->save($chatId);
+
+        $this->show($chatId, $messageId, "Realisasi untuk advance yang mana?\n\n{$lines}", $rows);
+    }
+
+    private function advanceSummary(Advance $advance): string
+    {
+        $lines = ['<b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid)];
+
+        if ($advance->project) {
+            $lines[] = '   ' . e($this->projectLabel($advance->project)) . $this->picSuffix($advance->project);
+        }
+
+        $lines[] = '   Sisa: ' . $this->rupiah($this->advances->remaining($advance));
+
+        return implode("\n", $lines);
+    }
+
+    private function realisasiDetails(Draft $draft, Advance $advance, float $remaining): string
+    {
+        return implode("\n", array_filter([
+            'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
+            $advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) . $this->picSuffix($advance->project) : null,
+            'Item: ' . e($draft->description),
+            'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
+            'Lampiran: ' . $this->attachmentLabel($draft),
+            'Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($remaining - $draft->amount),
+        ]));
+    }
+
+    private function submitRealisasi(int|string $chatId, int $messageId, User $user, Draft $draft): void
+    {
+        $advance = $this->advances->find($user, $draft->advanceId);
+
+        if (! $advance || ! $draft->isComplete()) {
+            $draft->advanceId = $advance?->id;
+            $this->proceed($chatId, $user, $draft, $messageId);
+
+            return;
+        }
+
+        $stored = null;
+        if ($draft->attachment) {
+            // Folder yang sama dengan unggahan dari halaman realisasi di ERP.
+            $stored = $this->storeAttachment($draft, "realisasi/{$advance->id}");
+
+            if ($stored === null) {
+                $this->telegram->sendMessage($chatId, 'Struk gagal diambil dari Telegram. Kirim ulang fotonya, lalu tekan <b>Kirim</b> lagi.');
+
+                return;
+            }
+        }
+
+        try {
+            // Aturan realisasi (status advance, overrun yang belum disetujui)
+            // dijaga RealisasiService, sama seperti dari halaman ERP.
+            $this->realisasi->createBatch(
+                $advance,
+                ['notes' => 'Dikirim lewat bot Telegram', 'uploaded_by' => $user->id],
+                [[
+                    'name'        => Str::limit($draft->description, 100, ''),
+                    'description' => $draft->description,
+                    'quantity'    => 1,
+                    'price'       => $draft->amount,
+                ]],
+                $stored ? [[
+                    'original_name' => "struk-telegram.{$stored['ext']}",
+                    'filepath'      => $stored['path'],
+                    'filesize'      => $stored['size'],
+                    'mime_type'     => $stored['mime'],
+                ]] : []
+            );
+        } catch (InvalidArgumentException $e) {
+            if ($stored) {
+                Storage::disk('public')->delete($stored['path']);
+            }
+
+            $this->telegram->sendMessage($chatId, '⚠️ ' . e($e->getMessage()));
+
+            return;
+        } catch (Throwable $e) {
+            if ($stored) {
+                Storage::disk('public')->delete($stored['path']);
+            }
+
+            throw $e;
+        }
+
+        Draft::forget($chatId);
+
+        $advance->refresh();
+        $evaluation = $this->realisasi->evaluateStatus($advance);
+        $percent    = (float) $advance->paid > 0 ? round($evaluation['total_realisasi'] / (float) $advance->paid * 100) : 0;
+
+        $position = match ($evaluation['status']) {
+            'exact_match' => 'Total realisasi sudah sama dengan advance. Finance akan menyelesaikannya.',
+            'under_run'   => 'Sisa ' . $this->rupiah($evaluation['remaining']) . '. Kirim struk berikutnya, atau kembalikan sisanya ke Finance.',
+            'over_run'    => 'Melebihi advance ' . $this->rupiah($evaluation['overrun']) . '. Menunggu persetujuan Finance.',
+            default       => '',
+        };
+
+        $link    = url("/admin/advances/{$advance->id}/realisasi");
+        $buttons = str_starts_with($link, 'https://') ? [[['text' => 'Lihat di ERP', 'url' => $link]]] : [];
+
+        $this->show(
+            $chatId,
+            $messageId,
+            "✅ <b>Realisasi terkirim</b>\n\n"
+                . 'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . "</b>\n"
+                . 'Item: ' . e($draft->description) . ' — ' . $this->rupiah($draft->amount) . "\n"
+                . 'Lampiran: ' . $this->attachmentLabel($draft) . "\n\n"
+                . 'Terealisasi ' . $this->rupiah($evaluation['total_realisasi']) . ' dari ' . $this->rupiah($advance->paid) . " ({$percent}%).\n"
+                . $position,
+            $buttons
         );
     }
 
@@ -533,16 +827,44 @@ class TelegramBot
             return;
         }
 
-        $rows = $projects
-            ->map(fn (Project $project) => [$this->button(Str::limit($this->projectLabel($project), 60), $draft, 'project', $project->id)])
-            ->all();
+        [$lines, $rows] = $this->numberedProjects($projects, $draft);
 
         $rows[] = [$this->button('📋 Project lain', $draft, 'page', 0), $this->button('❌ Batal', $draft, 'cancel')];
 
         $draft->awaiting = 'project';
         $draft->save($chatId);
 
-        $this->show($chatId, $messageId, 'Ada beberapa project yang cocok. Maksud kamu yang mana?', $rows);
+        $this->show($chatId, $messageId, "Ada beberapa project yang cocok. Maksud kamu yang mana?\n\n{$lines}", $rows);
+    }
+
+    /**
+     * Daftar bernomor: detail lengkap (klien, project, PIC) di teks pesan dan
+     * tombol pendek bernomor, karena Telegram memotong teks tombol yang panjang
+     * — padahal project satu klien sering hanya beda di PIC-nya.
+     *
+     * @param  Collection<int, Project>  $projects
+     * @return array{0: string, 1: array<int, array<int, array>>}
+     */
+    private function numberedProjects(Collection $projects, Draft $draft): array
+    {
+        $projects = $projects->values();
+
+        $lines = $projects
+            ->map(fn (Project $project, int $index) => ($index + 1) . '. ' . e($this->projectLabel($project))
+                . (($pic = ProjectMatcher::pic($project)) ? "\n    PIC: " . e($pic) : ''))
+            ->implode("\n");
+
+        $rows = $projects
+            ->map(function (Project $project, int $index) use ($draft) {
+                $pic   = ProjectMatcher::pic($project);
+                $label = ($index + 1) . '. ' . ($project->nama_project ?: $this->projectLabel($project))
+                    . ($pic ? ' · ' . Str::before($pic, ' ') : '');
+
+                return [$this->button(Str::limit($label, 60), $draft, 'project', $project->id)];
+            })
+            ->all();
+
+        return [$lines, $rows];
     }
 
     private function showProjectSearch(int|string $chatId, User $user, Draft $draft, string $query): void
@@ -573,9 +895,7 @@ class TelegramBot
                 ->limit(self::PROJECTS_PER_PAGE)
                 ->get();
 
-        $rows = $projects
-            ->map(fn (Project $project) => [$this->button(Str::limit($this->projectLabel($project), 60), $draft, 'project', $project->id)])
-            ->all();
+        [$lines, $rows] = $this->numberedProjects($projects, $draft);
 
         $rows[] = [$this->button('📋 Lihat daftar', $draft, 'page', 0), $this->button('❌ Batal', $draft, 'cancel')];
 
@@ -583,7 +903,7 @@ class TelegramBot
             $chatId,
             $projects->isEmpty()
                 ? 'Project dengan kata <i>' . e($query) . '</i> tidak ditemukan. Coba kata lain, atau buka daftar.'
-                : 'Pilih project:',
+                : "Pilih project:\n\n{$lines}",
             $rows
         );
     }
@@ -607,6 +927,12 @@ class TelegramBot
 
     private function submit(int|string $chatId, int $messageId, User $user, Draft $draft): void
     {
+        if ($draft->type === 'realisasi') {
+            $this->submitRealisasi($chatId, $messageId, $user, $draft);
+
+            return;
+        }
+
         $type = self::TYPES[$draft->type] ?? null;
 
         // Draft bisa berubah setelah ringkasan tampil (mis. tombol ✏️ ditekan,
@@ -626,7 +952,8 @@ class TelegramBot
         // fotonya daripada pengajuan masuk tanpa lampiran yang dikiranya ada.
         $path = null;
         if ($draft->attachment) {
-            $path = $this->storeAttachment($draft);
+            $folder = ($draft->type === 'advance' ? 'advance/attachment/' : 'expense/invoice/') . now()->format('Y/m/d');
+            $path   = $this->storeAttachment($draft, $folder)['path'] ?? null;
 
             if ($path === null) {
                 $this->telegram->sendMessage($chatId, 'Struk gagal diambil dari Telegram. Kirim ulang fotonya, lalu tekan <b>Kirim</b> lagi.');
@@ -675,7 +1002,7 @@ class TelegramBot
 
         Draft::forget($chatId);
 
-        $link    = url("/admin/{$type['path']}/{$record->id}");
+        $link    = url('/admin/' . ($draft->type === 'advance' ? 'advances' : 'expenses') . "/{$record->id}");
         $buttons = str_starts_with($link, 'https://') ? [[['text' => 'Lihat di ERP', 'url' => $link]]] : [];
 
         $this->show(
@@ -732,6 +1059,7 @@ class TelegramBot
             ->map(fn (Advance $a) => ['type' => 'advance', 'at' => $a->created_at, 'amount' => $a->amount, 'status' => $a->getStatusLabel(), 'description' => $a->keterangan_advance]);
 
         $items = $expenses->concat($advances)->sortByDesc('at')->take(5);
+        $open  = $this->advances->forUser($user);
 
         if ($items->isEmpty()) {
             $this->telegram->sendMessage($chatId, 'Belum ada pengajuan.');
@@ -747,7 +1075,22 @@ class TelegramBot
                 . $date . e(Str::limit((string) $item['description'], 60));
         });
 
-        $this->telegram->sendMessage($chatId, "<b>5 pengajuan terakhir</b>\n\n" . $lines->implode("\n\n"));
+        $message = "<b>5 pengajuan terakhir</b>\n\n" . $lines->implode("\n\n");
+
+        if ($open->isNotEmpty()) {
+            $progress = $open->map(function (Advance $advance) {
+                $realized = $this->advances->realized($advance);
+                $percent  = (float) $advance->paid > 0 ? round($realized / (float) $advance->paid * 100) : 0;
+
+                return '🧾 ' . e(Str::limit((string) $advance->keterangan_advance, 50)) . "\n"
+                    . $this->rupiah($realized) . ' / ' . $this->rupiah($advance->paid) . " ({$percent}%)";
+            });
+
+            $message .= "\n\n<b>Advance yang perlu direalisasi</b>\n\n" . $progress->implode("\n\n")
+                . "\n\nKirim struk + <i>realisasi …</i> untuk melaporkannya.";
+        }
+
+        $this->telegram->sendMessage($chatId, $message);
     }
 
     private function sendHelp(int|string $chatId): void
@@ -767,12 +1110,14 @@ class TelegramBot
         2. Tulis keterangannya dalam satu pesan, misalnya:
         • <i>expense 150rb grab ke kantor klien nestory</i>
         • <i>advance 2jt beli properti shooting video profile</i>
+        • <i>realisasi 350rb sewa lighting nestory</i> — melaporkan pemakaian advance yang sudah dibayarkan
 
-        Bot mengenali kategori dan project-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi. Tidak ada yang tersimpan sebelum kamu menekan <b>Kirim</b>.
+        Bot mengenali kategori, project, dan advance-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi. Tidak ada yang tersimpan sebelum kamu menekan <b>Kirim</b>.
 
         /expense – ajukan expense (reimburse)
         /advance – ajukan advance (uang muka)
-        /status – 5 pengajuan terakhir
+        /realisasi – laporkan pemakaian advance
+        /status – pengajuan terakhir & progres advance
         /batal – batalkan draft
         HTML;
     }
@@ -802,16 +1147,28 @@ class TelegramBot
 
         return implode("\n", [
             'Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y'),
-            'Project: ' . e($project ? $this->projectLabel($project) : '-'),
+            'Project: ' . ($project ? e($this->projectLabel($project)) . $this->picSuffix($project) : '-'),
             'Kategori: ' . e($draft->category),
             'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             'Keterangan: ' . e($draft->description),
-            'Lampiran: ' . match ($draft->attachment['ext'] ?? null) {
-                null    => 'belum ada',
-                'pdf'   => '📎 PDF struk',
-                default => '📎 foto struk',
-            },
+            'Lampiran: ' . $this->attachmentLabel($draft),
         ]);
+    }
+
+    private function attachmentLabel(Draft $draft): string
+    {
+        return match ($draft->attachment['ext'] ?? null) {
+            null    => 'belum ada',
+            'pdf'   => '📎 PDF struk',
+            default => '📎 foto struk',
+        };
+    }
+
+    private function picSuffix(Project $project): string
+    {
+        $pic = ProjectMatcher::pic($project);
+
+        return $pic ? ' · PIC ' . e($pic) : '';
     }
 
     /**
@@ -827,7 +1184,11 @@ class TelegramBot
             ->latest('id')
             ->limit(self::PROJECT_CHOICES)
             ->get()
-            ->mapWithKeys(fn (Project $project) => [$project->id => $this->projectLabel($project)])
+            // PIC ikut dikirim ke AI dan tampil di tombol: project satu klien
+            // sering hanya bisa dibedakan dari PIC-nya.
+            ->mapWithKeys(fn (Project $project) => [
+                $project->id => $this->projectLabel($project) . (($pic = ProjectMatcher::pic($project)) ? " · {$pic}" : ''),
+            ])
             ->all();
     }
 

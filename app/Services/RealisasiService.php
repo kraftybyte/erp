@@ -73,7 +73,9 @@ class RealisasiService
             $batch = Realisasi::create([
                 'advance_id' => $advance->id,
                 'batch_number' => Realisasi::getNextBatchNumber($advance->id),
-                'uploaded_by' => Auth::user()?->id ?? 1,
+                // Bot Telegram tidak punya sesi login, jadi pengunggahnya dikirim
+                // eksplisit; tanpa ini batch tercatat atas nama user id 1.
+                'uploaded_by' => $data['uploaded_by'] ?? Auth::user()?->id ?? 1,
                 'notes' => $data['notes'] ?? null,
             ]);
 

@@ -21,10 +21,14 @@ use Illuminate\Support\Str;
  */
 class SubmissionParser
 {
+    // Urutan penting: "realisasi advance" adalah realisasi, bukan advance baru.
     private const TYPE_PATTERNS = [
-        'advance' => '/\b(advance|adv|kasbon|uang muka|minta dana|butuh dana)\b/iu',
-        'expense' => '/\b(expense|reimburse|reimbursement|klaim)\b/iu',
+        'realisasi' => '/\b(realisasi|realisasikan|lpj|pertanggungjawaban)\b/iu',
+        'advance'   => '/\b(advance|adv|kasbon|uang muka|minta dana|butuh dana)\b/iu',
+        'expense'   => '/\b(expense|reimburse|reimbursement|klaim)\b/iu',
     ];
+
+    public const TYPES = ['expense', 'advance', 'realisasi'];
 
     public function __construct(
         private GeminiService $gemini,
@@ -34,7 +38,7 @@ class SubmissionParser
     /**
      * @param  array<int, string>  $projects  id => label project yang ditawarkan ke AI
      * @param  array{mime: string, data: string}|null  $receipt  foto/PDF struk, dibaca bila Gemini aktif
-     * @return array{type: ?string, amount: ?int, description: ?string, project_id: ?int, project_candidates: array<int, int>, category: ?string, date: ?string}
+     * @return array{type: ?string, type_explicit: bool, amount: ?int, description: ?string, project_id: ?int, project_candidates: array<int, int>, category: ?string, date: ?string}
      */
     public function parse(string $text, array $projects, ?array $receipt = null): array
     {
@@ -48,7 +52,12 @@ class SubmissionParser
 
         // Keduanya divalidasi dulu, baru digabung: isian AI yang tidak valid
         // (mis. nominal negatif) tidak boleh menghapus hasil pembaca aturan.
+        // Jenis yang ditulis user sendiri ("realisasi …") tidak ditimpa tebakan AI.
         foreach ($this->sanitize($ai) as $field => $value) {
+            if ($field === 'type_explicit' || ($field === 'type' && $parsed['type_explicit'])) {
+                continue;
+            }
+
             if ($value !== null && $value !== []) {
                 $parsed[$field] = $value;
             }
@@ -82,7 +91,7 @@ class SubmissionParser
         Hari ini {$today} (WIB).
 
         Aturan pengisian:
-        - type: "expense" bila uangnya sudah dikeluarkan dan minta diganti (reimburse); "advance" bila minta uang dulu sebelum belanja (uang muka, kasbon). null bila tidak jelas.
+        - type: "expense" bila uangnya sudah dikeluarkan dan minta diganti (reimburse); "advance" bila minta uang dulu sebelum belanja (uang muka, kasbon); "realisasi" bila melaporkan pemakaian dana advance yang sudah diterima. null bila tidak jelas.
         - amount: nominal rupiah sebagai bilangan bulat. "150rb" = 150000, "1,5jt" = 1500000. null bila tidak disebut.
         - description: keperluannya, singkat dan jelas, maksimal 100 karakter, tanpa nominal dan tanpa kata expense/advance.
         - category: salah satu dari daftar kategori persis seperti tertulis, atau null bila tidak ada yang cocok. Contoh: grab/gojek/bensin/tol/parkir = Transport.
@@ -104,7 +113,7 @@ class SubmissionParser
         return $this->gemini->extractJson($prompt, [
             'type'       => 'object',
             'properties' => [
-                'type'        => ['type' => ['string', 'null'], 'enum' => ['expense', 'advance', null]],
+                'type'        => ['type' => ['string', 'null'], 'enum' => [...self::TYPES, null]],
                 'amount'      => ['type' => ['integer', 'null']],
                 'description' => ['type' => ['string', 'null']],
                 'category'    => ['type' => ['string', 'null']],
@@ -130,6 +139,9 @@ class SubmissionParser
         // "bensin 80rb ke klien" tanpa kata expense/advance hampir selalu
         // reimburse. Advance harus disebut jelas; user tetap bisa menggantinya
         // dari ringkasan. Tanpa nominal (mis. "halo") jenisnya tetap ditanyakan.
+        // Tebakan ini ditandai, supaya bot bisa bertanya bila ada advance
+        // terbuka untuk project yang sama (cegah klaim ganda).
+        $explicit = $type !== null;
         $type ??= $amount ? 'expense' : null;
 
         $project = $this->projects->match($text);
@@ -143,6 +155,7 @@ class SubmissionParser
 
         return [
             'type'               => $type,
+            'type_explicit'      => $explicit,
             'amount'             => $amount,
             'description'        => mb_strlen($description) >= 3 ? Str::ucfirst($description) : null,
             'project_id'         => $project['project_id'],
@@ -154,7 +167,7 @@ class SubmissionParser
 
     private function sanitize(array $parsed): array
     {
-        $type = in_array($parsed['type'] ?? null, ['expense', 'advance'], true) ? $parsed['type'] : null;
+        $type = in_array($parsed['type'] ?? null, self::TYPES, true) ? $parsed['type'] : null;
 
         $amount = is_numeric($parsed['amount'] ?? null) ? (int) $parsed['amount'] : null;
         if ($amount !== null && ($amount <= 0 || $amount > AmountParser::MAX)) {
@@ -172,6 +185,9 @@ class SubmissionParser
 
         return [
             'type'               => $type,
+            // Hanya pembaca aturan yang mengisi ini; jawaban AI tidak dianggap
+            // pernyataan eksplisit dari user.
+            'type_explicit'      => (bool) ($parsed['type_explicit'] ?? false),
             'amount'             => $amount,
             'description'        => $description !== '' ? Str::limit($description, 500, '') : null,
             'project_id'         => $projectId,

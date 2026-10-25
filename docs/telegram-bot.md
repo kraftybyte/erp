@@ -31,6 +31,37 @@ selesai), pengaju juga mendapat kabar di Telegram.
 - Bila Gemini aktif, isi struk ikut dibaca: total (hanya bila pesan tidak
   menyebut nominal), tanggal, dan nama toko.
 
+### Realisasi advance
+
+```
+User: [foto struk]  realisasi 350rb sewa lighting nestory
+Bot : 🧾 Draft Realisasi
+      Advance: Advance Video Profile — Rp 2.000.000
+      Project: PT Nestory Indonesia | Video Profile · PIC Budi Santoso
+      Item: Sewa lighting · Rp 350.000 · Lampiran: 📎 foto struk
+      Sisa advance: Rp 2.000.000 → Rp 1.650.000
+```
+
+- Kata `realisasi`/`lpj`/`pertanggungjawaban`, atau perintah `/realisasi`.
+- Hanya advance **milik pengirim** berstatus Dibayarkan / Sedang di-Realisasi User
+  yang ditawarkan. Dicocokkan dari project di pesan; bila beberapa cocok, bot
+  menampilkan daftar bernomor lengkap dengan PIC dan sisa dananya.
+- Satu struk = satu batch (satu item) lewat `RealisasiService::createBatch`, jadi
+  aturan ERP tetap berlaku: batch pertama mengubah status advance dan memberi
+  tahu Finance; overrun yang belum disetujui menahan realisasi berikutnya. File
+  disimpan di `realisasi/{advance_id}/` seperti unggahan dari halaman realisasi.
+- **Cegah klaim ganda:** pesan bernominal tanpa kata expense untuk project yang
+  masih punya advance terbuka ditanyakan dulu ("dibayar dari advance itu?").
+  Expense yang ditulis jelas tetap diberi peringatan dan tombol "Jadikan realisasi".
+- `/status` menampilkan progres setiap advance terbuka.
+
+### PIC
+
+Project satu klien sering hanya beda di PIC-nya. Bila beberapa project cocok,
+bot menampilkan daftar bernomor dengan PIC (dari project, atau dari Deal bila
+kosong). Nama PIC di pesan ("nestory pak budi") ikut memilih project, tapi hanya
+di antara project yang nama kliennya sudah cocok.
+
 Perintah bot: `/expense`, `/advance`, `/status` (5 pengajuan terakhir), `/batal`, `/bantuan`.
 
 ---
