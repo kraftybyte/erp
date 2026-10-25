@@ -102,6 +102,51 @@ class FinanceBotTest extends TestCase
         $this->assertStringContainsString('lewat 3 hari', $edited['text']);
     }
 
+    public function test_daftar_belum_dibayar_memisahkan_yang_belum_ditagih(): void
+    {
+        $user = $this->user('Finance');
+
+        Invoice::create([
+            'uuid'            => 'TES/DP-' . Str::upper(Str::random(5)),
+            'user_id'         => $user->id,
+            'type'            => 'sale',
+            'type_payment'    => 'dp_40',
+            'nama_perusahaan' => 'PT Baru Bayar DP',
+            'grand_total'     => 777_000_000,
+            'paid'            => 310_800_000,
+            'status'          => 'paid',
+        ]);
+
+        $this->send($this->text('/piutang'));
+
+        $this->assertStringContainsString('Belum ditagih', $this->lastText());
+        $this->assertStringContainsString('PT Baru Bayar DP', $this->lastText());
+        $this->assertStringContainsString('Rp 466.200.000', $this->lastText(), 'Sisa 60% yang belum ditagih.');
+    }
+
+    public function test_tombol_excel_mengirim_file_berisi_seluruh_data(): void
+    {
+        $this->user('Director');
+
+        $this->send($this->tap('fin:excel'));
+
+        $request = collect(Http::recorded())->map(fn ($pair) => $pair[0])
+            ->first(fn (Request $request) => str_ends_with($request->url(), '/sendDocument'));
+
+        $this->assertNotNull($request, 'File tidak dikirim.');
+        $this->assertStringContainsString('bot222:FINANCE', $request->url());
+
+        $document = collect($request->data())->firstWhere('name', 'document');
+        $this->assertStringEndsWith('.xlsx', $document['filename']);
+
+        $path = tempnam(sys_get_temp_dir(), 'tes-') . '.xlsx';
+        file_put_contents($path, $document['contents']);
+        $book = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        unlink($path);
+
+        $this->assertSame(['Ringkasan', 'Invoice', 'Expense', 'Advance', 'Per Project'], $book->getSheetNames());
+    }
+
     public function test_akses_dicek_ulang_saat_tombol_ditekan(): void
     {
         $this->user('Staff');

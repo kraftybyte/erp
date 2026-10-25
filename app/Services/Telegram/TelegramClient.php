@@ -168,6 +168,40 @@ class TelegramClient
         return $response->body();
     }
 
+    /**
+     * Kirim file (mis. laporan Excel). True bila terkirim.
+     */
+    public function sendDocument(int|string $chatId, string $path, string $filename, string $caption = ''): bool
+    {
+        if (! $this->isConfigured()) {
+            return false;
+        }
+
+        $token = $this->token();
+
+        try {
+            $response = Http::timeout(60)
+                ->attach('document', file_get_contents($path), $filename)
+                ->post("https://api.telegram.org/bot{$token}/sendDocument", [
+                    'chat_id'    => $chatId,
+                    'caption'    => $caption,
+                    'parse_mode' => 'HTML',
+                ]);
+        } catch (ConnectionException $e) {
+            Log::warning('Gagal mengirim file Telegram', ['error' => str_replace($token, '***', $e->getMessage())]);
+
+            return false;
+        }
+
+        if (! $response->successful() || ! $response->json('ok')) {
+            Log::warning('Telegram API Error', ['method' => 'sendDocument', 'description' => $response->json('description')]);
+
+            return false;
+        }
+
+        return true;
+    }
+
     public function typing(int|string $chatId): void
     {
         $this->call('sendChatAction', ['chat_id' => $chatId, 'action' => 'typing']);

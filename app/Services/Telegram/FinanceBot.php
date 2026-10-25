@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\User;
+use App\Services\FinanceExport;
 use App\Services\FinanceOverview;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -26,7 +27,7 @@ class FinanceBot
 
     private TelegramClient $telegram;
 
-    public function __construct(private FinanceOverview $overview)
+    public function __construct(private FinanceOverview $overview, private FinanceExport $export)
     {
         $this->telegram = TelegramClient::forFinance();
     }
@@ -73,6 +74,12 @@ class FinanceBot
             return;
         }
 
+        if ($command === 'excel') {
+            $this->sendExport($chatId);
+
+            return;
+        }
+
         // /start dan teks bebas: tampilkan ringkasan.
         $section = in_array($command, self::SECTIONS, true) ? $command : 'ringkasan';
 
@@ -91,9 +98,17 @@ class FinanceBot
             return;
         }
 
+        $section = Str::after((string) ($callback['data'] ?? ''), 'fin:');
+
+        if ($section === 'excel') {
+            $this->telegram->answerCallback($callback['id'], 'Menyiapkan file Excel…');
+            $this->sendExport($chatId);
+
+            return;
+        }
+
         $this->telegram->answerCallback($callback['id']);
 
-        $section = Str::after((string) ($callback['data'] ?? ''), 'fin:');
         $section = in_array($section, self::SECTIONS, true) ? $section : 'ringkasan';
 
         if (! $this->telegram->editMessage($chatId, $messageId, $this->render($section), $this->buttons($section))) {
@@ -149,7 +164,7 @@ class FinanceBot
             'advance'   => '💸 Advance',
             'expense'   => '💰 Expense',
             'invoice'   => '📄 Invoice',
-            'piutang'   => '⏰ Piutang',
+            'piutang'   => '⏰ Belum dibayar',
             'pending'   => '⏳ Pending',
         ];
 
@@ -161,6 +176,7 @@ class FinanceBot
         return [
             [$button('ringkasan'), $button('advance'), $button('expense')],
             [$button('invoice'), $button('piutang'), $button('pending')],
+            [['text' => '⬇️ Unduh Excel (semua data)', 'callback_data' => 'fin:excel']],
         ];
     }
 
@@ -168,10 +184,18 @@ class FinanceBot
     {
         $advance = $this->overview->advances();
         $expense = $this->overview->expenses();
-        $invoice = $this->overview->invoices();
+        $invoice = $this->overview->invoiceBreakdown();
 
         return implode("\n", [
             '📊 <b>Ringkasan keuangan</b>',
+            '',
+            '📄 <b>Invoice</b>',
+            'Nilai pekerjaan: <b>' . $this->rupiah($invoice['contract_value']) . '</b>',
+            'Sudah dibayar: ' . $this->rupiah($invoice['paid']),
+            'Belum dibayar: <b>' . $this->rupiah($invoice['unpaid_billed']['amount'] + $invoice['unbilled']['amount']) . '</b>',
+            '• sudah ditagih: ' . $this->rupiah($invoice['unpaid_billed']['amount'])
+                . ($invoice['overdue']['count'] ? " ({$invoice['overdue']['count']} lewat jatuh tempo)" : ''),
+            '• belum ditagih: ' . $this->rupiah($invoice['unbilled']['amount']),
             '',
             '💸 <b>Advance</b>',
             'Dicairkan: ' . $this->amount($advance['disbursed']),
@@ -182,30 +206,33 @@ class FinanceBot
             '💰 <b>Expense</b>',
             'Sudah dibayar: ' . $this->amount($expense['paid']),
             'Menunggu proses: ' . $this->amount($this->combine($expense['pending'], $expense['approved'])),
-            '',
-            '📄 <b>Invoice</b>',
-            'Ditagihkan: ' . $this->amount($invoice['billed'], 'invoice'),
-            'Sudah dibayar: ' . $this->rupiah($invoice['paid']['amount']),
-            'Piutang: ' . $this->amount($invoice['outstanding'], 'invoice')
-                . ($invoice['overdue']['count'] ? " · <b>{$invoice['overdue']['count']} lewat jatuh tempo</b>" : ''),
         ]);
     }
 
     private function expenseSection(): string
     {
-        $e = $this->overview->expenses();
-
-        return implode("\n", array_filter([
+        $e     = $this->overview->expenses();
+        $lines = [
             '💰 <b>Expense</b>',
             '',
             'Total diajukan: ' . $this->amount($e['total']),
             '• Sudah dibayar: ' . $this->amount($e['paid']),
             '• Disetujui, belum dibayar: ' . $this->amount($e['approved']),
             '• Menunggu persetujuan: ' . $this->amount($e['pending']),
-            $e['other']['count'] ? '• Status lain: ' . $this->amount($e['other']) : null,
-            '',
-            'Ditolak (tidak dihitung): ' . $this->amount($e['rejected']),
-        ], fn ($line) => $line !== null));
+        ];
+
+        if ($e['other']['count']) {
+            $lines[] = '• Status lain: ' . $this->amount($e['other']);
+        }
+
+        $lines[] = 'Ditolak (tidak dihitung): ' . $this->amount($e['rejected']);
+
+        $lines = [...$lines, '', '<b>Untuk apa saja</b> (per kategori)'];
+        foreach ($this->overview->expenseByCategory() as $row) {
+            $lines[] = '• ' . e($row['label']) . ': ' . $this->rupiah($row['amount']) . " ({$row['count']})";
+        }
+
+        return implode("\n", [...$lines, '', '<b>Per project</b>', ...$this->topList($this->overview->expenseByProject(), fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})")]);
     }
 
     private function advanceSection(): string
@@ -226,10 +253,9 @@ class FinanceBot
 
         $lines = [
             ...$lines,
+            'Ditolak (tidak dihitung): ' . $this->amount($a['rejected']),
             '',
-            '<b>Pertanggungjawaban</b>',
-            'Direalisasi: ' . $this->rupiah($a['realized']),
-            'Sisa dikembalikan: ' . $this->rupiah($a['returned']),
+            'Direalisasi: ' . $this->rupiah($a['realized']) . ' · dikembalikan: ' . $this->rupiah($a['returned']),
             'Belum dipertanggungjawabkan: ' . $this->amount($a['outstanding'], 'advance'),
         ];
 
@@ -237,69 +263,151 @@ class FinanceBot
             $lines[] = '⚠️ Melebihi dana: ' . $this->amount($a['overrun'], 'advance') . ' — menunggu persetujuan Finance';
         }
 
+        $lines = [...$lines, '', '<b>Per project</b>'];
+
+        return implode("\n", [...$lines, ...$this->topList(
+            $this->overview->advanceByProject(),
+            fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
+                . "\n   cair " . $this->rupiah($row['disbursed']) . ' · realisasi ' . $this->rupiah($row['realized'])
+                . ($row['outstanding'] > 0 ? ' · <b>sisa ' . $this->rupiah($row['outstanding']) . '</b>' : '')
+        )]);
+    }
+
+    private function invoiceSection(): string
+    {
+        $i     = $this->overview->invoiceBreakdown();
+        $all   = $this->overview->invoices();
+        $kinds = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Bayar penuh'];
+
+        $lines = [
+            '📄 <b>Invoice</b> (penjualan)',
+            '',
+            'Nilai pekerjaan: <b>' . $this->rupiah($i['contract_value']) . '</b>',
+            'Sudah dibayar: ' . $this->rupiah($i['paid']),
+            'Belum dibayar: <b>' . $this->rupiah($i['unpaid_billed']['amount'] + $i['unbilled']['amount']) . '</b>',
+            '• sudah ditagih: ' . $this->amount($i['unpaid_billed'], 'invoice'),
+            '   lewat jatuh tempo: ' . $this->amount($i['overdue'], 'invoice'),
+            '• belum ditagih (DP tanpa pelunasan): ' . $this->amount($i['unbilled'], 'project'),
+            '',
+            '<b>Per jenis</b>',
+        ];
+
+        foreach ($kinds as $kind => $label) {
+            $k = $i['kinds'][$kind];
+
+            if ($k['count']) {
+                $lines[] = "<b>{$label}</b> ({$k['count']}): ditagih " . $this->rupiah($k['billed'])
+                    . ' · dibayar ' . $this->rupiah($k['paid'])
+                    . ($k['unpaid'] > 0 ? ' · sisa ' . $this->rupiah($k['unpaid']) : ' · lunas');
+            }
+        }
+
         $lines[] = '';
-        $lines[] = 'Ditolak (tidak dihitung): ' . $this->amount($a['rejected']);
+        $lines[] = "Draft: {$all['draft']['count']} · Dibatalkan: {$all['cancelled']['count']} (tidak dihitung)";
 
-        $open = $this->overview->openAdvances()->where('outstanding', '>', 0)->take(self::LIST_LIMIT);
+        if ($i['unlinked_finals']) {
+            $lines[] = "⚠️ {$i['unlinked_finals']} invoice pelunasan tidak bisa dipasangkan ke invoice DP-nya, jadi nilai pekerjaan bisa kurang akurat. Isi invoice DP-nya di ERP.";
+        }
 
-        if ($open->isNotEmpty()) {
+        $lines[] = '';
+        $lines[] = '<i>Invoice DP ditagih sebesar DP-nya; sisanya lewat invoice pelunasan. Proforma tidak dihitung.</i>';
+
+        return implode("\n", $lines);
+    }
+
+    private function receivablesSection(): string
+    {
+        $unpaid   = $this->overview->receivables();
+        $unbilled = $this->overview->unbilled();
+        $kinds    = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Bayar penuh'];
+
+        if ($unpaid->isEmpty() && $unbilled->isEmpty()) {
+            return "⏰ <b>Belum dibayar</b>\n\nSemua invoice sudah lunas dan tertagih. 🎉";
+        }
+
+        $lines = ['⏰ <b>Belum dibayar</b>', ''];
+
+        if ($unpaid->isNotEmpty()) {
+            $lines[] = '<b>Sudah ditagih</b> — ' . $unpaid->count() . ' invoice · ' . $this->rupiah($unpaid->sum('outstanding'));
+
+            foreach ($unpaid->take(self::LIST_LIMIT) as $row) {
+                $invoice = $row['invoice'];
+                $kind    = $kinds[$row['kind']] . ($row['kind'] === 'dp' ? ' ' . $invoice->dpPercentage() . '%' : '');
+                $dueDate = $invoice->due_date ? Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('j M Y') : 'tanpa jatuh tempo';
+
+                $lines[] = ($row['overdue_days'] > 0 ? '🔴' : '🟡') . ' <b>' . e((string) $invoice->nama_perusahaan) . '</b> — sisa ' . $this->rupiah($row['outstanding'])
+                    . "\n   {$kind} · ditagih " . $this->rupiah($row['due']) . ' · dibayar ' . $this->rupiah($row['paid'])
+                    . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . $dueDate
+                    . ($row['overdue_days'] > 0 ? " (lewat {$row['overdue_days']} hari)" : '');
+            }
+
+            if ($unpaid->count() > self::LIST_LIMIT) {
+                $lines[] = '…dan ' . ($unpaid->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
+            }
+        }
+
+        if ($unbilled->isNotEmpty()) {
             $lines[] = '';
-            $lines[] = '<b>Belum dipertanggungjawabkan terbesar</b>';
+            $lines[] = '<b>Belum ditagih</b> (DP sudah, pelunasan belum dibuat) — ' . $this->rupiah($unbilled->sum('unbilled'));
 
-            foreach ($open as $row) {
-                $lines[] = '• ' . e($this->name($row['advance']->user)) . ' — ' . $this->rupiah($row['outstanding'])
-                    . "\n   " . e(Str::limit((string) $row['advance']->keterangan_advance, 50))
-                    . ' · cair ' . $this->rupiah($row['disbursed']);
+            foreach ($unbilled->take(self::LIST_LIMIT) as $row) {
+                $invoice = $row['invoice'];
+
+                $lines[] = '📝 <b>' . e((string) $invoice->nama_perusahaan) . '</b> — ' . $this->rupiah($row['unbilled'])
+                    . "\n   nilai " . $this->rupiah($invoice->grand_total) . ' · DP ' . $invoice->dpPercentage() . '% ' . $this->rupiah($row['due'])
+                    . ' · ' . e((string) $invoice->uuid);
+            }
+
+            if ($unbilled->count() > self::LIST_LIMIT) {
+                $lines[] = '…dan ' . ($unbilled->count() - self::LIST_LIMIT) . ' lainnya (lihat file Excel).';
             }
         }
 
         return implode("\n", $lines);
     }
 
-    private function invoiceSection(): string
+    /**
+     * Daftar teratas untuk chat; selengkapnya di file Excel.
+     *
+     * @return array<int, string>
+     */
+    private function topList(\Illuminate\Support\Collection $rows, \Closure $describe): array
     {
-        $i = $this->overview->invoices();
-
-        return implode("\n", [
-            '📄 <b>Invoice</b>',
-            '',
-            'Ditagihkan: ' . $this->amount($i['billed'], 'invoice'),
-            'Sudah dibayar: ' . $this->rupiah($i['paid']['amount']) . " ({$i['paid']['count']} lunas)",
-            'Piutang: ' . $this->amount($i['outstanding'], 'invoice'),
-            '• Lewat jatuh tempo: ' . $this->amount($i['overdue'], 'invoice'),
-            '',
-            'Draft (belum ditagihkan): ' . $this->amount($i['draft'], 'invoice'),
-            "Dibatalkan: {$i['cancelled']['count']} invoice",
-            '',
-            '<i>Invoice DP dihitung sebesar DP-nya; sisanya lewat invoice pelunasan. Proforma tidak dihitung.</i>',
-        ]);
-    }
-
-    private function receivablesSection(): string
-    {
-        $rows = $this->overview->receivables();
-
         if ($rows->isEmpty()) {
-            return "⏰ <b>Piutang</b>\n\nTidak ada invoice yang belum lunas. 🎉";
+            return ['-'];
         }
 
-        $lines = ['⏰ <b>Piutang</b> — ' . $rows->count() . ' invoice · ' . $this->rupiah($rows->sum('outstanding')), ''];
-
-        foreach ($rows->take(self::LIST_LIMIT) as $row) {
-            $invoice = $row['invoice'];
-            $dueDate = $invoice->due_date ? Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('j M Y') : 'tanpa jatuh tempo';
-
-            $lines[] = ($row['overdue_days'] > 0 ? '🔴' : '🟡') . ' <b>' . e((string) $invoice->nama_perusahaan) . '</b> — ' . $this->rupiah($row['outstanding'])
-                . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . $dueDate
-                . ($row['overdue_days'] > 0 ? " (lewat {$row['overdue_days']} hari)" : '');
-        }
+        $lines = $rows->take(self::LIST_LIMIT)
+            ->map(fn (array $row) => '• ' . e($row['label']) . ': ' . $describe($row))
+            ->all();
 
         if ($rows->count() > self::LIST_LIMIT) {
-            $lines[] = '';
-            $lines[] = '…dan ' . ($rows->count() - self::LIST_LIMIT) . ' invoice lain. Lihat lengkapnya di ERP.';
+            $lines[] = '…dan ' . ($rows->count() - self::LIST_LIMIT) . ' lainnya (lihat file Excel).';
         }
 
-        return implode("\n", $lines);
+        return $lines;
+    }
+
+    private function sendExport(int|string $chatId): void
+    {
+        $this->telegram->typing($chatId);
+
+        $path = $this->export->toFile();
+
+        try {
+            $sent = $this->telegram->sendDocument(
+                $chatId,
+                $path,
+                'laporan-keuangan-' . now()->format('Y-m-d') . '.xlsx',
+                '📎 Seluruh data advance, expense, dan invoice. Sheet: Ringkasan, Invoice, Expense, Advance, Per Project.'
+            );
+        } finally {
+            @unlink($path);
+        }
+
+        if (! $sent) {
+            $this->telegram->sendMessage($chatId, 'File Excel gagal dikirim. Coba lagi sebentar.');
+        }
     }
 
     private function pendingSection(): string
@@ -332,12 +440,13 @@ class FinanceBot
         return <<<'HTML'
         📊 <b>Bot laporan keuangan</b> (hanya membaca, tidak mengubah data)
 
-        /ringkasan – advance, expense, dan invoice sekaligus
-        /advance – dicairkan, realisasi, belum dipertanggungjawabkan
-        /expense – dibayar, menunggu, ditolak
-        /invoice – ditagihkan, dibayar, piutang
-        /piutang – invoice yang belum lunas
+        /ringkasan – invoice, advance, dan expense sekaligus
+        /invoice – nilai pekerjaan, DP, pelunasan, dibayar, belum dibayar
+        /piutang – daftar yang belum dibayar & belum ditagih
+        /advance – per project: dicairkan, realisasi, sisa
+        /expense – per kategori dan per project
         /pending – pengajuan yang menunggu persetujuan atau pembayaran
+        /excel – unduh seluruh data dalam satu file Excel
         HTML;
     }
 

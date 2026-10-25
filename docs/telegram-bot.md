@@ -239,7 +239,25 @@ Setup:
    Hubungkan Telegram). ID chat pribadi sama di semua bot, jadi bot laporan
    langsung mengenalinya. Role diperiksa ulang di setiap pesan dan tombol.
 
-Perintah: `/ringkasan`, `/advance`, `/expense`, `/invoice`, `/piutang`, `/pending`.
+Perintah: `/ringkasan`, `/invoice`, `/piutang`, `/advance`, `/expense`, `/pending`,
+`/excel`.
+
+- **Invoice**: nilai pekerjaan, sudah dibayar, dan belum dibayar — dipisah
+  menjadi *sudah ditagih* (per invoice) dan *belum ditagih* (sisa DP yang belum
+  dibuatkan invoice pelunasan); plus rincian per jenis (DP, pelunasan, bayar penuh).
+- **Advance**: per project — diajukan, dicairkan, direalisasi, sisa.
+- **Expense**: per kategori dan per project.
+- **Excel** (tombol ⬇️ atau `/excel`): seluruh data dalam satu file — sheet
+  Ringkasan, Invoice, Expense, Advance, Per Project — karena pesan Telegram
+  maksimal 4.096 karakter. Angkanya dari perhitungan yang sama dengan bot.
+
+**Pasangan DP ↔ pelunasan.** Nilai pekerjaan dihitung dari invoice DP (yang
+menyimpan nilai penuh) dan invoice bayar penuh; invoice pelunasan yang sudah
+dipasangkan ke DP-nya tidak ditambahkan lagi. Pasangannya lewat
+`parent_invoice_id`; invoice lama (sebelum kolom itu ada) dipasangkan ke invoice
+DP dengan deal atau klien yang sama — **hanya bila kandidatnya tepat satu**.
+Yang ambigu tidak ditebak: bot menampilkan peringatan berisi jumlahnya, dan
+pasangannya bisa dirapikan di ERP.
 
 Definisi angka (`App\Services\FinanceOverview`):
 
