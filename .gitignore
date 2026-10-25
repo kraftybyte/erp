@@ -40,3 +40,17 @@ Thumbs.db
 
 # Logs
 *.log
+# Kredensial & hasil dump — jangan pernah masuk version control.
+# APP_KEY dan META_APP_SECRET asli pernah tidak sengaja ter-commit lewat docs/,
+# jadi pola di bawah dipasang supaya kejadian itu tidak terulang.
+.env.backup
+.env.production
+.env.*.backup
+*.pem
+*.key
+auth.json
+backup-*.sql
+backup-*.tar.gz
+*.sql
+*.sql.gz
+/storage/app/backup/

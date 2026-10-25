@@ -1,5 +1,15 @@
 # Migrasi Laravel ERP ke cPanel Shared Hosting
 
+> **Catatan keamanan**
+>
+> Berkas ini ikut masuk version control, jadi JANGAN menuliskan nilai kredensial
+> yang sebenarnya di sini — cukup nama variabelnya. Nilai asli hanya boleh ada di
+> `.env` pada masing-masing server, yang sudah diabaikan git.
+>
+> Riwayat berkas ini pernah memuat APP_KEY dan META_APP_SECRET asli; keduanya
+> harus dianggap bocor dan sudah dirotasi.
+
+
 ## Overview
 
 Target: `erp.getkrafty.id` → cPanel hosting
@@ -51,7 +61,7 @@ SESSION_SECURE_COOKIE=true
 APP_NAME="ERP - Krafty"
 APP_VERSION=1.15.0
 APP_ENV=production
-APP_KEY=base64:NTAr7JQnlShg/mwMwEnM4A4yKsdRTIf08dnyX9VrBKQ=
+APP_KEY=                      # isi dengan: php artisan key:generate --show
 APP_DEBUG=false
 APP_URL=https://erp.getkrafty.id
 
@@ -74,11 +84,11 @@ SESSION_SECURE_COOKIE=true
 SESSION_DOMAIN=.erp.getkrafty.id
 
 # Social Media API (Instagram/Meta)
-META_APP_ID=376999284906637
-META_APP_SECRET=21678ac3ab143a1fbf88ab17547383c5
-META_BUSINESS_ID=786159205091294
-INSTAGRAM_CLIENT_ID=376999284906637
-INSTAGRAM_CLIENT_SECRET=21678ac3ab143a1fbf88ab17547383c5
+META_APP_ID=                  # ambil dari Meta for Developers
+META_APP_SECRET=              # ambil dari Meta for Developers > App > Settings > Basic
+META_BUSINESS_ID=             # ambil dari Meta Business Suite
+INSTAGRAM_CLIENT_ID=          # sama dengan META_APP_ID
+INSTAGRAM_CLIENT_SECRET=      # sama dengan META_APP_SECRET
 ```
 
 ### 2.3 Optimasi sebelum upload
