@@ -32,6 +32,7 @@ class TelegramWebhookManager
         ['command' => 'expense',   'description' => 'Expense per kategori & project'],
         ['command' => 'pending',   'description' => 'Pengajuan yang menunggu proses'],
         ['command' => 'excel',     'description' => 'Unduh seluruh data (Excel)'],
+        ['command' => 'bayar',     'description' => 'Catat pembayaran invoice yang masuk'],
     ];
 
     /**

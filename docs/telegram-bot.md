@@ -226,8 +226,9 @@ Bila token bocor: BotFather → `/revoke`, tempel token baru di Settings → Int
 
 ## Bot laporan keuangan (terpisah)
 
-Bot kedua, **hanya membaca**, untuk Director, Finance, dan super_admin: ringkasan
-advance, expense, dan invoice **sepanjang waktu**. Token, webhook
+Bot kedua untuk Director, Finance, dan super_admin: ringkasan advance, expense,
+dan invoice **sepanjang waktu**, plus **mencatat pembayaran invoice** (`/bayar`) —
+satu-satunya hal yang mengubah data. Token, webhook
 (`/api/telegram/finance-webhook`), dan secret-nya terpisah dari bot pengajuan.
 
 Setup:
@@ -240,7 +241,28 @@ Setup:
    langsung mengenalinya. Role diperiksa ulang di setiap pesan dan tombol.
 
 Perintah: `/ringkasan`, `/invoice`, `/piutang`, `/advance`, `/expense`, `/pending`,
-`/excel`.
+`/excel`, `/bayar`. Setelah perintah baru ditambahkan, daftarkan ulang webhook
+(Settings → Integrasi → Simpan, atau `php artisan telegram:webhook --finance`)
+supaya menu perintah di Telegram ikut diperbarui.
+
+### Mencatat pembayaran invoice (`/bayar`)
+
+`/bayar` (atau tombol **💳 Catat pembayaran invoice**) → pilih invoice → pilih
+rekening penerima → **Lunas** atau ketik nominal bila dibayar sebagian
+(`12,5jt`, `12.500.000`) → **✅ Simpan**.
+
+- Yang ditawarkan sama dengan tombol Bayar di ERP: invoice penjualan (bukan
+  proforma) yang belum lunas dan tidak dibatalkan, jatuh tempo terlama dulu.
+  `/bayar organik` atau mengetik nama klien / nomor invoice / nominal mencari
+  invoice-nya.
+- Invoice DP ditagih sebesar DP-nya; nominal tidak boleh melebihi sisa tagihan.
+- Pencatatannya lewat `App\Services\InvoicePayment`, jalur yang sama dengan
+  tombol Bayar di ERP: status lunas/sebagian, transaksi uang masuk di rekening
+  (dicatat atas nama pengguna Telegram-nya), saldo dihitung ulang, dan log
+  invoice. Baris invoice dikunci selama pencatatan, sehingga pembayaran dari ERP
+  dan Telegram yang bersamaan tidak bisa melebihi tagihan; ketukan ✅ ganda
+  hanya tercatat sekali.
+- Tanggal transaksi = saat dicatat, sama seperti di ERP.
 
 - **Invoice**: nilai pekerjaan, sudah dibayar, dan belum dibayar — dipisah
   menjadi *sudah ditagih* (per invoice) dan *belum ditagih* (sisa DP yang belum
@@ -284,6 +306,9 @@ Catatan: angka "pengeluaran" di Payment Dashboard ERP memakai definisi lain
 | `app/Services/Telegram/TelegramWebhookManager.php` | Daftar, cek, cabut webhook |
 | `app/Http/Controllers/TelegramWebhookController.php` | Cek secret, teruskan update ke bot |
 | `app/Services/Telegram/TelegramBot.php` | Alur percakapan, tombol, pembuatan record |
+| `app/Services/Telegram/FinanceBot.php` | Bot laporan keuangan |
+| `app/Services/Telegram/InvoicePaymentFlow.php` | Alur `/bayar` di bot laporan keuangan |
+| `app/Services/InvoicePayment.php` | Pencatatan pembayaran invoice (ERP & Telegram) |
 | `app/Services/Telegram/SubmissionParser.php` | Pesan → isian (Gemini, atau aturan sederhana) |
 | `app/Services/Telegram/AmountParser.php` | Membaca nominal: `150rb`, `1,5jt`, `Rp 150.000` |
 | `app/Services/Telegram/Draft.php` | Draft di cache sebelum dikirim |
