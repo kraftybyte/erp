@@ -10,7 +10,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * Seluruh data advance, expense, dan invoice dalam satu file Excel, untuk
+ * Data advance, expense, dan invoice (seluruh waktu atau satu periode) dalam satu file Excel, untuk
  * hal yang tidak muat di pesan Telegram. Angkanya dari FinanceOverview,
  * jadi sama persis dengan yang tampil di bot.
  */
@@ -23,8 +23,10 @@ class FinanceExport
     /**
      * @return string path file sementara; pemanggil yang menghapusnya
      */
-    public function toFile(): string
+    public function toFile(?ReportPeriod $period = null): string
     {
+        $this->overview = $this->overview->forPeriod($period ?? ReportPeriod::all());
+
         $book = new Spreadsheet();
         $book->removeSheetByIndex(0);
 
@@ -49,7 +51,7 @@ class FinanceExport
         $advance = $this->overview->advances();
 
         $rows = [
-            ['Ringkasan keuangan — seluruh waktu', null],
+            ['Ringkasan keuangan — ' . $this->overview->period()->label(), null],
             ['Per', now()->locale('id')->translatedFormat('j F Y, H.i')],
             [null, null],
             ['INVOICE (penjualan)', null],

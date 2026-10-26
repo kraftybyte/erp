@@ -226,8 +226,8 @@ Bila token bocor: BotFather → `/revoke`, tempel token baru di Settings → Int
 
 ## Bot laporan keuangan (terpisah)
 
-Bot kedua untuk Director, Finance, dan super_admin: ringkasan advance, expense,
-dan invoice **sepanjang waktu**, plus **mencatat pembayaran invoice** (`/bayar`) —
+Bot kedua untuk Director, Finance, dan super_admin: invoice masuk, expense, dan
+advance — **seluruh waktu atau per periode** — plus **mencatat pembayaran invoice** (`/bayar`) —
 satu-satunya hal yang mengubah data. Token, webhook
 (`/api/telegram/finance-webhook`), dan secret-nya terpisah dari bot pengajuan.
 
@@ -241,7 +241,7 @@ Setup:
    langsung mengenalinya. Role diperiksa ulang di setiap pesan dan tombol.
 
 Perintah: `/ringkasan`, `/invoice`, `/piutang`, `/advance`, `/expense`, `/pending`,
-`/excel`, `/bayar`. Setelah perintah baru ditambahkan, daftarkan ulang webhook
+`/periode`, `/excel`, `/bayar`. Setelah perintah baru ditambahkan, daftarkan ulang webhook
 (Settings → Integrasi → Simpan, atau `php artisan telegram:webhook --finance`)
 supaya menu perintah di Telegram ikut diperbarui.
 
@@ -264,14 +264,28 @@ rekening penerima → **Lunas** atau ketik nominal bila dibayar sebagian
   hanya tercatat sekali.
 - Tanggal transaksi = saat dicatat, sama seperti di ERP.
 
-- **Invoice**: nilai pekerjaan, sudah dibayar, dan belum dibayar — dipisah
-  menjadi *sudah ditagih* (per invoice) dan *belum ditagih* (sisa DP yang belum
-  dibuatkan invoice pelunasan); plus rincian per jenis (DP, pelunasan, bayar penuh).
+- **Ringkasan**: invoice masuk — total invoice DP, total invoice full payment
+  (dan pelunasan bila ada), total, belum dibayarkan; expense — total dan belum
+  dibayarkan; advance — total, belum dibayarkan, belum dipertanggungjawabkan.
+- **Invoice**: angka yang sama plus daftar invoice periode itu.
 - **Advance**: per project — diajukan, dicairkan, direalisasi, sisa.
 - **Expense**: per kategori dan per project.
-- **Excel** (tombol ⬇️ atau `/excel`): seluruh data dalam satu file — sheet
+- **Belum dibayar** (`/piutang`): per invoice yang belum lunas, dan sisa DP yang
+  belum dibuatkan invoice pelunasan.
+- **Pending**: antrean yang menunggu persetujuan/pembayaran — selalu seluruh waktu.
+- **Excel** (tombol ⬇️ atau `/excel`): data periode itu dalam satu file — sheet
   Ringkasan, Invoice, Expense, Advance, Per Project — karena pesan Telegram
   maksimal 4.096 karakter. Angkanya dari perhitungan yang sama dengan bot.
+
+**Periode.** Tombol **📅 Periode** (atau `/periode`) menawarkan Bulan ini, Bulan
+lalu, Tahun ini, Tahun lalu, Semua waktu; selama pilihan itu tampil, rentang
+juga bisa diketik: `1/10/2026 - 31/10/2026`, `1 okt - 15 okt`, `oktober 2026`,
+`2026`, atau langsung `/periode 1/10/2026 - 31/10/2026`. Periode diingat per
+pengguna (90 hari) dan berlaku untuk semua laporan dan Excel sampai diganti.
+Invoice disaring menurut tanggal invoice, expense dan advance menurut tanggal
+pengajuan. Pasangan DP ↔ pelunasan tetap dicari dari seluruh invoice, jadi
+pelunasan bulan ini tetap terpasang ke DP-nya dari bulan sebelumnya
+(`App\Services\ReportPeriod`, `FinanceOverview::forPeriod()`).
 
 **Pasangan DP ↔ pelunasan.** Nilai pekerjaan dihitung dari invoice DP (yang
 menyimpan nilai penuh) dan invoice bayar penuh; invoice pelunasan yang sudah
@@ -288,8 +302,9 @@ Definisi angka (`App\Services\FinanceOverview`):
 | Expense sudah dibayar | Status Dibayarkan/Selesai. Status yang dipakai, bukan kolom `paid` (pada data lama kolom itu bisa terisi walau baru disetujui). |
 | Advance dicairkan | Status Dibayarkan, Sedang di-Realisasi (User), Siap Diselesaikan, Selesai |
 | Belum dipertanggungjawabkan | Per advance yang belum selesai: dicairkan − direalisasi − sisa yang dikembalikan |
-| Invoice ditagihkan | Invoice penjualan (bukan proforma) yang tidak draft/batal, sebesar `Invoice::amountDue()`: invoice DP hanya persentase DP-nya, sisanya lewat invoice pelunasan — `grand_total` mentah akan menghitung dobel |
-| Piutang | Per invoice: ditagihkan − dibayar; lewat jatuh tempo bila `due_date` sudah lewat |
+| Invoice DP / full payment / pelunasan | Invoice penjualan (bukan proforma) yang tidak draft/batal, sebesar `Invoice::amountDue()`: invoice DP hanya persentase DP-nya, sisanya lewat invoice pelunasan — `grand_total` mentah akan menghitung dobel |
+| Invoice belum dibayarkan | Per invoice: ditagihkan − dibayar; lewat jatuh tempo bila `due_date` sudah lewat |
+| Expense / advance belum dibayarkan | Status Pending + Disetujui (belum dibayar/dicairkan, tidak ditolak) |
 | Ditolak | Ditampilkan terpisah, tidak masuk total |
 
 Catatan: angka "pengeluaran" di Payment Dashboard ERP memakai definisi lain

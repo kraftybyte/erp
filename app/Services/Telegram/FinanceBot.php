@@ -8,28 +8,36 @@ use App\Models\User;
 use App\Services\FinanceExport;
 use App\Services\FinanceOverview;
 use App\Services\InvoicePayment;
+use App\Services\ReportPeriod;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
- * Bot laporan keuangan: ringkasan advance, expense, dan invoice sepanjang
- * waktu. Bot terpisah dari bot pengajuan (token & webhook sendiri) dan hanya
- * melayani role Director, Finance, dan super_admin — diperiksa ulang di setiap
- * pesan maupun tombol. Satu-satunya yang mengubah data: mencatat pembayaran
- * invoice (/bayar, lihat InvoicePaymentFlow).
+ * Bot laporan keuangan: invoice masuk, expense, dan advance — seluruh waktu
+ * atau per periode yang dipilih (📅 Periode / /periode). Bot terpisah dari bot
+ * pengajuan (token & webhook sendiri) dan hanya melayani role Director,
+ * Finance, dan super_admin — diperiksa ulang di setiap pesan maupun tombol.
+ * Satu-satunya yang mengubah data: mencatat pembayaran invoice (/bayar, lihat
+ * InvoicePaymentFlow).
  */
 class FinanceBot
 {
     public const ROLES = ['Director', 'Finance', 'super_admin'];
 
-    private const SECTIONS = ['ringkasan', 'expense', 'advance', 'invoice', 'piutang', 'pending'];
+    private const SECTIONS = ['ringkasan', 'invoice', 'expense', 'advance', 'piutang', 'pending'];
 
     private const LIST_LIMIT = 10;
+
+    // Berapa lama pilihan periode setiap pengguna diingat.
+    private const PERIOD_DAYS = 90;
 
     private TelegramClient $telegram;
 
     private InvoicePaymentFlow $payment;
+
+    // Overview untuk periode chat yang sedang dilayani; diisi render().
+    private FinanceOverview $view;
 
     public function __construct(private FinanceOverview $overview, private FinanceExport $export, InvoicePayment $payments)
     {
@@ -73,22 +81,42 @@ class FinanceBot
         $text = trim((string) ($message['text'] ?? ''));
         preg_match('/^\/(\w+)/u', $text, $match);
         $command = Str::lower($match[1] ?? 'ringkasan');
+        $args    = $match ? trim(Str::after($text, $match[0])) : '';
 
         if ($command === 'bayar') {
-            $this->payment->start($chatId, trim(Str::after($text, $match[0])));
+            $this->payment->start($chatId, $args);
 
             return;
         }
 
-        // Teks biasa di tengah pencatatan pembayaran: kata kunci atau nominal.
-        if (! $match && $this->payment->awaitingText($chatId)) {
-            $this->payment->handleText($chatId, $text);
+        if ($command === 'periode') {
+            $this->payment->forget($chatId);
+
+            $args !== ''
+                ? $this->setPeriodFromText($chatId, $args, 'ringkasan')
+                : $this->showPeriodPicker($chatId, null, 'ringkasan');
 
             return;
         }
 
-        // Perintah lain menutup pencatatan pembayaran yang belum selesai.
+        // Teks biasa: rentang tanggal yang diminta, atau isian pencatatan pembayaran.
+        if (! $match) {
+            if ($section = Cache::get($this->periodAwaitKey($chatId))) {
+                $this->setPeriodFromText($chatId, $text, $section);
+
+                return;
+            }
+
+            if ($this->payment->awaitingText($chatId)) {
+                $this->payment->handleText($chatId, $text);
+
+                return;
+            }
+        }
+
+        // Perintah lain menutup isian yang belum selesai.
         $this->payment->forget($chatId);
+        Cache::forget($this->periodAwaitKey($chatId));
 
         if (in_array($command, ['bantuan', 'help'], true)) {
             $this->telegram->sendMessage($chatId, $this->helpText());
@@ -105,30 +133,29 @@ class FinanceBot
         // /start dan teks bebas: tampilkan ringkasan.
         $section = in_array($command, self::SECTIONS, true) ? $command : 'ringkasan';
 
-        $this->telegram->sendMessage($chatId, $this->render($section), $this->buttons($section));
+        $this->telegram->sendMessage($chatId, $this->render($section, $chatId), $this->buttons($section, $chatId));
     }
 
     private function handleCallback(array $callback, ?User $user): void
     {
         $chatId    = $callback['message']['chat']['id'];
         $messageId = $callback['message']['message_id'];
+        $data      = (string) ($callback['data'] ?? '');
 
-        if ($refusal = $this->refusal($chatId, $user)) {
+        if ($this->refusal($chatId, $user) !== null) {
             $this->telegram->answerCallback($callback['id'], 'Tidak punya akses.');
             $this->telegram->removeButtons($chatId, $messageId);
 
             return;
         }
 
-        if (str_starts_with((string) ($callback['data'] ?? ''), 'pay:')) {
+        if (str_starts_with($data, 'pay:')) {
             $this->payment->handleCallback($callback, $user);
 
             return;
         }
 
-        $section = Str::after((string) ($callback['data'] ?? ''), 'fin:');
-
-        if ($section === 'excel') {
+        if ($data === 'fin:excel') {
             $this->telegram->answerCallback($callback['id'], 'Menyiapkan file Excel…');
             $this->sendExport($chatId);
 
@@ -137,11 +164,28 @@ class FinanceBot
 
         $this->telegram->answerCallback($callback['id']);
 
-        $section = in_array($section, self::SECTIONS, true) ? $section : 'ringkasan';
+        // per:<preset>:<bagian> — periode dipilih dari tombol.
+        if (str_starts_with($data, 'per:')) {
+            [, $preset, $section] = array_pad(explode(':', $data, 3), 3, 'ringkasan');
 
-        if (! $this->telegram->editMessage($chatId, $messageId, $this->render($section), $this->buttons($section))) {
-            $this->telegram->sendMessage($chatId, $this->render($section), $this->buttons($section));
+            if ($period = ReportPeriod::preset($preset)) {
+                $this->setPeriod($chatId, $period);
+            }
+
+            Cache::forget($this->periodAwaitKey($chatId));
+            $this->show($chatId, $messageId, $this->section($section));
+
+            return;
         }
+
+        // fin:periode:<bagian> — buka pilihan periode.
+        if (str_starts_with($data, 'fin:periode')) {
+            $this->showPeriodPicker($chatId, $messageId, $this->section(Str::after($data, 'fin:periode:')));
+
+            return;
+        }
+
+        $this->show($chatId, $messageId, $this->section(Str::after($data, 'fin:')));
     }
 
     /**
@@ -168,30 +212,114 @@ class FinanceBot
     }
 
     // =================================================================
+    // Periode
+    // =================================================================
+
+    private function periodFor(int|string $chatId): ReportPeriod
+    {
+        return ReportPeriod::fromArray(Cache::get("telegram:finance-period:{$chatId}"));
+    }
+
+    private function setPeriod(int|string $chatId, ReportPeriod $period): void
+    {
+        Cache::put("telegram:finance-period:{$chatId}", $period->toArray(), now()->addDays(self::PERIOD_DAYS));
+    }
+
+    private function periodAwaitKey(int|string $chatId): string
+    {
+        return "telegram:finance-period-await:{$chatId}";
+    }
+
+    /**
+     * Pilihan periode. Selama ditampilkan, rentang tanggal juga bisa langsung diketik.
+     */
+    private function showPeriodPicker(int|string $chatId, ?int $messageId, string $section): void
+    {
+        Cache::put($this->periodAwaitKey($chatId), $section, now()->addMinutes(30));
+
+        $preset = fn (string $key) => ['text' => ReportPeriod::PRESETS[$key], 'callback_data' => "per:{$key}:{$section}"];
+
+        $text = implode("\n", [
+            '📅 <b>Pilih periode</b>',
+            'Sekarang: <b>' . e($this->periodFor($chatId)->label()) . '</b>',
+            '',
+            'Pilih di bawah, atau ketik rentang tanggalnya, mis.:',
+            '<code>1/10/2026 - 31/10/2026</code>',
+            '<code>1 okt - 15 okt</code>',
+            '<code>oktober 2026</code>',
+        ]);
+
+        $buttons = [
+            [$preset('bulan-ini'), $preset('bulan-lalu')],
+            [$preset('tahun-ini'), $preset('tahun-lalu')],
+            [$preset('semua')],
+            [['text' => '⬅️ Kembali', 'callback_data' => "fin:{$section}"]],
+        ];
+
+        if ($messageId === null || ! $this->telegram->editMessage($chatId, $messageId, $text, $buttons)) {
+            $this->telegram->sendMessage($chatId, $text, $buttons);
+        }
+    }
+
+    private function setPeriodFromText(int|string $chatId, string $text, string $section): void
+    {
+        $period = ReportPeriod::parse($text);
+
+        if (! $period) {
+            $this->telegram->sendMessage($chatId, "Tanggal tidak terbaca. Contoh: <code>1/10/2026 - 31/10/2026</code>, <code>1 okt - 15 okt</code>, atau <code>oktober 2026</code>.");
+
+            return;
+        }
+
+        $this->setPeriod($chatId, $period);
+        Cache::forget($this->periodAwaitKey($chatId));
+
+        $section = $this->section($section);
+        $this->telegram->sendMessage($chatId, $this->render($section, $chatId), $this->buttons($section, $chatId));
+    }
+
+    // =================================================================
     // Tampilan
     // =================================================================
 
-    private function render(string $section): string
+    private function section(string $section): string
     {
+        return in_array($section, self::SECTIONS, true) ? $section : 'ringkasan';
+    }
+
+    private function show(int|string $chatId, int $messageId, string $section): void
+    {
+        $text    = $this->render($section, $chatId);
+        $buttons = $this->buttons($section, $chatId);
+
+        if (! $this->telegram->editMessage($chatId, $messageId, $text, $buttons)) {
+            $this->telegram->sendMessage($chatId, $text, $buttons);
+        }
+    }
+
+    private function render(string $section, int|string $chatId): string
+    {
+        $this->view = $this->overview->forPeriod($this->periodFor($chatId));
+
         $body = match ($section) {
+            'invoice' => $this->invoiceSection(),
             'expense' => $this->expenseSection(),
             'advance' => $this->advanceSection(),
-            'invoice' => $this->invoiceSection(),
             'piutang' => $this->receivablesSection(),
             'pending' => $this->pendingSection(),
             default   => $this->summarySection(),
         };
 
-        return $body . "\n\n<i>Seluruh waktu · per " . now()->locale('id')->translatedFormat('j M Y, H.i') . '</i>';
+        return $body . "\n\n<i>per " . now()->locale('id')->translatedFormat('j M Y, H.i') . '</i>';
     }
 
-    private function buttons(string $current): array
+    private function buttons(string $current, int|string $chatId): array
     {
         $labels = [
             'ringkasan' => '📊 Ringkasan',
-            'advance'   => '💸 Advance',
-            'expense'   => '💰 Expense',
             'invoice'   => '📄 Invoice',
+            'expense'   => '💰 Expense',
+            'advance'   => '💸 Advance',
             'piutang'   => '⏰ Belum dibayar',
             'pending'   => '⏳ Pending',
         ];
@@ -201,160 +329,169 @@ class FinanceBot
             'callback_data' => "fin:{$section}",
         ];
 
+        $period = $this->periodFor($chatId)->label();
+
         return [
-            [$button('ringkasan'), $button('advance'), $button('expense')],
-            [$button('invoice'), $button('piutang'), $button('pending')],
+            [['text' => "📅 Periode: {$period}", 'callback_data' => "fin:periode:{$current}"]],
+            [$button('ringkasan'), $button('invoice')],
+            [$button('expense'), $button('advance')],
+            [$button('piutang'), $button('pending')],
             [['text' => '💳 Catat pembayaran invoice', 'callback_data' => 'pay:list']],
-            [['text' => '⬇️ Unduh Excel (semua data)', 'callback_data' => 'fin:excel']],
+            [['text' => "⬇️ Unduh Excel ({$period})", 'callback_data' => 'fin:excel']],
         ];
+    }
+
+    private function heading(string $title): array
+    {
+        return [$title, '📅 <b>' . e($this->view->period()->label()) . '</b>', ''];
     }
 
     private function summarySection(): string
     {
-        $advance = $this->overview->advances();
-        $expense = $this->overview->expenses();
-        $invoice = $this->overview->invoiceBreakdown();
+        $e = $this->view->expenses();
+        $a = $this->view->advances();
+
+        $expenseUnpaid = $this->combine($e['pending'], $e['approved']);
+        $advanceUnpaid = $this->combine($a['pending'], $a['approved']);
 
         return implode("\n", [
-            '📊 <b>Ringkasan keuangan</b>',
+            ...$this->heading('📊 <b>Ringkasan keuangan</b>'),
+            ...$this->invoiceTotals(),
             '',
-            '📄 <b>Invoice</b>',
-            'Nilai pekerjaan: <b>' . $this->rupiah($invoice['contract_value']) . '</b>',
-            'Sudah dibayar: ' . $this->rupiah($invoice['paid']),
-            'Belum dibayar: <b>' . $this->rupiah($invoice['unpaid_billed']['amount'] + $invoice['unbilled']['amount']) . '</b>',
-            '• sudah ditagih: ' . $this->rupiah($invoice['unpaid_billed']['amount'])
-                . ($invoice['overdue']['count'] ? " ({$invoice['overdue']['count']} lewat jatuh tempo)" : ''),
-            '• belum ditagih: ' . $this->rupiah($invoice['unbilled']['amount']),
+            "💰 <b>Expense</b> — {$e['total']['count']} pengajuan",
+            'Total: <b>' . $this->rupiah($e['total']['amount']) . '</b>',
+            'Belum dibayarkan: <b>' . $this->rupiah($expenseUnpaid['amount']) . "</b> ({$expenseUnpaid['count']})",
             '',
-            '💸 <b>Advance</b>',
-            'Dicairkan: ' . $this->amount($advance['disbursed']),
-            'Direalisasi: ' . $this->rupiah($advance['realized']),
-            'Belum dipertanggungjawabkan: ' . $this->amount($advance['outstanding'], 'advance'),
-            'Menunggu proses: ' . $this->amount($this->combine($advance['pending'], $advance['approved'])),
+            "💸 <b>Advance</b> — {$a['total']['count']} pengajuan",
+            'Total: <b>' . $this->rupiah($a['total']['amount']) . '</b>',
+            'Belum dibayarkan: <b>' . $this->rupiah($advanceUnpaid['amount']) . "</b> ({$advanceUnpaid['count']})",
+            'Belum dipertanggungjawabkan: ' . $this->rupiah($a['outstanding']['amount']) . " ({$a['outstanding']['count']})",
             '',
-            '💰 <b>Expense</b>',
-            'Sudah dibayar: ' . $this->amount($expense['paid']),
-            'Menunggu proses: ' . $this->amount($this->combine($expense['pending'], $expense['approved'])),
+            '<i>Invoice menurut tanggal invoice; expense & advance menurut tanggal pengajuan. Proforma, draft, yang dibatalkan, dan yang ditolak tidak dihitung.</i>',
         ]);
+    }
+
+    /**
+     * Invoice masuk pada periode: per jenis, total, dan yang belum dibayarkan.
+     *
+     * @return array<int, string>
+     */
+    private function invoiceTotals(): array
+    {
+        $kinds = $this->view->invoiceBreakdown()['kinds'];
+        $i     = $this->view->invoices();
+
+        $line = fn (string $label, array $kind) => "• {$label}: <b>" . $this->rupiah($kind['billed']) . "</b> ({$kind['count']})";
+
+        return array_values(array_filter([
+            "📄 <b>Invoice masuk</b> — {$i['billed']['count']} invoice",
+            $line('Invoice DP', $kinds['dp']),
+            $line('Invoice full payment', $kinds['full']),
+            // Pelunasan hanya ditampilkan bila ada, agar ringkasannya tetap singkat.
+            $kinds['final']['count'] ? $line('Invoice pelunasan', $kinds['final']) : null,
+            'Total: <b>' . $this->rupiah($i['billed']['amount']) . '</b>',
+            'Belum dibayarkan: <b>' . $this->rupiah($i['outstanding']['amount']) . "</b> ({$i['outstanding']['count']} invoice)",
+        ]));
+    }
+
+    private function invoiceSection(): string
+    {
+        $kinds  = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Full payment'];
+        $issued = $this->view->saleInvoices()
+            ->where('state', 'issued')
+            ->sortByDesc(fn (array $row) => [(string) $row['invoice']->date, $row['invoice']->id])
+            ->values();
+
+        $lines = [...$this->heading('📄 <b>Invoice</b>'), ...$this->invoiceTotals()];
+
+        if ($issued->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = '<b>Daftar</b> (terbaru dulu)';
+
+            foreach ($issued->take(self::LIST_LIMIT) as $row) {
+                $invoice = $row['invoice'];
+                $date    = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
+                $kind    = $kinds[$row['kind']] . ($row['kind'] === 'dp' ? ' ' . $invoice->dpPercentage() . '%' : '');
+
+                $lines[] = "• {$date} · <b>" . e((string) $invoice->nama_perusahaan) . "</b> — {$kind} " . $this->rupiah($row['due']);
+            }
+
+            if ($issued->count() > self::LIST_LIMIT) {
+                $lines[] = '…dan ' . ($issued->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = '<i>Invoice DP ditagih sebesar DP-nya; sisanya lewat invoice pelunasan. Proforma, draft, dan yang dibatalkan tidak dihitung.</i>';
+
+        return implode("\n", $lines);
     }
 
     private function expenseSection(): string
     {
-        $e     = $this->overview->expenses();
+        $e      = $this->view->expenses();
+        $unpaid = $this->combine($e['pending'], $e['approved']);
+
         $lines = [
-            '💰 <b>Expense</b>',
-            '',
-            'Total diajukan: ' . $this->amount($e['total']),
-            '• Sudah dibayar: ' . $this->amount($e['paid']),
-            '• Disetujui, belum dibayar: ' . $this->amount($e['approved']),
-            '• Menunggu persetujuan: ' . $this->amount($e['pending']),
+            ...$this->heading('💰 <b>Expense</b>'),
+            'Total: <b>' . $this->rupiah($e['total']['amount']) . "</b> ({$e['total']['count']} pengajuan)",
+            'Belum dibayarkan: <b>' . $this->rupiah($unpaid['amount']) . "</b> ({$unpaid['count']})",
         ];
 
-        if ($e['other']['count']) {
-            $lines[] = '• Status lain: ' . $this->amount($e['other']);
+        if ($e['rejected']['count']) {
+            $lines[] = '<i>Ditolak, tidak dihitung: ' . $this->rupiah($e['rejected']['amount']) . " ({$e['rejected']['count']})</i>";
         }
 
-        $lines[] = 'Ditolak (tidak dihitung): ' . $this->amount($e['rejected']);
+        $lines = [...$lines, '', '<b>Per kategori</b>', ...$this->topList(
+            $this->view->expenseByCategory(),
+            fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
+        )];
 
-        $lines = [...$lines, '', '<b>Untuk apa saja</b> (per kategori)'];
-        foreach ($this->overview->expenseByCategory() as $row) {
-            $lines[] = '• ' . e($row['label']) . ': ' . $this->rupiah($row['amount']) . " ({$row['count']})";
-        }
-
-        return implode("\n", [...$lines, '', '<b>Per project</b>', ...$this->topList($this->overview->expenseByProject(), fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})")]);
+        return implode("\n", [...$lines, '', '<b>Per project</b>', ...$this->topList(
+            $this->view->expenseByProject(),
+            fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
+        )]);
     }
 
     private function advanceSection(): string
     {
-        $a     = $this->overview->advances();
-        $lines = [
-            '💸 <b>Advance</b>',
-            '',
-            'Total diajukan: ' . $this->amount($a['total']),
-            '• Sudah dicairkan: ' . $this->amount($a['disbursed']),
-            '• Disetujui, belum dicairkan: ' . $this->amount($a['approved']),
-            '• Menunggu persetujuan: ' . $this->amount($a['pending']),
-        ];
-
-        if ($a['other']['count']) {
-            $lines[] = '• Status lain: ' . $this->amount($a['other']);
-        }
+        $a      = $this->view->advances();
+        $unpaid = $this->combine($a['pending'], $a['approved']);
 
         $lines = [
-            ...$lines,
-            'Ditolak (tidak dihitung): ' . $this->amount($a['rejected']),
-            '',
-            'Direalisasi: ' . $this->rupiah($a['realized']) . ' · dikembalikan: ' . $this->rupiah($a['returned']),
-            'Belum dipertanggungjawabkan: ' . $this->amount($a['outstanding'], 'advance'),
+            ...$this->heading('💸 <b>Advance</b>'),
+            'Total: <b>' . $this->rupiah($a['total']['amount']) . "</b> ({$a['total']['count']} pengajuan)",
+            'Belum dibayarkan: <b>' . $this->rupiah($unpaid['amount']) . "</b> ({$unpaid['count']})",
+            'Belum dipertanggungjawabkan: <b>' . $this->rupiah($a['outstanding']['amount']) . "</b> ({$a['outstanding']['count']})",
         ];
 
         if ($a['overrun']['count']) {
             $lines[] = '⚠️ Melebihi dana: ' . $this->amount($a['overrun'], 'advance') . ' — menunggu persetujuan Finance';
         }
 
-        $lines = [...$lines, '', '<b>Per project</b>'];
+        if ($a['rejected']['count']) {
+            $lines[] = '<i>Ditolak, tidak dihitung: ' . $this->rupiah($a['rejected']['amount']) . " ({$a['rejected']['count']})</i>";
+        }
 
-        return implode("\n", [...$lines, ...$this->topList(
-            $this->overview->advanceByProject(),
+        return implode("\n", [...$lines, '', '<b>Per project</b>', ...$this->topList(
+            $this->view->advanceByProject(),
             fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
                 . "\n   cair " . $this->rupiah($row['disbursed']) . ' · realisasi ' . $this->rupiah($row['realized'])
                 . ($row['outstanding'] > 0 ? ' · <b>sisa ' . $this->rupiah($row['outstanding']) . '</b>' : '')
         )]);
     }
 
-    private function invoiceSection(): string
-    {
-        $i     = $this->overview->invoiceBreakdown();
-        $all   = $this->overview->invoices();
-        $kinds = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Bayar penuh'];
-
-        $lines = [
-            '📄 <b>Invoice</b> (penjualan)',
-            '',
-            'Nilai pekerjaan: <b>' . $this->rupiah($i['contract_value']) . '</b>',
-            'Sudah dibayar: ' . $this->rupiah($i['paid']),
-            'Belum dibayar: <b>' . $this->rupiah($i['unpaid_billed']['amount'] + $i['unbilled']['amount']) . '</b>',
-            '• sudah ditagih: ' . $this->amount($i['unpaid_billed'], 'invoice'),
-            '   lewat jatuh tempo: ' . $this->amount($i['overdue'], 'invoice'),
-            '• belum ditagih (DP tanpa pelunasan): ' . $this->amount($i['unbilled'], 'project'),
-            '',
-            '<b>Per jenis</b>',
-        ];
-
-        foreach ($kinds as $kind => $label) {
-            $k = $i['kinds'][$kind];
-
-            if ($k['count']) {
-                $lines[] = "<b>{$label}</b> ({$k['count']}): ditagih " . $this->rupiah($k['billed'])
-                    . ' · dibayar ' . $this->rupiah($k['paid'])
-                    . ($k['unpaid'] > 0 ? ' · sisa ' . $this->rupiah($k['unpaid']) : ' · lunas');
-            }
-        }
-
-        $lines[] = '';
-        $lines[] = "Draft: {$all['draft']['count']} · Dibatalkan: {$all['cancelled']['count']} (tidak dihitung)";
-
-        if ($i['unlinked_finals']) {
-            $lines[] = "⚠️ {$i['unlinked_finals']} invoice pelunasan tidak bisa dipasangkan ke invoice DP-nya, jadi nilai pekerjaan bisa kurang akurat. Isi invoice DP-nya di ERP.";
-        }
-
-        $lines[] = '';
-        $lines[] = '<i>Invoice DP ditagih sebesar DP-nya; sisanya lewat invoice pelunasan. Proforma tidak dihitung.</i>';
-
-        return implode("\n", $lines);
-    }
-
     private function receivablesSection(): string
     {
-        $unpaid   = $this->overview->receivables();
-        $unbilled = $this->overview->unbilled();
-        $kinds    = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Bayar penuh'];
+        $unpaid   = $this->view->receivables();
+        $unbilled = $this->view->unbilled();
+        $kinds    = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Full payment'];
+
+        $lines = $this->heading('⏰ <b>Belum dibayar</b>');
 
         if ($unpaid->isEmpty() && $unbilled->isEmpty()) {
-            return "⏰ <b>Belum dibayar</b>\n\nSemua invoice sudah lunas dan tertagih. 🎉";
+            return implode("\n", [...$lines, 'Semua invoice pada periode ini sudah lunas dan tertagih. 🎉']);
         }
-
-        $lines = ['⏰ <b>Belum dibayar</b>', ''];
 
         if ($unpaid->isNotEmpty()) {
             $lines[] = '<b>Sudah ditagih</b> — ' . $unpaid->count() . ' invoice · ' . $this->rupiah($unpaid->sum('outstanding'));
@@ -398,6 +535,32 @@ class FinanceBot
         return implode("\n", $lines);
     }
 
+    private function pendingSection(): string
+    {
+        $pending = $this->overview->pending();
+        // Antrean saat ini, tidak mengikuti periode.
+        $lines   = ['⏳ <b>Menunggu proses</b>', '<i>Semua yang masih menunggu, tidak mengikuti periode.</i>'];
+
+        foreach (['advance' => '💸 Advance', 'expense' => '💰 Expense'] as $type => $label) {
+            /** @var \Illuminate\Support\Collection<int, Advance|Expense> $items */
+            $items = $pending[$type];
+
+            $lines[] = '';
+            $lines[] = "<b>{$label}</b> — {$items->count()} pengajuan · " . $this->rupiah($items->sum('amount'));
+
+            foreach ($items->take(self::LIST_LIMIT) as $item) {
+                $description = $type === 'advance' ? $item->keterangan_advance : $item->keterangan_expense;
+                $waiting     = $item->status === 'Disetujui' ? 'perlu dibayar' : 'perlu persetujuan';
+
+                $lines[] = '• ' . e($this->name($item->user)) . ' — ' . $this->rupiah($item->amount) . " · <i>{$waiting}</i>"
+                    . "\n   " . e(Str::limit((string) $description, 50))
+                    . ' · ' . $item->created_at?->locale('id')->diffForHumans();
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
     /**
      * Daftar teratas untuk chat; selengkapnya di file Excel.
      *
@@ -424,14 +587,16 @@ class FinanceBot
     {
         $this->telegram->typing($chatId);
 
-        $path = $this->export->toFile();
+        $period = $this->periodFor($chatId);
+        $path   = $this->export->toFile($period);
+        $suffix = $period->isAll() ? 'semua-waktu' : implode('_', $period->toArray());
 
         try {
             $sent = $this->telegram->sendDocument(
                 $chatId,
                 $path,
-                'laporan-keuangan-' . now()->format('Y-m-d') . '.xlsx',
-                '📎 Seluruh data advance, expense, dan invoice. Sheet: Ringkasan, Invoice, Expense, Advance, Per Project.'
+                "laporan-keuangan-{$suffix}.xlsx",
+                '📎 Laporan keuangan · ' . $period->label() . '. Sheet: Ringkasan, Invoice, Expense, Advance, Per Project.'
             );
         } finally {
             @unlink($path);
@@ -442,46 +607,22 @@ class FinanceBot
         }
     }
 
-    private function pendingSection(): string
-    {
-        $pending = $this->overview->pending();
-        $lines   = ['⏳ <b>Menunggu proses</b>'];
-
-        foreach (['advance' => '💸 Advance', 'expense' => '💰 Expense'] as $type => $label) {
-            /** @var \Illuminate\Support\Collection<int, Advance|Expense> $items */
-            $items = $pending[$type];
-
-            $lines[] = '';
-            $lines[] = "<b>{$label}</b> — {$items->count()} pengajuan · " . $this->rupiah($items->sum('amount'));
-
-            foreach ($items->take(self::LIST_LIMIT) as $item) {
-                $description = $type === 'advance' ? $item->keterangan_advance : $item->keterangan_expense;
-                $waiting     = $item->status === 'Disetujui' ? 'perlu dibayar' : 'perlu persetujuan';
-
-                $lines[] = '• ' . e($this->name($item->user)) . ' — ' . $this->rupiah($item->amount) . " · <i>{$waiting}</i>"
-                    . "\n   " . e(Str::limit((string) $description, 50))
-                    . ' · ' . $item->created_at?->locale('id')->diffForHumans();
-            }
-        }
-
-        return implode("\n", $lines);
-    }
-
     private function helpText(): string
     {
         return <<<'HTML'
         📊 <b>Bot laporan keuangan</b>
 
-        /ringkasan – invoice, advance, dan expense sekaligus
-        /invoice – nilai pekerjaan, DP, pelunasan, dibayar, belum dibayar
-        /piutang – daftar yang belum dibayar & belum ditagih
-        /advance – per project: dicairkan, realisasi, sisa
+        /ringkasan – invoice masuk (DP, full payment), expense, advance
+        /invoice – invoice masuk per jenis dan daftarnya
         /expense – per kategori dan per project
+        /advance – per project: dicairkan, realisasi, sisa
+        /piutang – invoice yang belum dibayar & belum ditagih
         /pending – pengajuan yang menunggu persetujuan atau pembayaran
-        /excel – unduh seluruh data dalam satu file Excel
+        /periode – pilih periode, mis. <code>/periode 1/10/2026 - 31/10/2026</code>
+        /excel – unduh data periode ini dalam satu file Excel
         /bayar – catat pembayaran invoice yang masuk (bisa /bayar nama klien)
 
-        Selain /bayar, bot ini hanya membaca data.
+        Periode berlaku untuk semua laporan dan Excel sampai diganti. Selain /bayar, bot ini hanya membaca data.
         HTML;
     }
 
