@@ -13,7 +13,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Ringkasan advance, expense, dan invoice sepanjang waktu.
+ * Ringkasan advance, expense, dan invoice — sepanjang waktu, atau per periode
+ * lewat forPeriod() (invoice menurut tanggal invoice, expense & advance menurut
+ * tanggal pengajuan).
  *
  * "Sudah dibayar/dicairkan" ditentukan dari status, bukan kolom `paid`: pada
  * data lama kolom itu bisa sudah terisi walau pengajuannya baru disetujui.
@@ -33,12 +35,30 @@ class FinanceOverview
 
     private const INVOICE_CANCELLED = ['cancelled', 'canceled', 'batal', 'ditolak'];
 
+    private ?ReportPeriod $period = null;
+
+    /**
+     * Salinan yang hanya menghitung data pada periode itu.
+     */
+    public function forPeriod(ReportPeriod $period): static
+    {
+        $copy = clone $this;
+        $copy->period = $period->isAll() ? null : $period;
+
+        return $copy;
+    }
+
+    public function period(): ReportPeriod
+    {
+        return $this->period ?? ReportPeriod::all();
+    }
+
     /**
      * @return array<string, array{count: int, amount: float}>
      */
     public function expenses(): array
     {
-        return $this->buckets(Expense::query(), [
+        return $this->buckets($this->inPeriod(Expense::query()), [
             'pending'  => ['Pending'],
             'approved' => ['Disetujui'],
             'paid'     => self::EXPENSE_PAID,
@@ -51,7 +71,7 @@ class FinanceOverview
      */
     public function advances(): array
     {
-        $buckets = $this->buckets(Advance::query(), [
+        $buckets = $this->buckets($this->inPeriod(Advance::query()), [
             'pending'   => [Advance::STATUS_PENDING],
             'approved'  => [Advance::STATUS_DISETUJUI],
             'disbursed' => self::ADVANCE_DISBURSED,
@@ -60,9 +80,11 @@ class FinanceOverview
 
         $open = $this->openAdvances();
 
+        $ids = $this->period ? $this->inPeriod(Advance::query())->pluck('id')->all() : null;
+
         return $buckets + [
-            'realized'    => (float) $this->realizedPerAdvance()->sum(),
-            'returned'    => (float) $this->returnedPerAdvance()->sum(),
+            'realized'    => (float) $this->realizedPerAdvance()->when($ids !== null, fn ($rows) => $rows->only($ids))->sum(),
+            'returned'    => (float) $this->returnedPerAdvance()->when($ids !== null, fn ($rows) => $rows->only($ids))->sum(),
             'outstanding' => ['count' => $open->where('outstanding', '>', 0)->count(), 'amount' => (float) $open->sum('outstanding')],
             'overrun'     => ['count' => $open->where('overrun', '>', 0)->count(), 'amount' => (float) $open->sum('overrun')],
         ];
@@ -79,7 +101,7 @@ class FinanceOverview
         $realized = $this->realizedPerAdvance();
         $returned = $this->returnedPerAdvance();
 
-        return Advance::with('user', 'project.deal')
+        return $this->inPeriod(Advance::with('user', 'project.deal'))
             ->whereIn('status', array_diff(self::ADVANCE_DISBURSED, [Advance::STATUS_SELESAI]))
             ->get()
             ->map(function (Advance $advance) use ($realized, $returned) {
@@ -285,7 +307,11 @@ class FinanceOverview
             })
             ->keyBy(fn (array $row) => $row['invoice']->id);
 
-        return $this->pairFinalsWithDp($rows)->values();
+        // Dipasangkan dari seluruh invoice dulu, baru disaring per periode:
+        // pelunasan bulan ini tetap terpasang ke DP-nya dari bulan lalu.
+        return $this->pairFinalsWithDp($rows)
+            ->filter(fn (array $row) => $this->period?->contains($row['invoice']->date) ?? true)
+            ->values();
     }
 
     /**
@@ -391,7 +417,7 @@ class FinanceOverview
      */
     public function expenseByCategory(): Collection
     {
-        return $this->notRejected(Expense::query(), 'Ditolak')
+        return $this->notRejected($this->inPeriod(Expense::query()), 'Ditolak')
             ->selectRaw("coalesce(nullif(category, ''), 'Tanpa kategori') as label, count(*) as n, sum(amount) as amount, "
                 . $this->paidSum(self::EXPENSE_PAID) . ' as paid_amount')
             ->groupBy('label')
@@ -408,7 +434,7 @@ class FinanceOverview
      */
     public function expenseByProject(): Collection
     {
-        $rows = $this->notRejected(Expense::query(), 'Ditolak')
+        $rows = $this->notRejected($this->inPeriod(Expense::query()), 'Ditolak')
             ->selectRaw('project_id, count(*) as n, sum(amount) as amount, ' . $this->paidSum(self::EXPENSE_PAID) . ' as paid_amount')
             ->groupBy('project_id')
             ->orderByDesc('amount')
@@ -461,7 +487,7 @@ class FinanceOverview
         $realized = $this->realizedPerAdvance();
         $returned = $this->returnedPerAdvance();
 
-        $query ??= Advance::query()->orderBy('submission_date')->orderBy('id');
+        $query ??= $this->inPeriod(Advance::query())->orderBy('submission_date')->orderBy('id');
 
         return $query->with('user', 'project.deal')
             ->get()
@@ -488,7 +514,7 @@ class FinanceOverview
      */
     public function expenseRows(): Collection
     {
-        return Expense::with('user', 'project.deal')->orderBy('submission_date')->orderBy('id')->get();
+        return $this->inPeriod(Expense::with('user', 'project.deal'))->orderBy('submission_date')->orderBy('id')->get();
     }
 
     public function isExpensePaid(Expense $expense): bool
@@ -513,6 +539,11 @@ class FinanceOverview
         $company = $project->nama_perusahaan ?: $project->deal?->nama_perusahaan;
 
         return implode(' | ', array_filter([$company, $project->nama_project])) ?: "Project #{$project->id}";
+    }
+
+    private function inPeriod(Builder $query, string $column = 'submission_date'): Builder
+    {
+        return $this->period ? $this->period->apply($query, $column) : $query;
     }
 
     private function notRejected(Builder $query, string $rejected): Builder

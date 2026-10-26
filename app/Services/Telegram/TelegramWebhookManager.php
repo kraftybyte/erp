@@ -25,13 +25,14 @@ class TelegramWebhookManager
     ];
 
     public const FINANCE_COMMANDS = [
-        ['command' => 'ringkasan', 'description' => 'Ringkasan invoice, advance, expense'],
-        ['command' => 'invoice',   'description' => 'Nilai pekerjaan, DP, pelunasan, belum dibayar'],
+        ['command' => 'ringkasan', 'description' => 'Invoice masuk, expense, advance'],
+        ['command' => 'invoice',   'description' => 'Invoice DP, full payment, belum dibayarkan'],
         ['command' => 'piutang',   'description' => 'Yang belum dibayar & belum ditagih'],
         ['command' => 'advance',   'description' => 'Advance per project'],
         ['command' => 'expense',   'description' => 'Expense per kategori & project'],
         ['command' => 'pending',   'description' => 'Pengajuan yang menunggu proses'],
-        ['command' => 'excel',     'description' => 'Unduh seluruh data (Excel)'],
+        ['command' => 'periode',   'description' => 'Pilih periode tanggal laporan'],
+        ['command' => 'excel',     'description' => 'Unduh data periode ini (Excel)'],
         ['command' => 'bayar',     'description' => 'Catat pembayaran invoice yang masuk'],
     ];
 
