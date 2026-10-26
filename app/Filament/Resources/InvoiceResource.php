@@ -1170,6 +1170,21 @@ class InvoiceResource extends BaseInvoiceResource
         return static::$cacheDeal[$kunci] = $deal;
     }
 
+    /**
+     * Angka dari satu kata pencarian, untuk mencari nominal: "Rp79.960.250",
+     * "79.960.250,00", dan "79960250" menjadi "79960250". Null bila kata itu
+     * bukan nominal (nama perusahaan, nomor invoice, dll).
+     */
+    protected static function angkaPencarian(string $kata): ?string
+    {
+        $kata = preg_replace('/^rp\.?/i', '', trim($kata));
+        $kata = preg_replace('/,\d{1,2}$/', '', $kata);
+
+        return preg_match('/^\d[\d.,]*$/', $kata)
+            ? str_replace(['.', ','], '', $kata)
+            : null;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         // Kolom "Customer / PIC" membaca $record->deal; tanpa eager load di sini
@@ -1440,6 +1455,26 @@ class InvoiceResource extends BaseInvoiceResource
 
                             return 'gray';
                         })
+                        ->searchable(
+                            query: function (Builder $query, string $search) {
+
+                                $angka = static::angkaPencarian($search);
+
+                                // "dp", "full", "final"
+                                if ($angka === null) {
+                                    $query->where('type_payment', 'like', "%{$search}%");
+
+                                    return;
+                                }
+
+                                // Nominal DP = grand_total × persen, sama dengan Invoice::amountDue().
+                                $query->where('type_payment', 'like', 'dp%')
+                                    ->whereRaw(
+                                        'CAST(ROUND(grand_total * CAST(SUBSTRING(type_payment, 4) AS SIGNED) / 100) AS CHAR) LIKE ?',
+                                        ["%{$angka}%"]
+                                    );
+                            }
+                        )
                         ->sortable()
                         ->toggleable(),
 
@@ -1467,6 +1502,24 @@ class InvoiceResource extends BaseInvoiceResource
                             ?? 'IDR'
                     )
                     ->color('success')
+                    ->searchable(
+                        query: function (Builder $query, string $search) {
+
+                            // Filament mencari per kata dan setiap kata harus cocok;
+                            // "Rp" pada "Rp 79.960.250" bukan syarat pencarian.
+                            if (preg_match('/^rp\.?$/i', $search)) {
+                                $query->whereRaw('1 = 1');
+
+                                return;
+                            }
+
+                            $angka = static::angkaPencarian($search);
+
+                            if ($angka !== null) {
+                                $query->whereRaw('CAST(ROUND(grand_total) AS CHAR) LIKE ?', ["%{$angka}%"]);
+                            }
+                        }
+                    )
                     ->sortable(),
 
 
