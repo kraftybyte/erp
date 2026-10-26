@@ -265,13 +265,12 @@ rekening penerima → **Lunas** atau ketik nominal bila dibayar sebagian
 - Tanggal transaksi = saat dicatat, sama seperti di ERP.
 
 - **Ringkasan**: invoice masuk — total invoice DP, total invoice full payment
-  (dan pelunasan bila ada), total, belum dibayarkan; expense — total dan belum
-  dibayarkan; advance — total, belum dibayarkan, belum dipertanggungjawabkan.
+  (dan pelunasan bila ada), total, belum dibayarkan; expense — total; advance —
+  total, belum dibayarkan, belum dipertanggungjawabkan.
 - **Invoice**: angka yang sama plus daftar invoice periode itu.
 - **Advance**: per project — diajukan, dicairkan, direalisasi, sisa.
 - **Expense**: per kategori dan per project.
-- **Belum dibayar** (`/piutang`): per invoice yang belum lunas, dan sisa DP yang
-  belum dibuatkan invoice pelunasan.
+- **Belum dibayar** (`/piutang`): per invoice yang belum berstatus paid, sisanya Total − Paid.
 - **Pending**: antrean yang menunggu persetujuan/pembayaran — selalu seluruh waktu.
 - **Excel** (tombol ⬇️ atau `/excel`): data periode itu dalam satu file — sheet
   Ringkasan, Invoice, Expense, Advance, Per Project — karena pesan Telegram
@@ -283,32 +282,25 @@ juga bisa diketik: `1/10/2026 - 31/10/2026`, `1 okt - 15 okt`, `oktober 2026`,
 `2026`, atau langsung `/periode 1/10/2026 - 31/10/2026`. Periode diingat per
 pengguna (90 hari) dan berlaku untuk semua laporan dan Excel sampai diganti.
 Invoice disaring menurut tanggal invoice, expense dan advance menurut tanggal
-pengajuan. Pasangan DP ↔ pelunasan tetap dicari dari seluruh invoice, jadi
-pelunasan bulan ini tetap terpasang ke DP-nya dari bulan sebelumnya
-(`App\Services\ReportPeriod`, `FinanceOverview::forPeriod()`).
+pengajuan (`App\Services\ReportPeriod`, `FinanceOverview::forPeriod()`).
 
-**Pasangan DP ↔ pelunasan.** Nilai pekerjaan dihitung dari invoice DP (yang
-menyimpan nilai penuh) dan invoice bayar penuh; invoice pelunasan yang sudah
-dipasangkan ke DP-nya tidak ditambahkan lagi. Pasangannya lewat
-`parent_invoice_id`; invoice lama (sebelum kolom itu ada) dipasangkan ke invoice
-DP dengan deal atau klien yang sama — **hanya bila kandidatnya tepat satu**.
-Yang ambigu tidak ditebak: bot menampilkan peringatan berisi jumlahnya, dan
-pasangannya bisa dirapikan di ERP.
-
-Definisi angka (`App\Services\FinanceOverview`):
+Definisi angka (`App\Services\FinanceOverview`) — **jumlah langsung dari tabel
+masing-masing**, tanpa mengacu ke Payment Dashboard:
 
 | Angka | Definisi |
 |---|---|
-| Expense sudah dibayar | Status Dibayarkan/Selesai. Status yang dipakai, bukan kolom `paid` (pada data lama kolom itu bisa terisi walau baru disetujui). |
+| Invoice DP / full payment / pelunasan | Jumlah kolom **Total** (`grand_total`) invoice penjualan menurut jenis pembayaran. Draft ikut; proforma dan yang dibatalkan tidak. Invoice DP dihitung sebesar Total-nya, bukan persentase DP. |
+| Invoice belum dibayarkan | **Total − Paid** pada invoice yang belum berstatus `paid` |
+| Expense total | Jumlah kolom `amount`, tanpa yang ditolak |
+| Advance total | Jumlah kolom `amount`, tanpa yang ditolak |
+| Advance belum dibayarkan | Status Pending + Disetujui |
 | Advance dicairkan | Status Dibayarkan, Sedang di-Realisasi (User), Siap Diselesaikan, Selesai |
 | Belum dipertanggungjawabkan | Per advance yang belum selesai: dicairkan − direalisasi − sisa yang dikembalikan |
-| Invoice DP / full payment / pelunasan | Invoice penjualan (bukan proforma) yang tidak draft/batal, sebesar `Invoice::amountDue()`: invoice DP hanya persentase DP-nya, sisanya lewat invoice pelunasan — `grand_total` mentah akan menghitung dobel |
-| Invoice belum dibayarkan | Per invoice: ditagihkan − dibayar; lewat jatuh tempo bila `due_date` sudah lewat |
-| Expense / advance belum dibayarkan | Status Pending + Disetujui (belum dibayar/dicairkan, tidak ditolak) |
 | Ditolak | Ditampilkan terpisah, tidak masuk total |
 
-Catatan: angka "pengeluaran" di Payment Dashboard ERP memakai definisi lain
-(semua pengajuan termasuk yang ditolak/pending), jadi bisa berbeda dari bot.
+Payment Dashboard di ERP menghitung sendiri dari tabelnya (pemasukan dari
+transaksi masuk, pengeluaran dari semua expense + advance), jadi angkanya bisa
+berbeda dari bot.
 
 ---
 

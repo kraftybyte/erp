@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Models\Advance;
 use App\Models\Expense;
+use App\Models\Invoice;
 use App\Models\User;
 use App\Services\FinanceExport;
 use App\Services\FinanceOverview;
@@ -351,7 +352,6 @@ class FinanceBot
         $e = $this->view->expenses();
         $a = $this->view->advances();
 
-        $expenseUnpaid = $this->combine($e['pending'], $e['approved']);
         $advanceUnpaid = $this->combine($a['pending'], $a['approved']);
 
         return implode("\n", [
@@ -360,82 +360,72 @@ class FinanceBot
             '',
             "💰 <b>Expense</b> — {$e['total']['count']} pengajuan",
             'Total: <b>' . $this->rupiah($e['total']['amount']) . '</b>',
-            'Belum dibayarkan: <b>' . $this->rupiah($expenseUnpaid['amount']) . "</b> ({$expenseUnpaid['count']})",
             '',
             "💸 <b>Advance</b> — {$a['total']['count']} pengajuan",
             'Total: <b>' . $this->rupiah($a['total']['amount']) . '</b>',
             'Belum dibayarkan: <b>' . $this->rupiah($advanceUnpaid['amount']) . "</b> ({$advanceUnpaid['count']})",
             'Belum dipertanggungjawabkan: ' . $this->rupiah($a['outstanding']['amount']) . " ({$a['outstanding']['count']})",
             '',
-            '<i>Invoice menurut tanggal invoice; expense & advance menurut tanggal pengajuan. Proforma, draft, yang dibatalkan, dan yang ditolak tidak dihitung.</i>',
+            '<i>Langsung dari tabel invoice, expense, dan advance. Invoice menurut tanggal invoice (proforma & yang dibatalkan tidak dihitung); expense & advance menurut tanggal pengajuan (yang ditolak tidak dihitung).</i>',
         ]);
     }
 
     /**
-     * Invoice masuk pada periode: per jenis, total, dan yang belum dibayarkan.
+     * Invoice masuk pada periode: total per jenis dan yang belum dibayarkan.
      *
      * @return array<int, string>
      */
     private function invoiceTotals(): array
     {
-        $kinds = $this->view->invoiceBreakdown()['kinds'];
-        $i     = $this->view->invoices();
+        $t = $this->view->invoiceTotals();
 
-        $line = fn (string $label, array $kind) => "• {$label}: <b>" . $this->rupiah($kind['billed']) . "</b> ({$kind['count']})";
+        $line = fn (string $label, array $kind) => "• {$label}: <b>" . $this->rupiah($kind['amount']) . "</b> ({$kind['count']})";
 
         return array_values(array_filter([
-            "📄 <b>Invoice masuk</b> — {$i['billed']['count']} invoice",
-            $line('Invoice DP', $kinds['dp']),
-            $line('Invoice full payment', $kinds['full']),
+            "📄 <b>Invoice masuk</b> — {$t['total']['count']} invoice",
+            $line('Invoice DP', $t['dp']),
+            $line('Invoice full payment', $t['full']),
             // Pelunasan hanya ditampilkan bila ada, agar ringkasannya tetap singkat.
-            $kinds['final']['count'] ? $line('Invoice pelunasan', $kinds['final']) : null,
-            'Total: <b>' . $this->rupiah($i['billed']['amount']) . '</b>',
-            'Belum dibayarkan: <b>' . $this->rupiah($i['outstanding']['amount']) . "</b> ({$i['outstanding']['count']} invoice)",
+            $t['final']['count'] ? $line('Invoice pelunasan', $t['final']) : null,
+            'Total: <b>' . $this->rupiah($t['total']['amount']) . '</b>',
+            'Belum dibayarkan: <b>' . $this->rupiah($t['unpaid']['amount']) . "</b> ({$t['unpaid']['count']} invoice)",
         ]));
     }
 
     private function invoiceSection(): string
     {
-        $kinds  = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Full payment'];
-        $issued = $this->view->saleInvoices()
-            ->where('state', 'issued')
-            ->sortByDesc(fn (array $row) => [(string) $row['invoice']->date, $row['invoice']->id])
-            ->values();
+        $invoices = $this->view->invoiceRows();
+        $lines    = [...$this->heading('📄 <b>Invoice</b>'), ...$this->invoiceTotals()];
 
-        $lines = [...$this->heading('📄 <b>Invoice</b>'), ...$this->invoiceTotals()];
-
-        if ($issued->isNotEmpty()) {
+        if ($invoices->isNotEmpty()) {
             $lines[] = '';
             $lines[] = '<b>Daftar</b> (terbaru dulu)';
 
-            foreach ($issued->take(self::LIST_LIMIT) as $row) {
-                $invoice = $row['invoice'];
-                $date    = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
-                $kind    = $kinds[$row['kind']] . ($row['kind'] === 'dp' ? ' ' . $invoice->dpPercentage() . '%' : '');
+            foreach ($invoices->take(self::LIST_LIMIT) as $invoice) {
+                $date = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
 
-                $lines[] = "• {$date} · <b>" . e((string) $invoice->nama_perusahaan) . "</b> — {$kind} " . $this->rupiah($row['due']);
+                $lines[] = "• {$date} · <b>" . e((string) $invoice->nama_perusahaan) . '</b> — '
+                    . $this->kindLabel($invoice) . ' ' . $this->rupiah($invoice->grand_total);
             }
 
-            if ($issued->count() > self::LIST_LIMIT) {
-                $lines[] = '…dan ' . ($issued->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
+            if ($invoices->count() > self::LIST_LIMIT) {
+                $lines[] = '…dan ' . ($invoices->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
             }
         }
 
         $lines[] = '';
-        $lines[] = '<i>Invoice DP ditagih sebesar DP-nya; sisanya lewat invoice pelunasan. Proforma, draft, dan yang dibatalkan tidak dihitung.</i>';
+        $lines[] = '<i>Nilai = kolom Total di invoice. Belum dibayarkan = Total − Paid pada invoice yang belum berstatus paid. Proforma dan yang dibatalkan tidak dihitung.</i>';
 
         return implode("\n", $lines);
     }
 
     private function expenseSection(): string
     {
-        $e      = $this->view->expenses();
-        $unpaid = $this->combine($e['pending'], $e['approved']);
+        $e = $this->view->expenses();
 
         $lines = [
             ...$this->heading('💰 <b>Expense</b>'),
             'Total: <b>' . $this->rupiah($e['total']['amount']) . "</b> ({$e['total']['count']} pengajuan)",
-            'Belum dibayarkan: <b>' . $this->rupiah($unpaid['amount']) . "</b> ({$unpaid['count']})",
         ];
 
         if ($e['rejected']['count']) {
@@ -483,56 +473,44 @@ class FinanceBot
 
     private function receivablesSection(): string
     {
-        $unpaid   = $this->view->receivables();
-        $unbilled = $this->view->unbilled();
-        $kinds    = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Full payment'];
+        $unpaid = $this->view->unpaidInvoices();
+        $today  = Carbon::today();
+        $lines  = $this->heading('⏰ <b>Belum dibayar</b>');
 
-        $lines = $this->heading('⏰ <b>Belum dibayar</b>');
-
-        if ($unpaid->isEmpty() && $unbilled->isEmpty()) {
-            return implode("\n", [...$lines, 'Semua invoice pada periode ini sudah lunas dan tertagih. 🎉']);
+        if ($unpaid->isEmpty()) {
+            return implode("\n", [...$lines, 'Semua invoice pada periode ini sudah dibayar. 🎉']);
         }
 
-        if ($unpaid->isNotEmpty()) {
-            $lines[] = '<b>Sudah ditagih</b> — ' . $unpaid->count() . ' invoice · ' . $this->rupiah($unpaid->sum('outstanding'));
+        $lines[] = $unpaid->count() . ' invoice · <b>' . $this->rupiah($unpaid->sum(fn ($i) => FinanceOverview::invoiceUnpaid($i))) . '</b>';
+        $lines[] = '';
 
-            foreach ($unpaid->take(self::LIST_LIMIT) as $row) {
-                $invoice = $row['invoice'];
-                $kind    = $kinds[$row['kind']] . ($row['kind'] === 'dp' ? ' ' . $invoice->dpPercentage() . '%' : '');
-                $dueDate = $invoice->due_date ? Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('j M Y') : 'tanpa jatuh tempo';
+        foreach ($unpaid->take(self::LIST_LIMIT) as $invoice) {
+            $due     = $invoice->due_date ? Carbon::parse($invoice->due_date) : null;
+            $overdue = $due && $due->lt($today) ? (int) $due->diffInDays($today) : 0;
 
-                $lines[] = ($row['overdue_days'] > 0 ? '🔴' : '🟡') . ' <b>' . e((string) $invoice->nama_perusahaan) . '</b> — sisa ' . $this->rupiah($row['outstanding'])
-                    . "\n   {$kind} · ditagih " . $this->rupiah($row['due']) . ' · dibayar ' . $this->rupiah($row['paid'])
-                    . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . $dueDate
-                    . ($row['overdue_days'] > 0 ? " (lewat {$row['overdue_days']} hari)" : '');
-            }
-
-            if ($unpaid->count() > self::LIST_LIMIT) {
-                $lines[] = '…dan ' . ($unpaid->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
-            }
+            $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e((string) $invoice->nama_perusahaan) . '</b> — sisa ' . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice))
+                . "\n   " . $this->kindLabel($invoice) . ' · total ' . $this->rupiah($invoice->grand_total) . ' · dibayar ' . $this->rupiah($invoice->paid)
+                . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . ($due ? $due->locale('id')->translatedFormat('j M Y') : '-')
+                . ($overdue > 0 ? " (lewat {$overdue} hari)" : '');
         }
 
-        if ($unbilled->isNotEmpty()) {
-            $lines[] = '';
-            $lines[] = '<b>Belum ditagih</b> (DP sudah, pelunasan belum dibuat) — ' . $this->rupiah($unbilled->sum('unbilled'));
-
-            foreach ($unbilled->take(self::LIST_LIMIT) as $row) {
-                $invoice = $row['invoice'];
-
-                $lines[] = '📝 <b>' . e((string) $invoice->nama_perusahaan) . '</b> — ' . $this->rupiah($row['unbilled'])
-                    . "\n   nilai " . $this->rupiah($invoice->grand_total) . ' · DP ' . $invoice->dpPercentage() . '% ' . $this->rupiah($row['due'])
-                    . ' · ' . e((string) $invoice->uuid);
-            }
-
-            if ($unbilled->count() > self::LIST_LIMIT) {
-                $lines[] = '…dan ' . ($unbilled->count() - self::LIST_LIMIT) . ' lainnya (lihat file Excel).';
-            }
+        if ($unpaid->count() > self::LIST_LIMIT) {
+            $lines[] = '…dan ' . ($unpaid->count() - self::LIST_LIMIT) . ' invoice lain (lihat file Excel).';
         }
 
         $lines[] = '';
         $lines[] = '<i>Ada pembayaran masuk? Ketik /bayar untuk mencatatnya.</i>';
 
         return implode("\n", $lines);
+    }
+
+    private function kindLabel(Invoice $invoice): string
+    {
+        return match (FinanceOverview::invoiceKind($invoice)) {
+            'dp'    => 'DP ' . $invoice->dpPercentage() . '%',
+            'final' => 'Pelunasan',
+            default => 'Full payment',
+        };
     }
 
     private function pendingSection(): string
@@ -616,7 +594,7 @@ class FinanceBot
         /invoice – invoice masuk per jenis dan daftarnya
         /expense – per kategori dan per project
         /advance – per project: dicairkan, realisasi, sisa
-        /piutang – invoice yang belum dibayar & belum ditagih
+        /piutang – invoice yang belum dibayar
         /pending – pengajuan yang menunggu persetujuan atau pembayaran
         /periode – pilih periode, mis. <code>/periode 1/10/2026 - 31/10/2026</code>
         /excel – unduh data periode ini dalam satu file Excel
