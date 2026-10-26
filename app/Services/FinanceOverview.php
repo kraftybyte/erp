@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Ringkasan advance, expense, dan invoice — sepanjang waktu, atau per periode
  * lewat forPeriod() (invoice menurut tanggal invoice, expense & advance menurut
- * tanggal pengajuan).
+ * tanggal pengajuan). Angkanya jumlah langsung dari tabel masing-masing.
  *
  * "Sudah dibayar/dicairkan" ditentukan dari status, bukan kolom `paid`: pada
  * data lama kolom itu bisa sudah terisi walau pengajuannya baru disetujui.
@@ -122,42 +122,76 @@ class FinanceOverview
     }
 
     /**
-     * Hanya invoice penjualan (bukan proforma/estimate). Nilai yang ditagih
-     * memakai Invoice::amountDue(): invoice DP menyimpan nilai penuh project
-     * tapi hanya menagih persentase DP-nya, dan sisanya ditagih lewat invoice
-     * pelunasan — menjumlahkan grand_total mentah akan menghitung dobel.
+     * Invoice penjualan pada periode, langsung dari tabel invoice, terbaru dulu.
+     * Proforma (belum menjadi tagihan) dan yang dibatalkan tidak ikut; draft ikut.
      *
-     * @return array<string, array{count: int, amount: float}>
+     * @return Collection<int, Invoice>
      */
-    public function invoices(): array
+    public function invoiceRows(): Collection
     {
-        $invoices = $this->saleInvoices();
-        $issued   = $invoices->where('state', 'issued');
-        $due      = $issued->where('outstanding', '>', 0);
-        $overdue  = $due->where('overdue_days', '>', 0);
+        return $this->inPeriod(Invoice::query(), 'date')
+            ->where('type', 'sale')
+            // Model Invoice tidak memakai SoftDeletes, tapi kolomnya ada.
+            ->whereNull('deleted_at')
+            ->where(fn (Builder $q) => $q->whereNull('status')->orWhereNotIn('status', self::INVOICE_CANCELLED))
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * Total invoice per jenis pembayaran (jumlah kolom Total / grand_total) dan
+     * yang belum dibayarkan (Total − Paid pada invoice yang belum berstatus paid).
+     *
+     * @return array<string, array{count: int, amount: float}> dp, full, final, total, unpaid
+     */
+    public function invoiceTotals(): array
+    {
+        $rows = $this->invoiceRows();
+        $sum  = fn (Collection $group) => ['count' => $group->count(), 'amount' => (float) $group->sum(fn (Invoice $i) => (float) $i->grand_total)];
+
+        $unpaid = $rows->filter(fn (Invoice $i) => self::invoiceUnpaid($i) > 0);
 
         return [
-            'billed'      => ['count' => $issued->count(), 'amount' => (float) $issued->sum('due')],
-            'paid'        => ['count' => $issued->where('outstanding', '<=', 0)->count(), 'amount' => (float) $issued->sum('paid')],
-            'outstanding' => ['count' => $due->count(), 'amount' => (float) $due->sum('outstanding')],
-            'overdue'     => ['count' => $overdue->count(), 'amount' => (float) $overdue->sum('outstanding')],
-            'draft'       => ['count' => $invoices->where('state', 'draft')->count(), 'amount' => (float) $invoices->where('state', 'draft')->sum('due')],
-            'cancelled'   => ['count' => $invoices->where('state', 'cancelled')->count(), 'amount' => 0.0],
+            'dp'     => $sum($rows->filter(fn (Invoice $i) => self::invoiceKind($i) === 'dp')),
+            'full'   => $sum($rows->filter(fn (Invoice $i) => self::invoiceKind($i) === 'full')),
+            'final'  => $sum($rows->filter(fn (Invoice $i) => self::invoiceKind($i) === 'final')),
+            'total'  => $sum($rows),
+            'unpaid' => ['count' => $unpaid->count(), 'amount' => (float) $unpaid->sum(fn (Invoice $i) => self::invoiceUnpaid($i))],
         ];
     }
 
     /**
-     * Invoice terbit yang belum lunas, yang paling lama lewat jatuh tempo dulu.
+     * Invoice yang belum dibayarkan, jatuh tempo terlama dulu.
      *
-     * @return Collection<int, array>
+     * @return Collection<int, Invoice>
      */
-    public function receivables(): Collection
+    public function unpaidInvoices(): Collection
     {
-        return $this->saleInvoices()
-            ->where('state', 'issued')
-            ->where('outstanding', '>', 0)
-            ->sortByDesc('overdue_days')
+        return $this->invoiceRows()
+            ->filter(fn (Invoice $i) => self::invoiceUnpaid($i) > 0)
+            ->sortBy(fn (Invoice $i) => $i->due_date ? Carbon::parse($i->due_date)->timestamp : PHP_INT_MAX)
             ->values();
+    }
+
+    /**
+     * dp, final (pelunasan), atau full (bayar penuh — juga jenis yang tidak dikenali).
+     */
+    public static function invoiceKind(Invoice $invoice): string
+    {
+        return match (true) {
+            $invoice->dpPercentage() !== null          => 'dp',
+            $invoice->type_payment === 'final_payment' => 'final',
+            default                                    => 'full',
+        };
+    }
+
+    /**
+     * Total − Paid, atau 0 bila invoice sudah berstatus paid.
+     */
+    public static function invoiceUnpaid(Invoice $invoice): float
+    {
+        return $invoice->status === 'paid' ? 0.0 : max(round((float) $invoice->grand_total - (float) $invoice->paid, 2), 0);
     }
 
     /**
@@ -246,168 +280,6 @@ class FinanceOverview
             ->selectRaw('reference_id, sum(amount) as total')
             ->pluck('total', 'reference_id')
             ->map(fn ($total) => (float) $total);
-    }
-
-    /**
-     * Semua invoice penjualan (bukan proforma) beserta perhitungannya.
-     *
-     * - kind: 'dp', 'final' (pelunasan), atau 'full' (bayar penuh)
-     * - due: yang ditagih lewat invoice ini (DP = persentasenya)
-     * - contract_value: nilai pekerjaan yang diwakili invoice ini. Invoice DP
-     *   menyimpan nilai penuh; pelunasan yang sudah dipasangkan ke DP-nya
-     *   bernilai 0 supaya pekerjaan yang sama tidak terhitung dua kali.
-     * - unbilled: untuk invoice DP, sisa nilai yang belum dibuatkan invoice pelunasan
-     *
-     * @return Collection<int, array>
-     */
-    public function saleInvoices(): Collection
-    {
-        $today = Carbon::today();
-
-        $rows = Invoice::query()
-            ->where('type', 'sale')
-            // Model Invoice tidak memakai SoftDeletes, tapi kolomnya ada.
-            ->whereNull('deleted_at')
-            ->orderBy('date')
-            ->orderBy('id')
-            ->get()
-            ->map(function (Invoice $invoice) use ($today) {
-                $status = strtolower(trim((string) $invoice->status));
-                $state  = match (true) {
-                    in_array($status, self::INVOICE_CANCELLED, true) => 'cancelled',
-                    $status === 'draft'                              => 'draft',
-                    default                                          => 'issued',
-                };
-
-                $kind = match (true) {
-                    $invoice->dpPercentage() !== null        => 'dp',
-                    $invoice->type_payment === 'final_payment' => 'final',
-                    default                                  => 'full',
-                };
-
-                $due         = $invoice->amountDue();
-                $paid        = (float) $invoice->paid;
-                $outstanding = max(round($due - $paid, 2), 0);
-                $overdue     = $outstanding > 0 && $invoice->due_date && Carbon::parse($invoice->due_date)->lt($today)
-                    ? (int) Carbon::parse($invoice->due_date)->diffInDays($today)
-                    : 0;
-
-                return [
-                    'invoice'        => $invoice,
-                    'state'          => $state,
-                    'kind'           => $kind,
-                    'due'            => $due,
-                    'paid'           => $paid,
-                    'outstanding'    => $outstanding,
-                    'overdue_days'   => $overdue,
-                    'contract_value' => (float) $invoice->grand_total,
-                    'unbilled'       => 0.0,
-                    'pair_id'        => null,
-                ];
-            })
-            ->keyBy(fn (array $row) => $row['invoice']->id);
-
-        // Dipasangkan dari seluruh invoice dulu, baru disaring per periode:
-        // pelunasan bulan ini tetap terpasang ke DP-nya dari bulan lalu.
-        return $this->pairFinalsWithDp($rows)
-            ->filter(fn (array $row) => $this->period?->contains($row['invoice']->date) ?? true)
-            ->values();
-    }
-
-    /**
-     * Pasangkan invoice pelunasan dengan invoice DP-nya. Lewat parent_invoice_id
-     * bila ada; invoice lama (sebelum kolom itu ada) dipasangkan ke invoice DP
-     * dengan deal atau klien yang sama — hanya bila kandidatnya tepat satu.
-     * Pelunasan yang tidak bisa dipasangkan dibiarkan berdiri sendiri dan
-     * dilaporkan, bukan ditebak.
-     */
-    private function pairFinalsWithDp(Collection $rows): Collection
-    {
-        $issuedDp = $rows->filter(fn ($row) => $row['state'] === 'issued' && $row['kind'] === 'dp');
-        $paired   = [];
-
-        foreach ($rows->filter(fn ($row) => $row['state'] === 'issued' && $row['kind'] === 'final') as $id => $final) {
-            $invoice  = $final['invoice'];
-            $parentId = $invoice->parent_invoice_id;
-
-            if (! $parentId || ! $issuedDp->has($parentId)) {
-                $candidates = $issuedDp
-                    ->reject(fn ($dp, $dpId) => isset($paired[$dpId]))
-                    ->filter(fn ($dp) => $this->sameClient($dp['invoice'], $invoice))
-                    ->filter(fn ($dp) => ! $dp['invoice']->date || ! $invoice->date || $dp['invoice']->date <= $invoice->date);
-
-                $parentId = $candidates->count() === 1 ? $candidates->keys()->first() : null;
-            }
-
-            if ($parentId) {
-                $paired[$parentId] = $id;
-                $rows[$id]         = ['pair_id' => $parentId, 'contract_value' => 0.0] + $rows[$id];
-                $rows[$parentId]   = ['pair_id' => $id] + $rows[$parentId];
-            }
-        }
-
-        // Sisa nilai DP yang belum dibuatkan invoice pelunasan.
-        foreach ($issuedDp as $dpId => $dp) {
-            if (! isset($paired[$dpId])) {
-                $rows[$dpId] = ['unbilled' => max((float) $dp['invoice']->grand_total - $dp['due'], 0)] + $rows[$dpId];
-            }
-        }
-
-        return $rows;
-    }
-
-    private function sameClient(Invoice $a, Invoice $b): bool
-    {
-        if ($a->deal_id && $b->deal_id) {
-            return $a->deal_id === $b->deal_id;
-        }
-
-        $normalize = fn (?string $name) => preg_replace('/\s+/', ' ', strtolower(trim((string) $name)));
-
-        return $normalize($a->nama_perusahaan) !== '' && $normalize($a->nama_perusahaan) === $normalize($b->nama_perusahaan);
-    }
-
-    /**
-     * Invoice terbit: nilai pekerjaan, uang masuk, dan sisanya — yang sudah
-     * ditagih tapi belum dibayar, dan yang belum ditagih sama sekali.
-     */
-    public function invoiceBreakdown(): array
-    {
-        $issued = $this->saleInvoices()->where('state', 'issued');
-
-        $kinds = [];
-        foreach (['dp', 'final', 'full'] as $kind) {
-            $group = $issued->where('kind', $kind);
-
-            $kinds[$kind] = [
-                'count'  => $group->count(),
-                'billed' => (float) $group->sum('due'),
-                'paid'   => (float) $group->sum('paid'),
-                'unpaid' => (float) $group->sum('outstanding'),
-            ];
-        }
-
-        $unpaid   = $issued->where('outstanding', '>', 0);
-        $overdue  = $unpaid->where('overdue_days', '>', 0);
-        $unbilled = $issued->where('unbilled', '>', 0);
-
-        return [
-            'contract_value'  => (float) $issued->sum('contract_value'),
-            'paid'            => (float) $issued->sum('paid'),
-            'unpaid_billed'   => ['count' => $unpaid->count(), 'amount' => (float) $unpaid->sum('outstanding')],
-            'overdue'         => ['count' => $overdue->count(), 'amount' => (float) $overdue->sum('outstanding')],
-            'unbilled'        => ['count' => $unbilled->count(), 'amount' => (float) $unbilled->sum('unbilled')],
-            'kinds'           => $kinds,
-            'unlinked_finals' => $issued->where('kind', 'final')->whereNull('pair_id')->count(),
-        ];
-    }
-
-    /**
-     * Invoice DP yang sisa nilainya belum dibuatkan invoice pelunasan.
-     */
-    public function unbilled(): Collection
-    {
-        return $this->saleInvoices()->where('state', 'issued')->where('unbilled', '>', 0)->sortByDesc('unbilled')->values();
     }
 
     /**

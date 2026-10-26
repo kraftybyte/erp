@@ -81,89 +81,28 @@ class FinanceOverviewTest extends TestCase
         $this->assertDelta(600_000, 1, $before['outstanding'], $after['outstanding']);
     }
 
-    public function test_invoice_dp_dan_pelunasan_tidak_dihitung_dobel(): void
+    public function test_invoice_dijumlah_langsung_dari_tabel(): void
     {
-        $before = $this->overview()->invoices();
+        $before = $this->overview()->invoiceTotals();
 
-        // Project 10 juta: DP 20% (2 juta, sudah dibayar) + pelunasan 8 juta.
-        // Invoice DP menyimpan nilai penuh di grand_total.
-        $dp = $this->invoice(['type_payment' => 'dp_20', 'grand_total' => 10_000_000, 'paid' => 2_000_000, 'status' => 'paid']);
-        $this->invoice([
-            'type_payment'      => 'final_payment',
-            'grand_total'       => 8_000_000,
-            'paid'              => 0,
-            'status'            => 'pending',
-            'parent_invoice_id' => $dp->id,
-            'due_date'          => today()->subDays(5),
-        ]);
+        // Kolom Total (grand_total) apa adanya; DP tidak dipotong menjadi persentasenya.
+        $this->invoice(['type_payment' => 'dp_20', 'grand_total' => 10_000_000, 'paid' => 2_000_000, 'status' => 'paid']);
+        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 8_000_000, 'status' => 'pending']);
+        // Draft tetap invoice masuk.
         $this->invoice(['type_payment' => 'full_payment', 'grand_total' => 1_000_000, 'status' => 'draft']);
+        $this->invoice(['type_payment' => 'full_payment', 'grand_total' => 4_000_000, 'paid' => 1_000_000, 'status' => 'partial']);
+        // Tidak dihitung: dibatalkan, dan proforma.
         $this->invoice(['type_payment' => 'full_payment', 'grand_total' => 3_000_000, 'status' => 'cancelled']);
-        // Proforma bukan tagihan.
         $this->invoice(['type' => 'estimate', 'type_payment' => 'full_payment', 'grand_total' => 9_000_000, 'status' => 'pending']);
 
-        $after = $this->overview()->invoices();
+        $after = $this->overview()->invoiceTotals();
 
-        $this->assertDelta(10_000_000, 2, $before['billed'], $after['billed'], 'Ditagihkan 10 juta, bukan 18 juta.');
-        $this->assertEqualsWithDelta(2_000_000, $after['paid']['amount'] - $before['paid']['amount'], 0.01);
-        $this->assertDelta(8_000_000, 1, $before['outstanding'], $after['outstanding']);
-        $this->assertDelta(8_000_000, 1, $before['overdue'], $after['overdue']);
-        $this->assertDelta(1_000_000, 1, $before['draft'], $after['draft']);
-        $this->assertSame(1, $after['cancelled']['count'] - $before['cancelled']['count']);
-    }
-
-    public function test_nilai_pekerjaan_dp_pelunasan_dan_yang_belum_ditagih(): void
-    {
-        $before = $this->overview()->invoiceBreakdown();
-
-        // Project A 10 juta: DP 20% dibayar + pelunasan 8 juta belum dibayar.
-        $dp = $this->invoice(['type_payment' => 'dp_20', 'grand_total' => 10_000_000, 'paid' => 2_000_000, 'status' => 'paid']);
-        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 8_000_000, 'status' => 'pending', 'parent_invoice_id' => $dp->id]);
-
-        // Project B 6 juta: DP 50% dibayar, invoice pelunasan belum dibuat.
-        $this->invoice(['type_payment' => 'dp_50', 'grand_total' => 6_000_000, 'paid' => 3_000_000, 'status' => 'paid', 'nama_perusahaan' => 'PT Belum Ditagih']);
-
-        $after = $this->overview()->invoiceBreakdown();
-        $delta = fn (string ...$path) => data_get($after, implode('.', $path)) - data_get($before, implode('.', $path));
-
-        $this->assertEqualsWithDelta(16_000_000, $delta('contract_value'), 0.01, 'Nilai pekerjaan 10 + 6 juta, tanpa dobel.');
-        $this->assertEqualsWithDelta(5_000_000, $delta('paid'), 0.01);
-        $this->assertEqualsWithDelta(8_000_000, $delta('unpaid_billed', 'amount'), 0.01);
-        $this->assertEqualsWithDelta(3_000_000, $delta('unbilled', 'amount'), 0.01, 'Sisa DP project B belum ditagih.');
-        $this->assertSame(1, $delta('unbilled', 'count'));
-
-        $this->assertEqualsWithDelta(5_000_000, $delta('kinds', 'dp', 'billed'), 0.01, 'DP 2 juta + 3 juta.');
-        $this->assertEqualsWithDelta(5_000_000, $delta('kinds', 'dp', 'paid'), 0.01);
-        $this->assertEqualsWithDelta(8_000_000, $delta('kinds', 'final', 'unpaid'), 0.01);
-    }
-
-    public function test_pelunasan_lama_tanpa_tautan_dipasangkan_ke_dp_klien_yang_sama(): void
-    {
-        $before = $this->overview()->invoiceBreakdown();
-        $klien  = 'PT Pasangan ' . Str::random(6);
-
-        // Invoice lama: pelunasan dibuat sebelum ada kolom parent_invoice_id.
-        $this->invoice(['type_payment' => 'dp_30', 'grand_total' => 10_000_000, 'paid' => 3_000_000, 'status' => 'paid', 'nama_perusahaan' => $klien, 'date' => today()->subDays(30)]);
-        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 7_000_000, 'status' => 'pending', 'nama_perusahaan' => $klien, 'date' => today()->subDays(5)]);
-
-        $after = $this->overview()->invoiceBreakdown();
-
-        $this->assertEqualsWithDelta(10_000_000, $after['contract_value'] - $before['contract_value'], 0.01, 'Bukan 17 juta.');
-        $this->assertEqualsWithDelta(0, $after['unbilled']['amount'] - $before['unbilled']['amount'], 0.01, 'Sisanya sudah ditagih lewat pelunasan.');
-        $this->assertSame($before['unlinked_finals'], $after['unlinked_finals']);
-    }
-
-    public function test_pelunasan_yang_ambigu_dilaporkan_bukan_ditebak(): void
-    {
-        $before = $this->overview()->invoiceBreakdown();
-        $klien  = 'PT Ambigu ' . Str::random(6);
-
-        $this->invoice(['type_payment' => 'dp_50', 'grand_total' => 4_000_000, 'paid' => 2_000_000, 'status' => 'paid', 'nama_perusahaan' => $klien]);
-        $this->invoice(['type_payment' => 'dp_50', 'grand_total' => 6_000_000, 'paid' => 3_000_000, 'status' => 'paid', 'nama_perusahaan' => $klien]);
-        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 2_000_000, 'status' => 'pending', 'nama_perusahaan' => $klien]);
-
-        $after = $this->overview()->invoiceBreakdown();
-
-        $this->assertSame(1, $after['unlinked_finals'] - $before['unlinked_finals']);
+        $this->assertDelta(10_000_000, 1, $before['dp'], $after['dp']);
+        $this->assertDelta(8_000_000, 1, $before['final'], $after['final']);
+        $this->assertDelta(5_000_000, 2, $before['full'], $after['full']);
+        $this->assertDelta(23_000_000, 4, $before['total'], $after['total']);
+        // Total − Paid pada yang belum berstatus paid: 8 + 1 + 3 juta.
+        $this->assertDelta(12_000_000, 3, $before['unpaid'], $after['unpaid']);
     }
 
     public function test_expense_dan_advance_dirinci_per_kategori_dan_project(): void

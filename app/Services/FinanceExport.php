@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Expense;
+use App\Models\Invoice;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -46,7 +47,7 @@ class FinanceExport
 
     private function summarySheet(Spreadsheet $book): void
     {
-        $invoice = $this->overview->invoiceBreakdown();
+        $invoice = $this->overview->invoiceTotals();
         $expense = $this->overview->expenses();
         $advance = $this->overview->advances();
 
@@ -54,80 +55,57 @@ class FinanceExport
             ['Ringkasan keuangan — ' . $this->overview->period()->label(), null],
             ['Per', now()->locale('id')->translatedFormat('j F Y, H.i')],
             [null, null],
-            ['INVOICE (penjualan)', null],
-            ['Nilai pekerjaan', $invoice['contract_value']],
-            ['Sudah dibayar', $invoice['paid']],
-            ['Sudah ditagih, belum dibayar', $invoice['unpaid_billed']['amount']],
-            ['  …lewat jatuh tempo', $invoice['overdue']['amount']],
-            ['Belum ditagih (sisa DP tanpa pelunasan)', $invoice['unbilled']['amount']],
-            ['DP ditagih', $invoice['kinds']['dp']['billed']],
-            ['DP dibayar', $invoice['kinds']['dp']['paid']],
-            ['Pelunasan ditagih', $invoice['kinds']['final']['billed']],
-            ['Pelunasan dibayar', $invoice['kinds']['final']['paid']],
-            ['Bayar penuh ditagih', $invoice['kinds']['full']['billed']],
-            ['Bayar penuh dibayar', $invoice['kinds']['full']['paid']],
+            ['INVOICE MASUK (penjualan; tanpa proforma & yang dibatalkan)', null],
+            ['Invoice DP', $invoice['dp']['amount']],
+            ['Invoice full payment', $invoice['full']['amount']],
+            ['Invoice pelunasan', $invoice['final']['amount']],
+            ['Total', $invoice['total']['amount']],
+            ['Belum dibayarkan (Total − Paid, belum berstatus paid)', $invoice['unpaid']['amount']],
             [null, null],
             ['EXPENSE (tanpa yang ditolak)', null],
-            ['Total diajukan', $expense['total']['amount']],
-            ['Sudah dibayar', $expense['paid']['amount']],
-            ['Disetujui, belum dibayar', $expense['approved']['amount']],
-            ['Menunggu persetujuan', $expense['pending']['amount']],
-            ['Ditolak', $expense['rejected']['amount']],
+            ['Total', $expense['total']['amount']],
+            ['Ditolak (tidak dihitung)', $expense['rejected']['amount']],
             [null, null],
             ['ADVANCE (tanpa yang ditolak)', null],
-            ['Total diajukan', $advance['total']['amount']],
+            ['Total', $advance['total']['amount']],
+            ['Belum dibayarkan (Pending & Disetujui)', $advance['pending']['amount'] + $advance['approved']['amount']],
             ['Sudah dicairkan', $advance['disbursed']['amount']],
             ['Direalisasi', $advance['realized']],
             ['Sisa dikembalikan', $advance['returned']],
             ['Belum dipertanggungjawabkan', $advance['outstanding']['amount']],
-            ['Menunggu proses', $advance['pending']['amount'] + $advance['approved']['amount']],
-            ['Ditolak', $advance['rejected']['amount']],
+            ['Ditolak (tidak dihitung)', $advance['rejected']['amount']],
         ];
 
         $sheet = $this->sheet($book, 'Ringkasan', ['Keterangan', 'Nominal (Rp)'], $rows, moneyColumns: ['B']);
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(13);
 
-        foreach ([5, 18, 25] as $row) {
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-        }
-
-        if ($invoice['unlinked_finals']) {
-            $sheet->setCellValue('A34', "Catatan: {$invoice['unlinked_finals']} invoice pelunasan tidak bisa dipasangkan ke invoice DP-nya, sehingga nilai pekerjaan & sisa belum ditagih bisa kurang akurat. Isi kolom invoice DP pada invoice pelunasan tersebut di ERP.");
+        // Judul bagian: baris berlabel tanpa nominal (baris 1 lembar = judul kolom).
+        foreach ($rows as $i => [$label, $value]) {
+            if ($i > 1 && $label !== null && $value === null) {
+                $sheet->getStyle('A' . ($i + 2))->getFont()->setBold(true);
+            }
         }
     }
 
     private function invoiceSheet(Spreadsheet $book): void
     {
-        $kinds  = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Bayar penuh'];
-        $states = ['issued' => 'Terbit', 'draft' => 'Draft', 'cancelled' => 'Batal'];
-        $all    = $this->overview->saleInvoices()->keyBy(fn ($row) => $row['invoice']->id);
+        $kinds = ['dp' => 'DP', 'final' => 'Pelunasan', 'full' => 'Full payment'];
 
-        $rows = $all->map(function (array $row) use ($kinds, $states, $all) {
-            $invoice = $row['invoice'];
-            $kind    = $kinds[$row['kind']] . ($row['kind'] === 'dp' ? ' ' . $invoice->dpPercentage() . '%' : '');
-
-            return [
-                $invoice->uuid,
-                $this->date($invoice->date),
-                $this->date($invoice->due_date),
-                $invoice->nama_perusahaan,
-                $kind,
-                $states[$row['state']],
-                (string) $invoice->status,
-                $row['state'] === 'issued' ? $row['contract_value'] : null,
-                $row['due'],
-                $row['paid'],
-                $row['state'] === 'issued' ? $row['outstanding'] : null,
-                $row['unbilled'] ?: null,
-                $row['overdue_days'] ?: null,
-                $row['pair_id'] ? ($all[$row['pair_id']]['invoice']->uuid ?? null) : null,
-            ];
-        })->values()->all();
+        $rows = $this->overview->invoiceRows()->map(fn (Invoice $invoice) => [
+            $invoice->uuid,
+            $this->date($invoice->date),
+            $this->date($invoice->due_date),
+            $invoice->nama_perusahaan,
+            $kinds[FinanceOverview::invoiceKind($invoice)] . ($invoice->dpPercentage() !== null ? ' ' . $invoice->dpPercentage() . '%' : ''),
+            (string) $invoice->status,
+            (float) $invoice->grand_total,
+            (float) $invoice->paid,
+            FinanceOverview::invoiceUnpaid($invoice) ?: null,
+        ])->all();
 
         $this->sheet($book, 'Invoice', [
-            'No. invoice', 'Tanggal', 'Jatuh tempo', 'Klien', 'Jenis', 'Keadaan', 'Status ERP',
-            'Nilai pekerjaan', 'Ditagihkan', 'Dibayar', 'Belum dibayar', 'Belum ditagih', 'Lewat (hari)', 'Pasangan DP/pelunasan',
-        ], $rows, moneyColumns: ['H', 'I', 'J', 'K', 'L']);
+            'No. invoice', 'Tanggal', 'Jatuh tempo', 'Klien', 'Jenis', 'Status', 'Total', 'Paid', 'Belum dibayarkan',
+        ], $rows, moneyColumns: ['G', 'H', 'I']);
     }
 
     private function expenseSheet(Spreadsheet $book): void

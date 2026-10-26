@@ -63,9 +63,9 @@ class FinanceBotPeriodTest extends TestCase
         $this->user->assignRole('Finance');
 
         // Februari 2001
-        $this->invoice('2001-02-05', 'dp_50', 20_000_000, paid: 10_000_000);     // DP ditagih 10 jt, lunas
-        $this->invoice('2001-02-10', 'full_payment', 7_000_000, paid: 2_000_000); // sisa 5 jt
-        $this->invoice('2001-02-12', 'full_payment', 3_000_000, status: 'draft'); // draft: tidak dihitung
+        $this->invoice('2001-02-05', 'dp_50', 20_000_000, paid: 10_000_000, status: 'paid'); // DP sudah dibayar
+        $this->invoice('2001-02-10', 'full_payment', 7_000_000, paid: 2_000_000);            // sisa 5 jt
+        $this->invoice('2001-02-12', 'full_payment', 3_000_000, status: 'draft');            // draft tetap dihitung
         $this->expense('2001-02-03', 'Dibayarkan', 400_000);
         $this->expense('2001-02-04', 'Pending', 600_000);
         $this->expense('2001-02-04', 'Ditolak', 900_000);
@@ -82,10 +82,10 @@ class FinanceBotPeriodTest extends TestCase
     {
         $o = app(FinanceOverview::class)->forPeriod(ReportPeriod::parse('februari 2001'));
 
-        $kinds = $o->invoiceBreakdown()['kinds'];
-        $this->assertEquals([1, 10_000_000], [$kinds['dp']['count'], $kinds['dp']['billed']], 'Invoice DP ditagih sebesar DP-nya.');
-        $this->assertEquals([1, 7_000_000], [$kinds['full']['count'], $kinds['full']['billed']], 'Draft dan Januari tidak dihitung.');
-        $this->assertEquals(5_000_000, $o->invoices()['outstanding']['amount']);
+        $t = $o->invoiceTotals();
+        $this->assertEquals(['count' => 1, 'amount' => 20_000_000], $t['dp'], 'Kolom Total apa adanya.');
+        $this->assertEquals(['count' => 2, 'amount' => 10_000_000], $t['full'], 'Draft ikut; Januari tidak.');
+        $this->assertEquals(['count' => 2, 'amount' => 8_000_000], $t['unpaid'], 'Total − Paid pada yang belum paid.');
 
         $e = $o->expenses();
         $this->assertEquals(1_000_000, $e['total']['amount'], 'Yang ditolak tidak dihitung.');
@@ -102,11 +102,12 @@ class FinanceBotPeriodTest extends TestCase
 
         $text = $this->lastText();
         $this->assertStringContainsString('Februari 2001', $text);
-        $this->assertStringContainsString('Invoice DP: <b>Rp 10.000.000</b> (1)', $text);
-        $this->assertStringContainsString('Invoice full payment: <b>Rp 7.000.000</b> (1)', $text);
-        $this->assertStringContainsString('Belum dibayarkan: <b>Rp 5.000.000</b> (1 invoice)', $text);
+        $this->assertStringContainsString('Invoice DP: <b>Rp 20.000.000</b> (1)', $text);
+        $this->assertStringContainsString('Invoice full payment: <b>Rp 10.000.000</b> (2)', $text);
+        $this->assertStringContainsString('Belum dibayarkan: <b>Rp 8.000.000</b> (2 invoice)', $text);
         $this->assertStringNotContainsString('pelunasan', Str::before($text, 'Total:'), 'Pelunasan disembunyikan bila tidak ada.');
-        $this->assertStringContainsString("💰 <b>Expense</b> — 2 pengajuan\nTotal: <b>Rp 1.000.000</b>\nBelum dibayarkan: <b>Rp 600.000</b> (1)", $text);
+        // Expense hanya totalnya; yang belum dibayar tidak ditampilkan.
+        $this->assertStringContainsString("💰 <b>Expense</b> — 2 pengajuan\nTotal: <b>Rp 1.000.000</b>\n\n💸", $text);
         $this->assertStringContainsString("Total: <b>Rp 1.750.000</b>\nBelum dibayarkan: <b>Rp 250.000</b> (1)", $text);
         $this->assertStringContainsString('📅 Periode: Februari 2001', $this->lastButtons());
     }

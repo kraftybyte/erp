@@ -102,26 +102,27 @@ class FinanceBotTest extends TestCase
         $this->assertStringContainsString('lewat 3 hari', $edited['text']);
     }
 
-    public function test_daftar_belum_dibayar_memisahkan_yang_belum_ditagih(): void
+    public function test_daftar_belum_dibayar_memakai_total_dikurangi_paid(): void
     {
         $user = $this->user('Finance');
 
-        Invoice::create([
-            'uuid'            => 'TES/DP-' . Str::upper(Str::random(5)),
-            'user_id'         => $user->id,
-            'type'            => 'sale',
-            'type_payment'    => 'dp_40',
-            'nama_perusahaan' => 'PT Baru Bayar DP',
-            'grand_total'     => 777_000_000,
-            'paid'            => 310_800_000,
-            'status'          => 'paid',
-        ]);
+        foreach ([['PT Sudah Lunas DP', 'paid'], ['PT Baru Sebagian', 'partial']] as [$client, $status]) {
+            Invoice::create([
+                'uuid'            => 'TES/DP-' . Str::upper(Str::random(5)),
+                'user_id'         => $user->id,
+                'type'            => 'sale',
+                'type_payment'    => 'dp_40',
+                'nama_perusahaan' => $client,
+                'grand_total'     => 777_000_000,
+                'paid'            => 310_800_000,
+                'status'          => $status,
+            ]);
+        }
 
         $this->send($this->text('/piutang'));
 
-        $this->assertStringContainsString('Belum ditagih', $this->lastText());
-        $this->assertStringContainsString('PT Baru Bayar DP', $this->lastText());
-        $this->assertStringContainsString('Rp 466.200.000', $this->lastText(), 'Sisa 60% yang belum ditagih.');
+        $this->assertStringNotContainsString('PT Sudah Lunas DP', $this->lastText(), 'Berstatus paid: tidak ditampilkan.');
+        $this->assertStringContainsString('PT Baru Sebagian</b> — sisa Rp 466.200.000', $this->lastText());
     }
 
     public function test_tombol_excel_mengirim_file_berisi_seluruh_data(): void
