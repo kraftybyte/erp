@@ -213,6 +213,7 @@ class QuotationItemImportTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'quo-') . '.xlsx';
         $this->paths[] = $path;
         (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
 
         return $path;
     }

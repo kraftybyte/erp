@@ -18,6 +18,9 @@
         </include>
     </source>
     <php>
+        <!-- Seluruh suite berjalan dalam satu proses dan mendekati 128M bawaan CLI;
+             penulisan .xlsx meminta tambahan 16M sekaligus. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>

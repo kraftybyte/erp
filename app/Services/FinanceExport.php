@@ -41,6 +41,7 @@ class FinanceExport
 
         $path = tempnam(sys_get_temp_dir(), 'keuangan-') . '.xlsx';
         (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
 
         return $path;
     }

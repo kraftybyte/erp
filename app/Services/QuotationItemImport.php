@@ -45,8 +45,24 @@ class QuotationItemImport
      */
     public function parse(string $path): array
     {
-        $sheet = IOFactory::load($path)->getActiveSheet();
+        $book  = IOFactory::load($path);
+        $sheet = $book->getActiveSheet();
 
+        try {
+            $rows = $this->readRows($sheet);
+        } finally {
+            // Spreadsheet saling mereferensi; tanpa ini memorinya tidak dibebaskan.
+            $book->disconnectWorksheets();
+        }
+
+        return $this->build($rows);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function readRows(Worksheet $sheet): array
+    {
         [$headerRow, $columns, $units] = $this->findHeader($sheet);
 
         $rows = [];
@@ -64,7 +80,7 @@ class QuotationItemImport
             ];
         }
 
-        return $this->build($rows);
+        return $rows;
     }
 
     /**
