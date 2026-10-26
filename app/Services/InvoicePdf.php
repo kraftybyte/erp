@@ -30,13 +30,15 @@ class InvoicePdf
 
         $pdf->render();
 
-        // Garis aksen di tepi atas dan nomor halaman digambar langsung di setiap
-        // halaman: dompdf tidak menggambar elemen position:fixed yang berada di
-        // area margin kertas, sehingga halaman lanjutan kehilangan aksennya.
+        // Garis aksen (hanya halaman pertama) dan nomor halaman digambar langsung
+        // ke kertas: keduanya berada di area margin, yang tidak digambar dompdf
+        // dari HTML.
         $color = self::rgb($settings->inv_theme_color);
 
         $pdf->getDomPDF()->getCanvas()->page_script(function (int $page, int $pages, Canvas $canvas, FontMetrics $fonts) use ($color) {
-            $canvas->filled_rectangle(0, 0, $canvas->get_width(), 4, $color);
+            if ($page === 1) {
+                $canvas->filled_rectangle(0, 0, $canvas->get_width(), 4, $color);
+            }
 
             if ($pages > 1) {
                 $font  = $fonts->getFont('DejaVu Sans');
