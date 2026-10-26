@@ -74,12 +74,12 @@ class LeadsResource extends Resource
                     'Kalah' => 'Kalah',
                 ]),
 
+                // Boleh kosong: layanan sering belum jelas di tahap leads.
                 Forms\Components\Select::make('product_id')
                     ->label('Layanan')
                     ->relationship('product', 'nama_layanan')
                     ->searchable()
-                    ->multiple()
-                    ->required(),
+                    ->multiple(),
             ]);
     }
 
