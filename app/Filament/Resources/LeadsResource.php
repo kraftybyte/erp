@@ -43,8 +43,9 @@ class LeadsResource extends Resource
                 ->required()
                 ->maxLength(255),
 
+                // Boleh kosong; bila diisi harus berformat email.
                 Forms\Components\TextInput::make('email')
-                ->required()
+                ->email()
                 ->maxLength(255),
 
                 Forms\Components\TextInput::make('telephone')

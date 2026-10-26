@@ -344,25 +344,22 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
                     <td style="width: 50%; vertical-align: top; text-align: left;">
                         <strong style="margin-bottom: 10px; display:block; font-size: 10px;">From:</strong>
                         <p style="font-size: 11px; text-align: left;">
-                            {{ $settings['company_info']['name'] ?? 'Company Name' }}
-                            <br>
-                            {{ $settings['company_info']['address'] ?? '' }}
-                            <br>
-                            {{ $settings['company_info']['phone'] ?? '' }}
+                            {!! collect([$settings['company_info']['name'] ?? 'Company Name', $settings['company_info']['address'] ?? '', $settings['company_info']['phone'] ?? ''])
+                                ->map(fn ($line) => trim((string) $line))
+                                ->reject(fn ($line) => $line === '' || $line === '-')
+                                ->map(fn ($line) => nl2br(e($line), false))
+                                ->implode('<br>') !!}
                         </p>
                     </td>
                     <td style="width: 50%; vertical-align: top;">
                         <strong style="margin-bottom: 10px; display:block; font-size: 11px; text-align: right;">To:</strong>
+                        {{-- Baris yang kosong (atau "-") tidak dicetak. --}}
                         <p style="font-size: 10px; text-align: right;">
-                            {{ $invoice->nama_perusahaan }}
-                            <br>
-                            @if($invoice->nama_pic)
-                            {{ $invoice->nama_pic }}
-                            <br>
-                            @endif
-                            {{ $invoice->alamat }}
-                            <br>
-                            {{ $invoice->telephone }}
+                            {!! collect([$invoice->nama_perusahaan, $invoice->nama_pic, $invoice->alamat, $invoice->telephone])
+                                ->map(fn ($line) => trim((string) $line))
+                                ->reject(fn ($line) => $line === '' || $line === '-')
+                                ->map(fn ($line) => nl2br(e($line), false))
+                                ->implode('<br>') !!}
                         </p>
                     </td>
                 </tr>

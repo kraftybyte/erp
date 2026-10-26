@@ -63,6 +63,9 @@
      * @param string|null $path
      * @return string|null
      */
+    // Dibungkus function_exists: tanpa itu, merender template ini dua kali dalam
+    // satu proses (mis. beberapa PDF sekaligus) gagal "Cannot redeclare function".
+    if (! function_exists('getImageData')) {
     function getImageData(?string $path): ?string {
         if (empty($path) || !is_string($path)) return null;
         $fullPath = public_path('storage/' . $path);
@@ -71,6 +74,7 @@
         }
         return null;
     }
+    }
 
     // Get image extensions
     /**
@@ -78,6 +82,7 @@
      * @param string|null $path
      * @return string
      */
+    if (! function_exists('getImageMimeType')) {
     function getImageMimeType(?string $path): string {
         if (empty($path) || !is_string($path)) return 'image/jpeg';
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
@@ -88,6 +93,7 @@
             'webp' => 'image/webp',
             default => 'image/jpeg',
         };
+    }
     }
 ?>
 <!DOCTYPE html>
@@ -152,11 +158,13 @@
                 </td>
                 <td style="width: 50%; vertical-align: top; text-align: right;">
                     <strong style="display: block; margin-bottom: 10px;">To:</strong>
+                    {{-- Baris yang kosong (atau "-") tidak dicetak. --}}
                     <p style="font-size: 12px; margin: 0; text-align: right;">
-                        {{ $quotation->nama_perusahaan }}<br>
-                        {{ $quotation->nama_pic }}<br>
-                        {{ $quotation->email }}<br>
-                        {{ $quotation->telephone }}
+                        {!! collect([$quotation->nama_perusahaan, $quotation->nama_pic, $quotation->email, $quotation->telephone])
+                            ->map(fn ($line) => trim((string) $line))
+                            ->reject(fn ($line) => $line === '' || $line === '-')
+                            ->map(fn ($line) => e($line))
+                            ->implode('<br>') !!}
                     </p>
                 </td>
             </tr>
