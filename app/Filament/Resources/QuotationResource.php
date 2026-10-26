@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\QuotationResource\Pages;
+use App\Helpers\AmountSearch;
 use App\Helpers\ColorHelper;
 use App\Models\Quotation;
 use App\Models\Product;
@@ -386,7 +387,7 @@ class QuotationResource extends Resource
         return $table
             ->modifyQueryUsing(fn(Builder $query) => $query->with(['items']))
             ->columns([
-                Tables\Columns\TextColumn::make('uuid')->label('ID'),
+                Tables\Columns\TextColumn::make('uuid')->label('ID')->searchable(),
 
                 Tables\Columns\TextColumn::make('nama_perusahaan')
                 ->formatStateUsing(function ($state, $record) {
@@ -403,16 +404,25 @@ class QuotationResource extends Resource
                         : $record->nama_pic;
 
                     return $namaPic . ' - ' . $record->nama_perusahaan;
-                }),
+                })
+                ->searchable(
+                    query: fn (Builder $query, string $search) => $query
+                        ->where('nama_perusahaan', 'like', "%{$search}%")
+                        ->orWhere('nama_pic', 'like', "%{$search}%")
+                ),
 
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn ($record) => ColorHelper::quotationStatus($record->status)),
+                    ->color(fn ($record) => ColorHelper::quotationStatus($record->status))
+                    ->searchable(),
 
                 Tables\Columns\TextColumn::make('grand_total')
                     ->label('Total Quotation')
-                    ->money('IDR'),
+                    ->money('IDR')
+                    ->searchable(
+                        query: fn (Builder $query, string $search) => AmountSearch::apply($query, $search, 'grand_total')
+                    ),
             ])
 
             ->actions([
