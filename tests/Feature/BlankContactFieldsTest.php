@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\LeadsResource\Pages\CreateLeads;
 use App\Models\Leads;
-use App\Models\Product;
 use App\Models\Quotation;
 use App\Models\User;
 use App\Settings\GeneralSettings;
@@ -15,13 +14,13 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Email (dan kontak lain) boleh kosong, dan yang kosong tidak dicetak di PDF.
+ * Email dan layanan leads boleh kosong, dan kontak yang kosong tidak dicetak di PDF.
  */
 class BlankContactFieldsTest extends TestCase
 {
     use DatabaseTransactions;
 
-    public function test_leads_boleh_tanpa_email(): void
+    public function test_leads_boleh_tanpa_email_dan_layanan(): void
     {
         $user = User::forceCreate([
             'username'     => 'lead_' . Str::lower(Str::random(8)),
@@ -46,12 +45,13 @@ class BlankContactFieldsTest extends TestCase
                 'telephone'       => '0812345678',
                 'source'          => 'Referral',
                 'status'          => 'Dalam Komunikasi',
-                'product_id'      => [Product::query()->value('id') ?? Product::forceCreate(['nama_layanan' => 'Tes'])->id],
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
-        $this->assertNull(Leads::where('nama_perusahaan', $company)->value('email'));
+        $lead = Leads::where('nama_perusahaan', $company)->first();
+        $this->assertNull($lead->email);
+        $this->assertCount(0, $lead->product);
     }
 
     public function test_pdf_quotation_tidak_mencetak_kontak_kosong(): void

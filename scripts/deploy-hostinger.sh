@@ -40,6 +40,16 @@ EXCLUDES=(
     --exclude=/bootstrap/cache/
 )
 
+# PHP web (LiteSpeed lsphp) menyimpan file PHP yang sudah diterjemahkan di
+# OPcache. File baru langsung terbaca, tetapi file lama yang diubah bisa tetap
+# memakai versi lama sampai prosesnya diganti — deploy tampak "tidak berubah".
+# artisan optimize:clear tidak menjangkaunya (CLI punya OPcache sendiri), jadi
+# proses lsphp akun ini dihentikan; LiteSpeed membuat yang baru di request
+# berikutnya. Berlaku untuk semua situs di akun hosting ini (sekejap).
+restart_php() {
+    pkill -u "$(id -un)" -f lsphp && echo "   PHP web di-restart (OPcache bersih)" || echo "   Tidak ada proses PHP web yang berjalan"
+}
+
 pick_php() {
     local candidate
     for candidate in ${PHP:-} php /opt/alt/php84/usr/bin/php /opt/alt/php83/usr/bin/php /usr/local/bin/php; do
@@ -187,6 +197,7 @@ apply() {
     (cd "$SITE" && "$PHP" artisan filament:optimize-clear) || true
     (cd "$SITE" && "$PHP" artisan settings:clear-discovered) || true
     (cd "$SITE" && "$PHP" artisan up)
+    restart_php
 
     touch "$WORK/applied-$SHA"
     echo "SELESAI: commit $SHA aktif. Backup: $BACKUP"
@@ -231,6 +242,7 @@ rollback() {
     fi
     (cd "$SITE" && "$PHP" artisan optimize:clear)
     (cd "$SITE" && "$PHP" artisan up)
+    restart_php
 
     rm -f "$WORK/attempted-$SHA" "$WORK/applied-$SHA"
     echo "ROLLBACK SELESAI"
