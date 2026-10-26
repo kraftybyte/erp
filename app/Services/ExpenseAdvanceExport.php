@@ -479,6 +479,8 @@ class ExpenseAdvanceExport
 
         $path = tempnam(sys_get_temp_dir(), 'export-');
         (new Xlsx($book))->save($path);
+        // Spreadsheet saling mereferensi; tanpa ini memorinya tidak dibebaskan.
+        $book->disconnectWorksheets();
 
         return $path;
     }
