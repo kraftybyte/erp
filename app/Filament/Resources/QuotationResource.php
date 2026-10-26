@@ -392,10 +392,14 @@ class QuotationResource extends Resource
                     ->default(0)
                     ->required(),
 
-                Forms\Components\Toggle::make('group')
-                    ->label('Satu item per kategori (mis. FLOORING), rinciannya di deskripsi')
-                    ->helperText('Matikan untuk mengimpor setiap baris sebagai item sendiri.')
-                    ->default(true),
+                Forms\Components\Radio::make('layout')
+                    ->label('Susunan item')
+                    ->options([
+                        'lines'    => 'Setiap baris satu item: nama item = kategori (WORK PREPARATION), deskripsi = pekerjaannya',
+                        'category' => 'Satu item per kategori: harga = sub total, semua pekerjaannya di deskripsi',
+                    ])
+                    ->default('lines')
+                    ->required(),
 
                 Forms\Components\Toggle::make('replace')
                     ->label('Ganti item yang sudah ada di form')
@@ -418,7 +422,7 @@ class QuotationResource extends Resource
                 }
 
                 $vat   = (float) $data['vat_percentage'];
-                $items = ($data['group'] ?? true) ? $import->grouped($result['items']) : $result['items'];
+                $items = ($data['layout'] ?? 'lines') === 'category' ? $import->grouped($result['items']) : $import->lines($result['items']);
 
                 $imported = collect($items)->mapWithKeys(function (array $item) use ($vat) {
                     $subtotal = $item['price'] * $item['qty'];

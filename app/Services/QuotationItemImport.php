@@ -14,13 +14,14 @@ use RuntimeException;
  * USD diabaikan).
  *
  * - Baris berharga = item; qty = QTY × DUR.
- * - Baris HURUF BESAR tanpa harga = judul bagian (mis. PARTITION → RIGHT PARTS),
- *   dicantumkan di deskripsi item.
+ * - Baris HURUF BESAR tanpa harga = judul bagian / kategori (mis. PARTITION →
+ *   RIGHT PARTS).
  * - Baris lain tanpa harga = spesifikasi item di atasnya.
  * - SUB TOTAL / GRAND TOTAL tidak diimpor, tapi dicocokkan dengan jumlah item.
  *
- * grouped() menyatukannya menjadi satu item per bagian (mis. FLOORING) dengan
- * rincian pekerjaannya di deskripsi.
+ * parse() mengembalikan baris mentah; susunannya untuk quotation lewat lines()
+ * (kategori sebagai nama item, setiap baris satu item) atau grouped() (satu
+ * item per kategori, rinciannya di deskripsi).
  */
 class QuotationItemImport
 {
@@ -37,7 +38,7 @@ class QuotationItemImport
 
     /**
      * @return array{
-     *     items: array<int, array{item: string, section: ?string, subsection: ?string, details: array<int, string>, note: ?string, quantity: ?string, description_lines: array<int, string>, description: string, qty: float, price: float, total: float}>,
+     *     items: array<int, array{name: string, section: ?string, subsection: ?string, details: array<int, string>, note: ?string, quantity: ?string, qty: float, price: float, total: float}>,
      *     warnings: array<int, string>,
      *     total: float,
      *     expected_total: ?float
@@ -158,7 +159,6 @@ class QuotationItemImport
             $running += $items[array_key_last($items)]['total'];
         }
 
-        $items = array_map(fn (array $item) => $this->describe($item), $items);
         $total = round(array_sum(array_column($items, 'total')), 2);
 
         if ($expected !== null && abs($expected - $total) > 1) {
@@ -166,6 +166,36 @@ class QuotationItemImport
         }
 
         return ['items' => $items, 'warnings' => $warnings, 'total' => $total, 'expected_total' => $expected];
+    }
+
+    /**
+     * Setiap baris satu item: nama item = kategorinya (mis. WORK PREPARATION,
+     * atau PARTITION · RIGHT PARTS), deskripsi = nama pekerjaan, spesifikasi,
+     * dan keterangan jumlah. Baris di luar kategori memakai namanya sendiri.
+     *
+     * @param  array<int, array>  $items  hasil parse()['items']
+     * @return array<int, array{item: string, description_lines: array<int, string>, description: string, qty: float, price: float, total: float}>
+     */
+    public function lines(array $items): array
+    {
+        return array_map(function (array $item) {
+            $category = implode(' · ', array_filter([$item['section'], $item['subsection']]));
+
+            $lines = array_values(array_unique(array_filter([
+                $category !== '' ? $item['name'] : null,
+                ...$item['details'],
+                $item['note'],
+            ])));
+
+            return [
+                'item'              => mb_substr($category !== '' ? $category : $item['name'], 0, 255),
+                'description_lines' => $lines,
+                'description'       => implode('<br>', array_map('e', $lines)),
+                'qty'               => $item['qty'],
+                'price'             => $item['price'],
+                'total'             => $item['total'],
+            ];
+        }, $items);
     }
 
     /**
@@ -182,7 +212,7 @@ class QuotationItemImport
 
         foreach ($items as $item) {
             if ($item['section'] === null) {
-                $groups[] = $item;
+                $groups[] = $this->lines([$item])[0];
 
                 continue;
             }
@@ -196,7 +226,7 @@ class QuotationItemImport
                 $groups[$key]['html'][]     = '<strong>' . e($item['subsection']) . '</strong>';
             }
 
-            $line = '- ' . $item['item']
+            $line = '- ' . $item['name']
                 . ($item['quantity'] ? " ({$item['quantity']})" : '')
                 . ($item['details'] ? ' — ' . implode('; ', $item['details']) : '');
 
@@ -205,13 +235,8 @@ class QuotationItemImport
             $groups[$key]['total']  += $item['total'];
         }
 
-        return array_values(array_map(fn (array $group) => isset($group['lines']) ? [
+        return array_values(array_map(fn (array $group) => isset($group['html']) ? [
             'item'              => mb_substr($group['item'], 0, 255),
-            'section'           => $group['item'],
-            'subsection'        => null,
-            'details'           => [],
-            'note'              => null,
-            'quantity'          => null,
             'description_lines' => $group['lines'],
             'description'       => implode('<br>', $group['html']),
             'qty'               => 1.0,
@@ -243,34 +268,17 @@ class QuotationItemImport
         }
 
         return [
-            'item'       => mb_substr($row['text'], 0, 255),
+            'name'       => $row['text'],
             'section'    => $section,
             'subsection' => $subsection,
             'details'    => array_values(array_filter([$row['spec']])),
-            // Keterangan jumlah: di deskripsi item (bila qty-nya tidak terbaca dari kolom Qty) …
+            // Keterangan jumlah untuk lines() (bila tidak terbaca dari kolom Qty saja) …
             'note'       => $note,
-            // … dan di rincian versi per bagian.
+            // … dan untuk rincian grouped().
             'quantity'   => $quantity,
             'qty'        => $count,
             'price'      => round($price, 2),
             'total'      => round($total, 2),
-        ];
-    }
-
-    /**
-     * Deskripsi item: bagian, spesifikasi, dan keterangan jumlah.
-     */
-    private function describe(array $item): array
-    {
-        $lines = array_values(array_unique(array_filter([
-            implode(' · ', array_filter([$item['section'], $item['subsection']])),
-            ...$item['details'],
-            $item['note'],
-        ])));
-
-        return $item + [
-            'description_lines' => $lines,
-            'description'       => implode('<br>', array_map('e', $lines)),
         ];
     }
 
