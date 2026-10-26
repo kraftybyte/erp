@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Settings\GeneralSettings;
 use App\Models\Invoice;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\InvoicePdf;
 use Illuminate\Http\Request;
 
 class InvoicePdfController extends Controller
@@ -15,20 +14,9 @@ class InvoicePdfController extends Controller
             abort(403, 'Unauthorized access to invoice');
         }
 
-        // Load invoicesItems relationship
         $invoice->load('invoicesItems');
 
-        // Load settings
-        $settings = app(GeneralSettings::class);
-
-        // Generate PDF with dynamic template
-        $pdf = Pdf::loadView('pdf.invoice-dynamic', [
-            'invoice' => $invoice,
-            'settings' => $settings->getInvoiceSettings(),
-            'themeColor' => $settings->inv_theme_color,
-        ]);
-
-        return $pdf->download("Invoice-" . str_replace(['#', '/'], ['','-'], $invoice->uuid) . ".pdf");
+        return InvoicePdf::make($invoice)->download("Invoice-" . str_replace(['#', '/'], ['','-'], $invoice->uuid) . ".pdf");
     }
 
     private function userCanAccess($user, Invoice $invoice): bool

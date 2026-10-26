@@ -124,6 +124,30 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $invoiceTitle }} {{ $invoice->nama_perusahaan }} - {{ $invoice->uuid }}</title>
     <style type="text/css">
+        /*
+         | Margin kertas. Tanpa ini halaman lanjutan (invoice dengan banyak item)
+         | dimulai tepat di tepi atas kertas, menempel tanpa jarak. Garis aksen
+         | di tepi atas dan nomor halaman digambar App\Services\InvoicePdf.
+         */
+        @page {
+            margin: 36px 0;
+        }
+
+        /*
+         | Judul kolom tabel item hanya di halaman pertama. Sebagai thead biasa,
+         | dompdf mengulangnya di setiap halaman baru sehingga bar judul muncul dobel.
+         */
+        .invoice-summary thead {
+            display: table-row-group;
+        }
+
+        /* Satu baris item, blok total, dan tanda tangan tidak terbelah ke dua halaman. */
+        .invoice-summary tr,
+        .summary-box,
+        .invoice-footer {
+            page-break-inside: avoid;
+        }
+
         body {
             font-family: DejaVu Sans, sans-serif;
         }
@@ -291,7 +315,7 @@ if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
 </head>
 <body>
     <div class="invoice-preview-main" id="boxes">
-        <div class="invoice-header" style="border-top: 5px solid {{ $themeColorSafe }}; padding: 20px 30px;">
+        <div class="invoice-header" style="padding: 0 30px 20px;">
             <table>
                 <tbody>
                     <tr>
