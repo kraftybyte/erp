@@ -371,7 +371,7 @@ class QuotationResource extends Resource
             ->icon('heroicon-o-arrow-up-tray')
             ->color('gray')
             ->modalHeading('Import item dari Excel')
-            ->modalDescription('File budget dengan kolom ITEMS, PRICE/QTY, QTY, DUR, dan TOTAL; kolom lain (mis. USD) diabaikan. Judul bagian dan baris spesifikasi masuk ke deskripsi item, qty = QTY × DUR, dan SUB TOTAL / GRAND TOTAL dicocokkan dengan jumlah item.')
+            ->modalDescription('File budget dengan kolom ITEMS, PRICE/QTY, QTY, DUR, dan TOTAL; kolom lain (mis. USD) diabaikan. Judul bagian (mis. FLOORING) menjadi kategori, baris spesifikasi masuk ke deskripsi, qty = QTY × DUR, dan SUB TOTAL / GRAND TOTAL dicocokkan dengan jumlah item.')
             ->modalSubmitActionLabel('Import')
             ->form([
                 Forms\Components\FileUpload::make('file')
@@ -392,13 +392,19 @@ class QuotationResource extends Resource
                     ->default(0)
                     ->required(),
 
+                Forms\Components\Toggle::make('group')
+                    ->label('Satu item per kategori (mis. FLOORING), rinciannya di deskripsi')
+                    ->helperText('Matikan untuk mengimpor setiap baris sebagai item sendiri.')
+                    ->default(true),
+
                 Forms\Components\Toggle::make('replace')
                     ->label('Ganti item yang sudah ada di form')
                     ->default(true),
             ])
             ->action(function (array $data, Get $get, Set $set) {
                 try {
-                    $result = app(QuotationItemImport::class)->parse($data['file']->getRealPath());
+                    $import = app(QuotationItemImport::class);
+                    $result = $import->parse($data['file']->getRealPath());
                 } catch (\Throwable $e) {
                     Notification::make()->title('File tidak bisa dibaca')->body($e->getMessage())->danger()->send();
 
@@ -411,9 +417,10 @@ class QuotationResource extends Resource
                     return;
                 }
 
-                $vat = (float) $data['vat_percentage'];
+                $vat   = (float) $data['vat_percentage'];
+                $items = ($data['group'] ?? true) ? $import->grouped($result['items']) : $result['items'];
 
-                $imported = collect($result['items'])->mapWithKeys(function (array $item) use ($vat) {
+                $imported = collect($items)->mapWithKeys(function (array $item) use ($vat) {
                     $subtotal = $item['price'] * $item['qty'];
 
                     return [(string) Str::uuid() => [
@@ -421,7 +428,7 @@ class QuotationResource extends Resource
                         'manual_text'    => $item['item'],
                         'product_id'     => null,
                         'item'           => $item['item'],
-                        'description'    => implode('<br>', array_map('e', $item['description_lines'])),
+                        'description'    => $item['description'],
                         'qty'            => $item['qty'],
                         'price'          => $item['price'],
                         'discount'       => 0,
@@ -443,7 +450,7 @@ class QuotationResource extends Resource
                     : implode("\n", [...$result['warnings'], 'Periksa lalu tekan Simpan.']);
 
                 Notification::make()
-                    ->title(count($result['items']) . ' item diimpor · ' . $rupiah($result['total']) . ($vat > 0 ? " + PPN {$vat}%" : ''))
+                    ->title(count($items) . ' item diimpor · ' . $rupiah($result['total']) . ($vat > 0 ? " + PPN {$vat}%" : ''))
                     ->body($body)
                     ->{$result['warnings'] ? 'warning' : 'success'}()
                     ->persistent()
