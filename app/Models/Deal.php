@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Services\CompanyDirectory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Product;
 use App\Models\Task;
 use App\Models\Leads;
@@ -18,6 +20,8 @@ class Deal extends Model
 
     protected $fillable = [
         'lead_id',
+        'company_id',
+        'contact_id',
         'nama_pic',
         'nama_perusahaan',
         'email',
@@ -29,6 +33,25 @@ class Deal extends Model
         'status',
         'product_id',
     ];
+
+    protected static function booted(): void
+    {
+        // Tautkan ke Perusahaan & PIC, dan selaraskan teks nama_perusahaan/nama_pic.
+        static::saving(fn (Deal $deal) => app(CompanyDirectory::class)->syncDeal($deal));
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * PIC untuk order ini; perusahaan yang sama bisa punya PIC berbeda per order.
+     */
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(CompanyContact::class, 'contact_id');
+    }
 
     public function product()
     {

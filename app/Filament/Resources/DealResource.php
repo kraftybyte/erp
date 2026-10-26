@@ -3,9 +3,14 @@
 namespace App\Filament\Resources;
 
 use App\Helpers\ColorHelper;
+use App\Models\Company;
+use App\Models\CompanyContact;
 use App\Models\Deal;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -43,18 +48,67 @@ class DealResource extends Resource
             Forms\Components\Section::make('Informasi Perusahaan')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\TextInput::make('nama_perusahaan')
+                    /*
+                    | Perusahaan & PIC dipilih dari data induk (menu Perusahaan).
+                    | Teks nama_perusahaan/nama_pic tetap terisi otomatis dari
+                    | pilihan ini (lihat CompanyDirectory::syncDeal), sehingga
+                    | quotation, invoice, dan PDF tetap membacanya seperti biasa.
+                    */
+                    Forms\Components\Select::make('company_id')
+                        ->label('Perusahaan')
+                        ->relationship('company', 'name')
+                        ->searchable()
+                        ->preload()
                         ->required()
-                        ->maxLength(255),
+                        ->createOptionForm(CompanyResource::companyFields())
+                        ->live()
+                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                            $set('contact_id', null);
 
-                    Forms\Components\TextInput::make('nama_pic')
-                        ->required()
-                        ->maxLength(255),
+                            $company = Company::find($state);
+
+                            if ($company && (blank($get('alamat')) || $get('alamat') === '-') && filled($company->alamat)) {
+                                $set('alamat', $company->alamat);
+                            }
+
+                            if ($company && blank($get('NPWP')) && filled($company->npwp)) {
+                                $set('NPWP', $company->npwp);
+                            }
+                        }),
+
+                    Forms\Components\Select::make('contact_id')
+                        ->label('PIC untuk order ini')
+                        ->relationship('contact', 'name', fn (Builder $query, Get $get) => $query->where('company_id', $get('company_id')))
+                        ->searchable()
+                        ->preload()
+                        ->placeholder('Tanpa PIC (klien pribadi)')
+                        ->helperText('Satu perusahaan bisa punya PIC berbeda di setiap order.')
+                        ->disabled(fn (Get $get) => blank($get('company_id')))
+                        ->createOptionForm(CompanyResource::contactFields())
+                        ->createOptionUsing(fn (array $data, Get $get) => CompanyContact::create($data + ['company_id' => $get('company_id')])->getKey())
+                        ->rules([fn (Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($get) {
+                            if (filled($value) && ! CompanyContact::whereKey($value)->where('company_id', $get('company_id'))->exists()) {
+                                $fail('PIC ini bukan milik perusahaan yang dipilih.');
+                            }
+                        }])
+                        ->live()
+                        ->afterStateUpdated(function ($state, Set $set) {
+                            $contact = CompanyContact::find($state);
+
+                            if (filled($contact?->telephone)) {
+                                $set('telephone', $contact->telephone);
+                            }
+
+                            if (filled($contact?->email)) {
+                                $set('email', $contact->email);
+                            }
+                        }),
 
                     Forms\Components\TextInput::make('email')
                         ->email()
                         ->maxLength(255)
-                        ->default('-')
+                        // Dulu default '-', yang ditolak aturan email sehingga form tidak
+                        // bisa disimpan sebelum kolom ini dikosongkan. Kosong tetap disimpan '-'.
                         ->dehydrateStateUsing(fn ($state) => blank($state) ? '-' : $state)
                         ->rules([
                             'nullable',
@@ -131,7 +185,7 @@ class DealResource extends Resource
 
                     
                 Tables\Columns\TextColumn::make('nama_perusahaan')
-                    ->searchable()
+                    ->searchable(['nama_perusahaan', 'nama_pic'])
                     ->weight('medium')
                     ->limit(25)
                     ->formatStateUsing(function ($state, $record) {
@@ -165,6 +219,14 @@ class DealResource extends Resource
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+
+            ->filters([
+                // Semua order satu perusahaan, dari PIC mana pun.
+                Tables\Filters\SelectFilter::make('company_id')
+                    ->label('Perusahaan')
+                    ->relationship('company', 'name')
+                    ->searchable(),
             ])
 
             ->actions([
