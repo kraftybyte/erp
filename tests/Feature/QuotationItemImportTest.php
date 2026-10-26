@@ -42,23 +42,37 @@ class QuotationItemImportTest extends TestCase
 
         [$prep, $column, $gypsum, $door, $rent, $fee] = $result['items'];
 
-        $this->assertSame('Work Preparation, Planning and Management', $prep['item']);
-        $this->assertSame(['WORK PREPARATION'], $prep['description_lines'], 'Judul dokumen di atas baris NO tidak ikut.');
-
+        // Judul dokumen di atas baris NO tidak ikut menjadi kategori.
+        $this->assertSame(['Work Preparation, Planning and Management', 'WORK PREPARATION', null], [$prep['name'], $prep['section'], $prep['subsection']]);
         $this->assertEquals([2, 28_000_000, 56_000_000], [$column['qty'], $column['price'], $column['total']]);
 
-        // Judul bagian bertingkat + baris spesifikasi di bawah item.
-        $this->assertSame(['PARTITION · RIGHT PARTS', 'Hollow 4x4 + 9mm gypsum'], $gypsum['description_lines']);
-        $this->assertSame(['PARTITION · REAR PARTS', 'plywood 9mm Fin.Kertasive'], $door['description_lines']);
+        // Kategori bertingkat + baris spesifikasi di bawah item.
+        $this->assertSame(['PARTITION', 'RIGHT PARTS', ['Hollow 4x4 + 9mm gypsum']], [$gypsum['section'], $gypsum['subsection'], $gypsum['details']]);
+        $this->assertSame(['REAR PARTS', ['plywood 9mm Fin.Kertasive']], [$door['subsection'], $door['details']]);
 
         // QTY × DUR.
         $this->assertEquals([12, 3_000_000, 36_000_000], [$rent['qty'], $rent['price'], $rent['total']]);
-        $this->assertContains('1 SET × 12 Month', $rent['description_lines']);
 
         // Harga × qty tidak sama dengan total di file: total yang dipakai, sebagai satu paket.
         $this->assertEquals([1, 10_000_000, 10_000_000], [$fee['qty'], $fee['price'], $fee['total']]);
         $this->assertCount(1, $result['warnings']);
         $this->assertStringContainsString('Electrical Fee', $result['warnings'][0]);
+    }
+
+    public function test_setiap_baris_satu_item_dengan_kategori_sebagai_nama(): void
+    {
+        $import = app(QuotationItemImport::class);
+        $items  = $import->lines($import->parse($this->budget())['items']);
+
+        $this->assertSame('WORK PREPARATION', $items[0]['item']);
+        $this->assertSame(['Work Preparation, Planning and Management'], $items[0]['description_lines']);
+
+        $this->assertSame('PARTITION · RIGHT PARTS', $items[2]['item']);
+        $this->assertSame('Single-sided gypsum partition<br>Hollow 4x4 + 9mm gypsum', $items[2]['description']);
+
+        $this->assertSame('RENT AND OPERATIONAL COST', $items[4]['item']);
+        $this->assertSame(['Rent — 12 Months', '1 SET × 12 Month'], $items[4]['description_lines']);
+        $this->assertEquals([12, 3_000_000], [$items[4]['qty'], $items[4]['price']]);
     }
 
     public function test_satu_item_per_kategori_dengan_rincian_di_deskripsi(): void
@@ -101,12 +115,15 @@ class QuotationItemImportTest extends TestCase
             'Instalasi;;1;"1.750.000,50"',
         ]));
 
-        $result = app(QuotationItemImport::class)->parse($path);
+        $import = app(QuotationItemImport::class);
+        $items  = $import->lines($import->parse($path)['items']);
 
-        $this->assertCount(2, $result['items']);
-        $this->assertSame(['Rangka besi + cetak'], $result['items'][0]['description_lines']);
-        $this->assertEquals(25_000_000, $result['items'][0]['total']);
-        $this->assertEquals(1_750_000.5, $result['items'][1]['price']);
+        // Tanpa kategori: nama item dari barisnya sendiri.
+        $this->assertCount(2, $items);
+        $this->assertSame('Booth 3x3', $items[0]['item']);
+        $this->assertSame(['Rangka besi + cetak'], $items[0]['description_lines']);
+        $this->assertEquals(25_000_000, $items[0]['total']);
+        $this->assertEquals(1_750_000.5, $items[1]['price']);
     }
 
     public function test_tombol_import_mengisi_form_quotation(): void
@@ -131,7 +148,6 @@ class QuotationItemImportTest extends TestCase
             ->call('mountFormComponentAction', 'itemsSection', 'importItems')
             ->set('mountedFormComponentActionsData.0.file', $file)
             ->set('mountedFormComponentActionsData.0.vat_percentage', 11)
-            ->set('mountedFormComponentActionsData.0.group', false)
             ->call('callMountedFormComponentAction')
             ->assertHasNoFormComponentActionErrors()
             ->assertFormSet(['subtotal' => 187_000_000, 'total_vat' => 20_570_000, 'grand_total' => 207_570_000]);
@@ -144,11 +160,16 @@ class QuotationItemImportTest extends TestCase
         $quotation = Quotation::where('nama_perusahaan', $client)->sole();
         $this->assertCount(6, $quotation->items);
         $this->assertEquals(207_570_000, $quotation->grand_total);
-        $this->assertSame('Rent — 12 Months', $quotation->items->firstWhere('qty', 12)->item);
-        $this->assertStringContainsString('PARTITION · RIGHT PARTS<br>Hollow 4x4 + 9mm gypsum', $quotation->items->firstWhere('price', 35_000_000)->description);
+        $rent = $quotation->items->firstWhere('qty', 12);
+        $this->assertSame('RENT AND OPERATIONAL COST', $rent->item);
+        $this->assertStringContainsString('Rent — 12 Months', $rent->description);
+
+        $gypsum = $quotation->items->firstWhere('price', 35_000_000);
+        $this->assertSame('PARTITION · RIGHT PARTS', $gypsum->item);
+        $this->assertSame('Single-sided gypsum partition<br>Hollow 4x4 + 9mm gypsum', $gypsum->description);
     }
 
-    public function test_tombol_import_per_kategori_secara_default(): void
+    public function test_tombol_import_bisa_satu_item_per_kategori(): void
     {
         $user = User::forceCreate([
             'username'     => 'quoimp_' . Str::lower(Str::random(8)),
@@ -166,6 +187,7 @@ class QuotationItemImportTest extends TestCase
         $component = Livewire::test(CreateQuotation::class)
             ->call('mountFormComponentAction', 'itemsSection', 'importItems')
             ->set('mountedFormComponentActionsData.0.file', UploadedFile::fake()->createWithContent('budget.xlsx', file_get_contents($this->budget())))
+            ->set('mountedFormComponentActionsData.0.layout', 'category')
             ->call('callMountedFormComponentAction')
             ->assertHasNoFormComponentActionErrors()
             ->assertFormSet(['grand_total' => 187_000_000]);
