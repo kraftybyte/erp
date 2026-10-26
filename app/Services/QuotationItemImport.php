@@ -18,6 +18,9 @@ use RuntimeException;
  *   dicantumkan di deskripsi item.
  * - Baris lain tanpa harga = spesifikasi item di atasnya.
  * - SUB TOTAL / GRAND TOTAL tidak diimpor, tapi dicocokkan dengan jumlah item.
+ *
+ * grouped() menyatukannya menjadi satu item per bagian (mis. FLOORING) dengan
+ * rincian pekerjaannya di deskripsi.
  */
 class QuotationItemImport
 {
@@ -34,7 +37,7 @@ class QuotationItemImport
 
     /**
      * @return array{
-     *     items: array<int, array{item: string, description_lines: array<int, string>, qty: float, price: float, total: float}>,
+     *     items: array<int, array{item: string, section: ?string, subsection: ?string, details: array<int, string>, note: ?string, quantity: ?string, description_lines: array<int, string>, description: string, qty: float, price: float, total: float}>,
      *     warnings: array<int, string>,
      *     total: float,
      *     expected_total: ?float
@@ -117,7 +120,7 @@ class QuotationItemImport
                 } elseif ($this->isHeading($text)) {
                     $pending[] = $text;
                 } elseif ($items && ! $pending) {
-                    $items[array_key_last($items)]['description_lines'][] = ltrim($text, "- \t");
+                    $items[array_key_last($items)]['details'][] = ltrim($text, "- \t");
                 }
 
                 continue;
@@ -139,6 +142,7 @@ class QuotationItemImport
             $running += $items[array_key_last($items)]['total'];
         }
 
+        $items = array_map(fn (array $item) => $this->describe($item), $items);
         $total = round(array_sum(array_column($items, 'total')), 2);
 
         if ($expected !== null && abs($expected - $total) > 1) {
@@ -148,40 +152,109 @@ class QuotationItemImport
         return ['items' => $items, 'warnings' => $warnings, 'total' => $total, 'expected_total' => $expected];
     }
 
+    /**
+     * Satu item per bagian (mis. FLOORING): harga = jumlah item di bagian itu,
+     * deskripsi = rincian pekerjaannya, dengan sub-bagian (RIGHT PARTS) sebagai
+     * pemisah. Item di luar bagian mana pun tetap berdiri sendiri.
+     *
+     * @param  array<int, array>  $items  hasil parse()['items']
+     * @return array<int, array>
+     */
+    public function grouped(array $items): array
+    {
+        $groups = [];
+
+        foreach ($items as $item) {
+            if ($item['section'] === null) {
+                $groups[] = $item;
+
+                continue;
+            }
+
+            $key = 'section:' . $item['section'];
+            $groups[$key] ??= ['item' => $item['section'], 'lines' => [], 'html' => [], 'subsection' => null, 'total' => 0.0];
+
+            if ($item['subsection'] !== null && $item['subsection'] !== $groups[$key]['subsection']) {
+                $groups[$key]['subsection'] = $item['subsection'];
+                $groups[$key]['lines'][]    = $item['subsection'];
+                $groups[$key]['html'][]     = '<strong>' . e($item['subsection']) . '</strong>';
+            }
+
+            $line = '- ' . $item['item']
+                . ($item['quantity'] ? " ({$item['quantity']})" : '')
+                . ($item['details'] ? ' — ' . implode('; ', $item['details']) : '');
+
+            $groups[$key]['lines'][] = $line;
+            $groups[$key]['html'][]  = e($line);
+            $groups[$key]['total']  += $item['total'];
+        }
+
+        return array_values(array_map(fn (array $group) => isset($group['lines']) ? [
+            'item'              => mb_substr($group['item'], 0, 255),
+            'section'           => $group['item'],
+            'subsection'        => null,
+            'details'           => [],
+            'note'              => null,
+            'quantity'          => null,
+            'description_lines' => $group['lines'],
+            'description'       => implode('<br>', $group['html']),
+            'qty'               => 1.0,
+            'price'             => round($group['total'], 2),
+            'total'             => round($group['total'], 2),
+        ] : $group, $groups));
+    }
+
     private function item(array $row, ?string $section, ?string $subsection, array &$warnings): array
     {
-        $qty   = ($row['qty'] ?? 0) > 0 ? $row['qty'] : 1.0;
-        $dur   = ($row['dur'] ?? 0) > 0 ? $row['dur'] : 1.0;
-        $count = $qty * $dur;
-        $price = $row['price'] ?? 0.0;
-        $total = $row['total'] ?? round($price * $count, 2);
-
-        $lines = array_values(array_filter([
-            implode(' · ', array_filter([$section, $subsection])),
-            $row['spec'],
-            $dur > 1 ? $this->format($qty) . ' ' . ($row['unit'] ?: 'x') . ' × ' . $this->format($dur) . ' ' . ($row['dunit'] ?: '') : '',
-        ]));
+        $qty      = ($row['qty'] ?? 0) > 0 ? $row['qty'] : 1.0;
+        $dur      = ($row['dur'] ?? 0) > 0 ? $row['dur'] : 1.0;
+        $count    = $qty * $dur;
+        $price    = $row['price'] ?? 0.0;
+        $total    = $row['total'] ?? round($price * $count, 2);
+        $amount   = fn (float $n, string $unit) => trim($this->format($n) . ' ' . $unit);
+        $note     = $dur > 1 ? $amount($qty, $row['unit']) . ' × ' . $amount($dur, $row['dunit']) : null;
+        $quantity = $note ?? ($qty > 1 ? $amount($qty, $row['unit']) : null);
 
         if ($price <= 0) {
-            [$price, $count] = [round($total / $count, 2), $count];
+            $price = round($total / $count, 2);
         } elseif (abs($price * $count - $total) > 1) {
             // Total di file yang dipakai (itu yang masuk sub total); dijadikan satu paket.
             $warnings[] = "\"{$row['text']}\": " . $this->rupiah($price) . ' × ' . $this->format($count)
                 . ' = ' . $this->rupiah($price * $count) . ', tapi total di file ' . $this->rupiah($total) . '. Dipakai ' . $this->rupiah($total) . ' (qty 1).';
 
-            if ($dur > 1 || $qty > 1) {
-                $lines[] = $this->format($qty) . ' ' . ($row['unit'] ?: '') . ' × ' . $this->format($dur) . ' ' . ($row['dunit'] ?: '');
-            }
-
             [$price, $count] = [$total, 1.0];
+            $note ??= $qty > 1 ? $quantity : null;
         }
 
         return [
-            'item'              => mb_substr($row['text'], 0, 255),
-            'description_lines' => array_values(array_unique(array_map('trim', $lines))),
-            'qty'               => $count,
-            'price'             => round($price, 2),
-            'total'             => round($total, 2),
+            'item'       => mb_substr($row['text'], 0, 255),
+            'section'    => $section,
+            'subsection' => $subsection,
+            'details'    => array_values(array_filter([$row['spec']])),
+            // Keterangan jumlah: di deskripsi item (bila qty-nya tidak terbaca dari kolom Qty) …
+            'note'       => $note,
+            // … dan di rincian versi per bagian.
+            'quantity'   => $quantity,
+            'qty'        => $count,
+            'price'      => round($price, 2),
+            'total'      => round($total, 2),
+        ];
+    }
+
+    /**
+     * Deskripsi item: bagian, spesifikasi, dan keterangan jumlah.
+     */
+    private function describe(array $item): array
+    {
+        $lines = array_values(array_unique(array_filter([
+            implode(' · ', array_filter([$item['section'], $item['subsection']])),
+            ...$item['details'],
+            $item['note'],
+        ])));
+
+        return $item + [
+            'description_lines' => $lines,
+            'description'       => implode('<br>', array_map('e', $lines)),
         ];
     }
 
