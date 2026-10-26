@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Filters\SubmissionDateFilter;
 use App\Enums\FinanceCategory;
 use App\Filament\Resources\ExpenseResource\Pages;
 use App\Filament\Resources\ExpenseResource\RelationManagers;
@@ -169,6 +170,7 @@ class ExpenseResource extends Resource
             ])
             ->defaultSort('submission_date', 'desc')
             ->filters([
+                SubmissionDateFilter::make(),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options([

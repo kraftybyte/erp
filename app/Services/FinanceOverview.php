@@ -451,18 +451,19 @@ class FinanceOverview
 
     /**
      * Setiap advance (termasuk yang ditolak, untuk ekspor) dengan angka
-     * pencairan dan pertanggungjawabannya.
+     * pencairan dan pertanggungjawabannya. $query membatasi advance-nya,
+     * misalnya isi tabel ERP yang sedang difilter.
      *
      * @return Collection<int, array{advance: Advance, disbursed: float, realized: float, returned: float, outstanding: float}>
      */
-    public function advanceRows(): Collection
+    public function advanceRows(?Builder $query = null): Collection
     {
         $realized = $this->realizedPerAdvance();
         $returned = $this->returnedPerAdvance();
 
-        return Advance::with('user', 'project.deal')
-            ->orderBy('submission_date')
-            ->orderBy('id')
+        $query ??= Advance::query()->orderBy('submission_date')->orderBy('id');
+
+        return $query->with('user', 'project.deal')
             ->get()
             ->map(function (Advance $advance) use ($realized, $returned) {
                 $disbursed = in_array($advance->status, self::ADVANCE_DISBURSED, true)
@@ -493,6 +494,14 @@ class FinanceOverview
     public function isExpensePaid(Expense $expense): bool
     {
         return in_array($expense->status, self::EXPENSE_PAID, true);
+    }
+
+    /**
+     * Nominal expense yang sudah dibayarkan; 0 bila belum.
+     */
+    public function expensePaidAmount(Expense $expense): float
+    {
+        return $this->isExpensePaid($expense) ? $this->paidAmount($expense->paid, $expense->amount) : 0.0;
     }
 
     public function projectLabel(?Project $project): string

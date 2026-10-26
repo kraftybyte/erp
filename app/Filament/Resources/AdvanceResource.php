@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Filters\SubmissionDateFilter;
 use App\Enums\FinanceCategory;
 use App\Filament\Resources\AdvanceResource\Pages;
 use App\Filament\Resources\AdvanceResource\RelationManagers;
@@ -228,6 +229,7 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                     ->color('gray'),
             ])
             ->filters([
+                SubmissionDateFilter::make(),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options([

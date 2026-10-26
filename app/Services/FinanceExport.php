@@ -138,7 +138,7 @@ class FinanceExport
             $expense->keterangan_expense,
             (float) $expense->amount,
             $expense->status,
-            $this->overview->isExpensePaid($expense) ? ((float) $expense->paid > 0 ? (float) $expense->paid : (float) $expense->amount) : null,
+            $this->overview->expensePaidAmount($expense) ?: null,
         ])->all();
 
         $this->sheet($book, 'Expense', ['Tanggal', 'Pengaju', 'Project', 'Kategori', 'Keterangan', 'Nominal', 'Status', 'Dibayar'], $rows, moneyColumns: ['F', 'H']);
