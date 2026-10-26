@@ -7,15 +7,17 @@ use App\Models\Expense;
 use App\Models\User;
 use App\Services\FinanceExport;
 use App\Services\FinanceOverview;
+use App\Services\InvoicePayment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
  * Bot laporan keuangan: ringkasan advance, expense, dan invoice sepanjang
- * waktu. Bot terpisah dari bot pengajuan (token & webhook sendiri), hanya
- * membaca data, dan hanya melayani role Director, Finance, dan super_admin —
- * diperiksa ulang di setiap pesan maupun tombol.
+ * waktu. Bot terpisah dari bot pengajuan (token & webhook sendiri) dan hanya
+ * melayani role Director, Finance, dan super_admin — diperiksa ulang di setiap
+ * pesan maupun tombol. Satu-satunya yang mengubah data: mencatat pembayaran
+ * invoice (/bayar, lihat InvoicePaymentFlow).
  */
 class FinanceBot
 {
@@ -27,9 +29,12 @@ class FinanceBot
 
     private TelegramClient $telegram;
 
-    public function __construct(private FinanceOverview $overview, private FinanceExport $export)
+    private InvoicePaymentFlow $payment;
+
+    public function __construct(private FinanceOverview $overview, private FinanceExport $export, InvoicePayment $payments)
     {
         $this->telegram = TelegramClient::forFinance();
+        $this->payment  = new InvoicePaymentFlow($this->telegram, $payments);
     }
 
     public function handle(array $update): void
@@ -65,8 +70,25 @@ class FinanceBot
             return;
         }
 
-        preg_match('/^\/(\w+)/u', trim((string) ($message['text'] ?? '')), $match);
+        $text = trim((string) ($message['text'] ?? ''));
+        preg_match('/^\/(\w+)/u', $text, $match);
         $command = Str::lower($match[1] ?? 'ringkasan');
+
+        if ($command === 'bayar') {
+            $this->payment->start($chatId, trim(Str::after($text, $match[0])));
+
+            return;
+        }
+
+        // Teks biasa di tengah pencatatan pembayaran: kata kunci atau nominal.
+        if (! $match && $this->payment->awaitingText($chatId)) {
+            $this->payment->handleText($chatId, $text);
+
+            return;
+        }
+
+        // Perintah lain menutup pencatatan pembayaran yang belum selesai.
+        $this->payment->forget($chatId);
 
         if (in_array($command, ['bantuan', 'help'], true)) {
             $this->telegram->sendMessage($chatId, $this->helpText());
@@ -94,6 +116,12 @@ class FinanceBot
         if ($refusal = $this->refusal($chatId, $user)) {
             $this->telegram->answerCallback($callback['id'], 'Tidak punya akses.');
             $this->telegram->removeButtons($chatId, $messageId);
+
+            return;
+        }
+
+        if (str_starts_with((string) ($callback['data'] ?? ''), 'pay:')) {
+            $this->payment->handleCallback($callback, $user);
 
             return;
         }
@@ -176,6 +204,7 @@ class FinanceBot
         return [
             [$button('ringkasan'), $button('advance'), $button('expense')],
             [$button('invoice'), $button('piutang'), $button('pending')],
+            [['text' => '💳 Catat pembayaran invoice', 'callback_data' => 'pay:list']],
             [['text' => '⬇️ Unduh Excel (semua data)', 'callback_data' => 'fin:excel']],
         ];
     }
@@ -363,6 +392,9 @@ class FinanceBot
             }
         }
 
+        $lines[] = '';
+        $lines[] = '<i>Ada pembayaran masuk? Ketik /bayar untuk mencatatnya.</i>';
+
         return implode("\n", $lines);
     }
 
@@ -438,7 +470,7 @@ class FinanceBot
     private function helpText(): string
     {
         return <<<'HTML'
-        📊 <b>Bot laporan keuangan</b> (hanya membaca, tidak mengubah data)
+        📊 <b>Bot laporan keuangan</b>
 
         /ringkasan – invoice, advance, dan expense sekaligus
         /invoice – nilai pekerjaan, DP, pelunasan, dibayar, belum dibayar
@@ -447,6 +479,9 @@ class FinanceBot
         /expense – per kategori dan per project
         /pending – pengajuan yang menunggu persetujuan atau pembayaran
         /excel – unduh seluruh data dalam satu file Excel
+        /bayar – catat pembayaran invoice yang masuk (bisa /bayar nama klien)
+
+        Selain /bayar, bot ini hanya membaca data.
         HTML;
     }
 

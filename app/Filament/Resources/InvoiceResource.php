@@ -2,14 +2,15 @@
 
 namespace App\Filament\Resources;
 
+use App\Exceptions\InvoicePaymentException;
 use App\Helpers\AmountSearch;
 use App\Models\Invoice;
 use App\Models\Deal;
 use App\Models\Product;
 use App\Models\PaymentAccount;
-use App\Models\Transaction;
 use App\Filament\Resources\InvoiceResource\Pages;
 use App\Filament\Exports\InvoiceExporter;
+use App\Services\InvoicePayment;
 
 use Filament\Tables;
 use Filament\Forms;
@@ -29,7 +30,6 @@ use Filament\Tables\Enums\ActionsPosition;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Request;
 
 class InvoiceResource extends BaseInvoiceResource
@@ -2731,260 +2731,31 @@ class InvoiceResource extends BaseInvoiceResource
 
                     ])
                     ->action(
-                        function (
-                            array $data,
-                            Invoice $record
-                        ) {
+                        function (array $data, Invoice $record) {
+                            // Satu jalur dengan bot Telegram: validasi sisa tagihan, status,
+                            // transaksi rekening, dan log ada di InvoicePayment.
+                            try {
+                                app(InvoicePayment::class)->pay(
+                                    $record,
+                                    (float) $data['amount'],
+                                    PaymentAccount::findOrFail($data['payment_account_id']),
+                                    auth()->user()
+                                );
+                            } catch (InvoicePaymentException $e) {
+                                Notification::make()
+                                    ->title('Gagal')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->send();
 
-                            DB::transaction(
-                                function () use (
-                                    $data,
-                                    $record
-                                ) {
+                                return;
+                            }
 
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | NOMINAL YANG DITAGIHKAN
-                                    |--------------------------------------------------------------------------
-                                    |
-                                    | Untuk invoice DP, tagihannya adalah uang muka — bukan
-                                    | grand_total yang menyimpan harga penuh pekerjaan. Memakai
-                                    | grand_total di sini membuat invoice DP tidak pernah bisa
-                                    | berstatus lunas sampai klien membayar seluruh pekerjaan.
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $ditagihkan = $record->amountDue();
-
-                                    $remainingAmount =
-                                        $ditagihkan
-                                        -
-                                        $record
-                                            ->paid;
-
-                                    if (
-                                        $data[
-                                            'amount'
-                                        ]
-                                        >
-                                        $remainingAmount
-                                    ) {
-
-                                        Notification::make()
-                                            ->title(
-                                                'Gagal'
-                                            )
-                                            ->body(
-                                                'Jumlah pembayaran melebihi total yang harus dibayar.'
-                                            )
-                                            ->danger()
-                                            ->send();
-
-                                        return;
-                                    }
-
-                                    $newPaidAmount =
-                                        $record
-                                            ->paid
-                                        +
-                                        $data[
-                                            'amount'
-                                        ];
-
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | STATUS
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $newStatus =
-                                        $newPaidAmount >= $ditagihkan
-                                            ? 'paid'
-                                            : 'partial';
-
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | CATATAN DP
-                                    |--------------------------------------------------------------------------
-                                    |
-                                    | Dicatat sebagai keterangan yang terbaca manusia. Angka yang
-                                    | dipakai PDF pelunasan diambil dari parent_invoice_id, bukan
-                                    | dari teks ini.
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $dpPercentage = $record->dpPercentage();
-
-                                    $notesUpdate = null;
-                                    if (
-                                        $dpPercentage !== null
-                                        && $newStatus === 'paid'
-                                        && $record->paid < $ditagihkan
-                                    ) {
-                                        $notesUpdate = "DP: {$dpPercentage}% - Rp " . number_format($newPaidAmount, 0, ',', '.') . "\n";
-                                    }
-
-                                    $record->update([
-
-                                        'paid' =>
-                                            $newPaidAmount,
-
-                                        'status' =>
-                                            $newStatus,
-
-                                        'notes' =>
-                                            $notesUpdate ?? $record->notes,
-
-                                    ]);
-
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | PAYMENT META
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $record
-                                        ->invoiceMetas()
-                                        ->create([
-
-                                            'key' =>
-                                                'payments',
-
-                                            'value' =>
-                                                $data[
-                                                    'amount'
-                                                ],
-
-                                        ]);
-
-                                    $currencyIso =
-                                        optional(
-                                            $record
-                                                ->currency
-                                        )->iso
-                                        ?? 'id';
-
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | PAYMENT ACCOUNT
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $paymentAccount =
-                                        PaymentAccount::find(
-                                            $data[
-                                                'payment_account_id'
-                                            ]
-                                        );
-
-                                    if (
-                                        $paymentAccount
-                                    ) {
-
-                                        /*
-                                        |--------------------------------------------------------------------------
-                                        | CREATE TRANSACTION (PEMASUKAN)
-                                        |--------------------------------------------------------------------------
-                                        */
-
-                                        Transaction::create([
-                                            'payment_account_id' => $data['payment_account_id'],
-                                            // Kolomnya bernama created_by, bukan user_id — nilai
-                                            // yang dikirim ke kolom yang tidak ada akan dibuang
-                                            // mass assignment tanpa peringatan.
-                                            'created_by' => auth()->id(),
-                                            'type' => 'in',
-                                            'category' => 'invoice',
-                                            'amount' => $data['amount'],
-                                            // Agar transaksi bisa ditelusuri balik ke invoicenya,
-                                            // sama seperti advance dan expense.
-                                            'reference_type' => 'invoice',
-                                            'reference_id' => $record->id,
-                                            'transaction_date' => now(),
-                                            'description' => 'Pembayaran Invoice ' . $record->uuid . ' dari ' . ($record->nama_perusahaan ?? '-'),
-                                        ]);
-
-                                        /*
-                                        |--------------------------------------------------------------------------
-                                        | SYNC SALDO
-                                        |--------------------------------------------------------------------------
-                                        |
-                                        | Pembayaran invoice = uang MASUK, jadi saldo naik.
-                                        | Dihitung ulang dari transaksi (initial + in - out) agar
-                                        | current_balance tidak pernah menyimpang dari mutasi.
-                                        |--------------------------------------------------------------------------
-                                        */
-
-                                        $paymentAccount
-                                            ->syncBalanceFromTransactions();
-                                    }
-
-                                    /*
-                                    |--------------------------------------------------------------------------
-                                    | INVOICE LOG
-                                    |--------------------------------------------------------------------------
-                                    */
-
-                                    $record
-                                        ->invoiceLogs()
-                                        ->create([
-
-                                            'log' =>
-                                                'Paid '
-                                                .
-                                                number_format(
-                                                    $data[
-                                                        'amount'
-                                                    ],
-                                                    2
-                                                )
-                                                .
-                                                ' '
-                                                .
-                                                $currencyIso
-                                                .
-                                                ' from '
-                                                .
-                                                (
-                                                    $paymentAccount
-                                                        ?->name
-                                                    ??
-                                                    'Unknown'
-                                                )
-                                                .
-                                                ' By: '
-                                                .
-                                                auth()
-                                                    ->user()
-                                                    ->name,
-
-                                            'type' =>
-                                                'payment',
-
-                                        ]);
-
-                                    Notification::make()
-                                        ->title(
-                                            'Pembayaran Berhasil'
-                                        )
-                                        ->body(
-                                            'Anda telah melakukan pembayaran sebesar '
-                                            .
-                                            number_format(
-                                                $data[
-                                                    'amount'
-                                                ],
-                                                2
-                                            )
-                                            .
-                                            ' '
-                                            .
-                                            $currencyIso
-                                        )
-                                        ->success()
-                                        ->send();
-                                }
-                            );
+                            Notification::make()
+                                ->title('Pembayaran Berhasil')
+                                ->body('Anda telah melakukan pembayaran sebesar ' . number_format((float) $data['amount'], 2) . ' ' . (optional($record->currency)->iso ?? 'id'))
+                                ->success()
+                                ->send();
                         }
                     )
                     ->icon(
