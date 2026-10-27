@@ -7,6 +7,7 @@ use App\Enums\FinanceCategory;
 use App\Filament\Resources\AdvanceResource\Pages;
 use App\Filament\Resources\AdvanceResource\RelationManagers;
 use App\Helpers\ColorHelper;
+use App\Helpers\Money;
 use App\Models\Advance;
 use App\Models\PaymentAccount;
 use App\Models\Transaction;
@@ -104,12 +105,40 @@ class AdvanceResource extends Resource
                     ->numeric()
                     ->required()
                     ->prefix('Rp')
-                    ->formatStateUsing(fn($state) => number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn($state) => Money::inputValue($state)),
 
                 Forms\Components\Hidden::make('status')
                     ->default('Pending')
                     ->required(),
             ]);
+    }
+
+    /**
+     * Approve/Reject advance yang masih Pending. Status dibaca ulang di dalam
+     * kunci baris: dua orang yang menekan bersamaan, atau tampilan yang sudah
+     * usang, tidak bisa mengubah advance yang sudah diproses.
+     */
+    protected static function decidePending(Advance $record, array $changes): void
+    {
+        $updated = DB::transaction(function () use ($record, $changes) {
+            $advance = Advance::lockForUpdate()->find($record->getKey());
+
+            if ($advance?->status !== Advance::STATUS_PENDING) {
+                return false;
+            }
+
+            $advance->update($changes);
+
+            return true;
+        });
+
+        if (! $updated) {
+            \Filament\Notifications\Notification::make()
+                ->title('Advance ini sudah diproses')
+                ->body('Statusnya bukan Pending lagi. Muat ulang halaman untuk melihat status terbaru.')
+                ->warning()
+                ->send();
+        }
     }
 
     public static function table(Table $table): Table
@@ -350,7 +379,7 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                             ->prefix('Rp')
                             ->default(fn($record) => $record->amount)
                             ->helperText(fn($record) => 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
-                            ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
+                            ->formatStateUsing(fn($state) => Money::inputValue($state))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
                                 'max' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
@@ -380,27 +409,29 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                         in_array($record->status, ['Pending','Dibayarkan','Selesai','Ditolak'])
                     ),
 
+                /*
+                | Approve & Reject hanya untuk advance yang masih Pending. Dulu tombolnya
+                | juga muncul pada advance yang sudah dicairkan (mis. "Sedang di-Realisasi
+                | User"): Approve mengembalikannya ke Disetujui sehingga bisa dibayar kedua
+                | kali, Reject membatalkan advance yang uangnya sudah keluar.
+                */
                 Tables\Actions\Action::make('approve')
                     ->label('Approve')
-                    ->action(function ($record) {
-                        $record->update(['status' => 'Disetujui']);
-                    })
+                    ->action(fn (Advance $record) => static::decidePending($record, ['status' => Advance::STATUS_DISETUJUI]))
                     ->requiresConfirmation()
                     ->color('success')
                     ->icon('heroicon-o-check-circle')
                     ->hidden(fn($record) =>
                     !Auth::user()?->can('restore_advance') ||
-                    in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Selesai'])
+                    $record->status !== Advance::STATUS_PENDING
                 ),
 
                 Tables\Actions\Action::make('reject')
                     ->label('Reject')
-                    ->action(function ($record, array $data) {
-                        $record->update([
-                            'status' => 'Ditolak',
-                            'rejection_reason' => $data['rejection_reason'],
-                        ]);
-                    })
+                    ->action(fn (Advance $record, array $data) => static::decidePending($record, [
+                        'status'           => Advance::STATUS_DITOLAK,
+                        'rejection_reason' => $data['rejection_reason'],
+                    ]))
                     ->form([
                         Forms\Components\Textarea::make('rejection_reason')
                             ->label('Alasan Penolakan')
@@ -411,7 +442,7 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                     ->icon('heroicon-o-x-circle')
                     ->hidden(fn($record) =>
                     !Auth::user()?->can('restore_advance') ||
-                    in_array($record->status, ['Disetujui', 'Ditolak', 'Dibayarkan','Selesai'])
+                    $record->status !== Advance::STATUS_PENDING
                 ),
 
                 // Action untuk menyetujui overrun

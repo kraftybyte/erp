@@ -5,6 +5,10 @@
 
     RewriteEngine On
 
+    # Folder upload (/storage): file skrip tidak boleh dijalankan maupun diunduh,
+    # sebagai pengaman bila ada upload yang lolos validasi.
+    RewriteRule ^storage/.*\.(php[0-9]?|phtml|phar|pht|pl|py|cgi|sh|shtml|htaccess)$ - [F,NC,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
