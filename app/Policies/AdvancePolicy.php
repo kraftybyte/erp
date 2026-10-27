@@ -41,7 +41,8 @@ class AdvancePolicy
         if ($this->isAdminOrRole($user, ['Finance', 'Director'])) {
             return true;
         }
-        return $user->id === $advance->user_id && $user->can('update_advance');
+        // Pemilik hanya selama masih Pending: setelah disetujui nominalnya tidak boleh berubah.
+        return $user->id === $advance->user_id && $advance->status === Advance::STATUS_PENDING && $user->can('update_advance');
     }
 
     public function delete(User $user, Advance $advance): bool

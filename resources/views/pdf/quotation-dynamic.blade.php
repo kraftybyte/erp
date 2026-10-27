@@ -210,7 +210,7 @@
         {{-- <td style="text-align: center; font-size: 11px; padding: 10px;">Service</td> --}}
         <td style="text-align: left; font-size: 11px; padding: 10px;">
             {{ $item->item }}<br>
-            <span style="font-size: 9px; color: #666;">{!! $item->description ?? '' !!}</span>
+            <span style="font-size: 9px; color: #666;">{!! str($item->description ?? '')->sanitizeHtml() !!}</span>
         </td>
 
         <td style="text-align: center; font-size: 11px; padding: 10px;">

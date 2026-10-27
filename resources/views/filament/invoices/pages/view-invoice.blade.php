@@ -83,7 +83,7 @@
 
                                     @if($item->description)
                                         <div class="text-gray-400 text-xs mt-1">
-                                            {!! $item->description !!}
+                                            {!! str($item->description ?? '')->sanitizeHtml() !!}
                                         </div>
                                     @endif
                                 </div>
@@ -162,7 +162,7 @@
                             </div>
 
                             <div class="text-sm text-gray-600">
-                                {!! $this->getRecord()->notes !!}
+                                {!! nl2br(e($this->getRecord()->notes)) !!}
                             </div>
                         </div>
                     @endif

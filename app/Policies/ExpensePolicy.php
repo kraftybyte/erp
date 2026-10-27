@@ -41,7 +41,8 @@ class ExpensePolicy
         if ($this->isAdminOrRole($user, ['Finance', 'Director'])) {
             return true;
         }
-        return $user->id === $expense->user_id && $user->can('update_expense');
+        // Pemilik hanya selama masih Pending: setelah disetujui nominalnya tidak boleh berubah.
+        return $user->id === $expense->user_id && $expense->status === 'Pending' && $user->can('update_expense');
     }
 
     public function delete(User $user, Expense $expense): bool

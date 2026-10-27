@@ -50,10 +50,8 @@ class AdvanceResource extends Resource
 
         return $form
             ->schema([
-                Forms\Components\Hidden::make('user_id')
-                    ->default(fn() => Auth::user()?->id)
-                    ->required(),
-
+                // Pengaju & status diisi server saat dibuat (Create…::mutateFormDataBeforeCreate),
+                // bukan dari field tersembunyi yang bisa diubah di browser.
                 Forms\Components\DatePicker::make('submission_date')
                     ->label('Tanggal Pengajuan')
                     ->default(now())
@@ -106,10 +104,6 @@ class AdvanceResource extends Resource
                     ->required()
                     ->prefix('Rp')
                     ->formatStateUsing(fn($state) => Money::inputValue($state)),
-
-                Forms\Components\Hidden::make('status')
-                    ->default('Pending')
-                    ->required(),
             ]);
     }
 
