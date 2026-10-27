@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Exceptions\InvoicePaymentException;
+use App\Filament\Forms\ImportItemsAction;
 use App\Helpers\AmountSearch;
 use App\Models\Invoice;
 use App\Models\Deal;
@@ -24,11 +25,14 @@ use TomatoPHP\FilamentInvoices\Filament\Resources\InvoiceResource as BaseInvoice
 use TomatoPHP\FilamentTypes\Components\TypeColumn;
 
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Str;
 
 use Illuminate\Support\Facades\Request;
 
@@ -404,12 +408,27 @@ class InvoiceResource extends BaseInvoiceResource
             Forms\Components\Section::make(
                 'Items'
             )
+                ->key('itemsSection')
+                ->headerActions([
+                    // Harga penuh: invoice DP menyimpan nilai penuh pekerjaan; DP-nya
+                    // dihitung dari Total × persentase (Invoice::amountDue()).
+                    ImportItemsAction::make(
+                        'invoicesItems',
+                        fn (Get $get, Set $set) => self::recalculateTotals($get, $set),
+                        fn (array $item) => ['original_price' => $item['price']]
+                    ),
+                ])
                 ->schema([
 
                     Forms\Components\Repeater::make(
                         'invoicesItems'
                     )
                         ->relationship()
+                        // Invoice dari file budget bisa berisi puluhan item: bisa dilipat, dengan label nama + total.
+                        ->collapsible()
+                        ->itemLabel(fn (array $state): ?string => filled($state['item'] ?? null)
+                            ? Str::limit((string) $state['item'], 70) . ' — Rp ' . number_format((float) ($state['total'] ?? 0), 0, ',', '.')
+                            : null)
                         ->schema([
 
                             Forms\Components\Hidden::make(

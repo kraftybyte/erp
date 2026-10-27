@@ -11,6 +11,10 @@ class CreateInvoice extends BaseCreateInvoice
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // Bawaan paket mengisi user_id (pembuat invoice). Tanpa ini simpan gagal:
+        // kolom user_id wajib dan tidak punya nilai default.
+        $data = parent::mutateFormDataBeforeCreate($data);
+
         /*
         | Simpan tautan ke Deal; isi field-nya datang dari form.
         |
