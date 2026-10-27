@@ -11,6 +11,8 @@ use Filament\Resources\Pages\Page;
 use Filament\Notifications\Notification;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Livewire\WithFileUploads;
 
 class RealisasiAdvance extends Page
@@ -39,10 +41,36 @@ class RealisasiAdvance extends Page
 
     protected static string $view = 'filament.pages.advance-realisasi';
 
+    /*
+    | Nota realisasi dan bukti pengembalian disimpan di disk public (bisa dibuka
+    | lewat /storage), jadi hanya gambar atau PDF yang boleh masuk. Aturan mimes
+    | memeriksa isi file, bukan nama atau ekstensi kiriman browser.
+    */
+    private const FILE_RULE = 'file|mimes:jpg,jpeg,png,webp,pdf|max:5120';
+
     public function mount(Advance $record): void
     {
         $this->record = $record;
         $this->refreshStats();
+    }
+
+    /**
+     * Validasi file upload; bila ditolak, beri tahu lewat notifikasi (halaman
+     * ini tidak menampilkan pesan error per field) lalu hentikan prosesnya.
+     */
+    private function validateFiles(array $rules): void
+    {
+        try {
+            $this->validate($rules);
+        } catch (ValidationException $e) {
+            Notification::make()
+                ->title('File tidak diterima')
+                ->body('Hanya gambar (JPG, PNG, WebP) atau PDF, maksimal 5 MB per file.')
+                ->danger()
+                ->send();
+
+            throw $e;
+        }
     }
 
     public function refreshStats(): void
@@ -142,11 +170,15 @@ class RealisasiAdvance extends Page
             return;
         }
 
+        $this->validateFiles(['uploadedFiles.*' => self::FILE_RULE]);
+
+        $stored = [];
+
         try {
-            DB::transaction(function () {
+            DB::transaction(function () use (&$stored) {
                 $files = [];
                 foreach ($this->uploadedFiles as $file) {
-                    $path = $file->store('realisasi/' . $this->record->id, 'public');
+                    $path = $stored[] = $file->store('realisasi/' . $this->record->id, 'public');
                     $files[] = [
                         'original_name' => $file->getClientOriginalName(),
                         'filepath' => $path,
@@ -186,6 +218,8 @@ class RealisasiAdvance extends Page
                 ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
+            Storage::disk('public')->delete($stored);
+
             Notification::make()
                 ->title('❌ Gagal Menyimpan Batch')
                 ->body($e->getMessage())
@@ -233,6 +267,19 @@ class RealisasiAdvance extends Page
 
     public function processReturn(): void
     {
+        $service = new RealisasiService();
+
+        // Hak akses dicek sebelum file apa pun disimpan.
+        if (! $service->canUserProcessReturn()) {
+            Notification::make()
+                ->title('⚠️ Tidak Memiliki Izin')
+                ->body('Hanya Finance, Director, atau Super Admin yang dapat memproses return.')
+                ->danger()
+                ->icon('heroicon-o-shield-exclamation')
+                ->send();
+            return;
+        }
+
         if (!$this->returnAttachment) {
             Notification::make()
                 ->title('Gagal')
@@ -243,14 +290,14 @@ class RealisasiAdvance extends Page
             return;
         }
 
-        try {
-            $attachmentPath = $this->returnAttachment->storeAs(
-                'returns/' . $this->record->id,
-                uniqid() . '-' . now()->format('d-m-Y') . '.' . $this->returnAttachment->getClientOriginalExtension(),
-                'public'
-            );
+        $this->validateFiles(['returnAttachment' => self::FILE_RULE]);
 
-            $service = new RealisasiService();
+        $attachmentPath = null;
+
+        try {
+            // Nama acak dengan ekstensi dari isi file, bukan dari nama kiriman browser.
+            $attachmentPath = $this->returnAttachment->store('returns/' . $this->record->id, 'public');
+
             $service->processReturn($this->record, $attachmentPath);
 
             Notification::make()
@@ -263,6 +310,10 @@ class RealisasiAdvance extends Page
             $this->closeReturnModal();
             $this->refreshStats();
         } catch (\Exception $e) {
+            if ($attachmentPath) {
+                Storage::disk('public')->delete($attachmentPath);
+            }
+
             Notification::make()
                 ->title('❌ Gagal Memproses Return')
                 ->body($e->getMessage())

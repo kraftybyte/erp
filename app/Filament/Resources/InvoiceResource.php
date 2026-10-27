@@ -516,7 +516,7 @@ class InvoiceResource extends BaseInvoiceResource
                                         $state,
                                         callable $set,
                                         callable $get
-                                    ) {
+                                    ) use ($updateItemTotals) {
 
                                         if (
                                             $product =
@@ -524,12 +524,6 @@ class InvoiceResource extends BaseInvoiceResource
                                                     $state
                                                 )
                                         ) {
-
-                                            /*
-                                            |--------------------------------------------------------------------------
-                                            | ORIGINAL PRICE
-                                            |--------------------------------------------------------------------------
-                                            */
 
                                             $originalPrice =
                                                 (float)
@@ -555,81 +549,25 @@ class InvoiceResource extends BaseInvoiceResource
 
                                             /*
                                             |--------------------------------------------------------------------------
-                                            | PAYMENT TYPE
+                                            | HARGA PENUH, JUGA UNTUK INVOICE DP
+                                            |--------------------------------------------------------------------------
+                                            |
+                                            | Invoice DP menyimpan nilai penuh pekerjaan; uang mukanya dihitung
+                                            | dari Total × persentase (Invoice::amountDue(), PDF, tombol Bayar).
+                                            | Dulu harga item di sini sudah dipotong ke persentase DP, sehingga
+                                            | DP terpotong dua kali: DP 50% atas Rp 5 jt tertagih Rp 1,25 jt.
                                             |--------------------------------------------------------------------------
                                             */
-
-                                            $typePayment =
-                                                $get(
-                                                    '../../type_payment'
-                                                );
-
-                                            /*
-                                            |--------------------------------------------------------------------------
-                                            | FULL PAYMENT
-                                            |--------------------------------------------------------------------------
-                                            */
-
-                                            if (
-                                                $typePayment ===
-                                                    'full_payment'
-                                                ||
-                                                blank(
-                                                    $typePayment
-                                                )
-                                            ) {
-
-                                                $set(
-                                                    'price',
-                                                    $originalPrice
-                                                );
-
-                                                return;
-                                            }
-
-                                            /*
-                                            |--------------------------------------------------------------------------
-                                            | DP
-                                            |--------------------------------------------------------------------------
-                                            */
-
-                                            if (
-                                                str_starts_with(
-                                                    $typePayment ?? '',
-                                                    'dp_'
-                                                )
-                                            ) {
-
-                                                $percentage =
-                                                    (float)
-                                                    str_replace(
-                                                        'dp_',
-                                                        '',
-                                                        $typePayment
-                                                    );
-
-                                                $dpPrice =
-                                                    $originalPrice
-                                                    *
-                                                    (
-                                                        $percentage
-                                                        / 100
-                                                    );
-
-                                                $set(
-                                                    'price',
-                                                    round(
-                                                        $dpPrice,
-                                                        2
-                                                    )
-                                                );
-
-                                                return;
-                                            }
 
                                             $set(
                                                 'price',
                                                 $originalPrice
+                                            );
+
+                                            // Total item ikut dihitung ulang (dulu tertinggal nilai lama).
+                                            $updateItemTotals(
+                                                $get,
+                                                $set
                                             );
                                         }
                                     }

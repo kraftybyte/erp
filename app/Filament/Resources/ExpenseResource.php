@@ -7,6 +7,7 @@ use App\Enums\FinanceCategory;
 use App\Filament\Resources\ExpenseResource\Pages;
 use App\Filament\Resources\ExpenseResource\RelationManagers;
 use App\Helpers\ColorHelper;
+use App\Helpers\Money;
 use App\Models\Expense;
 use App\Models\PaymentAccount;
 use App\Models\Transaction;
@@ -79,7 +80,7 @@ class ExpenseResource extends Resource
                     ->numeric()
                     ->required()
                     ->prefix('Rp')
-                    ->formatStateUsing(fn($state) => number_format($state, 0, ',', '.')),
+                    ->formatStateUsing(fn($state) => Money::inputValue($state)),
 
                 Forms\Components\Hidden::make('status')
                     ->default('Pending')
@@ -384,7 +385,7 @@ class ExpenseResource extends Resource
                             ->prefix('Rp')
                             ->default(fn($record) => $record->amount)
                             ->helperText(fn($record) => 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
-                            ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', '.'))
+                            ->formatStateUsing(fn($state) => Money::inputValue($state))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
                                 'max' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
