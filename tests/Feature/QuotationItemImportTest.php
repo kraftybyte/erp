@@ -126,6 +126,39 @@ class QuotationItemImportTest extends TestCase
         $this->assertEquals(1_750_000.5, $items[1]['price']);
     }
 
+    public function test_tabel_nama_barang_dengan_keterangan_berpoin(): void
+    {
+        $book  = new Spreadsheet();
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray([
+            ['No', 'Nama Barang', 'Keterangan', 'Kts.', '@Harga', 'Total Harga'],
+            [1, 'Sandwich 60x70x15 cm 2 sisi', "• ACP SEVENHR 4mm biru + abu\n• HOLO 2x2 + 3x3 finish cat", 1, 5_000_000, 5_000_000],
+            [2, 'Signboard 250x100x2.5 cm', "• ACP SEVENHR 4mm biru + abu\n• finish cutting akrilik 3mm", 38, 5_250_000, null],
+            // Label TOTAL di kolom @Harga, bukan di kolom nama.
+            [null, null, null, null, 'TOTAL', null],
+        ], null, 'A1', true);
+        $sheet->setCellValue('F3', '=D3*E3');
+        $sheet->setCellValue('F4', '=SUM(F2:F3)');
+
+        $path = tempnam(sys_get_temp_dir(), 'quo-') . '.xlsx';
+        $this->paths[] = $path;
+        (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
+
+        $import = app(QuotationItemImport::class);
+        $result = $import->parse($path);
+
+        $this->assertCount(2, $result['items'], 'Baris TOTAL bukan item.');
+        $this->assertEquals(204_500_000, $result['total']);
+        $this->assertEquals(204_500_000, $result['expected_total']);
+        $this->assertSame([], $result['warnings']);
+
+        $items = $import->lines($result['items']);
+        $this->assertSame('Sandwich 60x70x15 cm 2 sisi', $items[0]['item']);
+        $this->assertSame(['ACP SEVENHR 4mm biru + abu', 'HOLO 2x2 + 3x3 finish cat'], $items[0]['description_lines'], 'Satu baris per poin, tanpa tanda poin.');
+        $this->assertEquals([38, 5_250_000, 199_500_000], [$items[1]['qty'], $items[1]['price'], $items[1]['total']]);
+    }
+
     public function test_tombol_import_mengisi_form_quotation(): void
     {
         $user = User::forceCreate([

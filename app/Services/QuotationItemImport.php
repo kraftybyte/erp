@@ -28,7 +28,7 @@ class QuotationItemImport
     private const HEADERS = [
         'item'        => '/^(items?|nama( item| barang| pekerjaan)?|uraian( pekerjaan)?|pekerjaan|description)$/',
         'price'       => '/^(price\/?qty|price|unit price|harga( satuan)?|harga\/?qty)$/',
-        'qty'         => '/^(qty|quantity|jumlah|jml|vol(ume)?)$/',
+        'qty'         => '/^(qty|quantity|kts|kuantitas|jumlah|jml|vol(ume)?)$/',
         'dur'         => '/^(dur|durasi|duration)$/',
         'unit'        => '/^(unit|satuan|sat)$/',
         'total'       => '/^(total|jumlah harga|total harga|amount)$/',
@@ -71,7 +71,7 @@ class QuotationItemImport
             $rows[] = [
                 'no'    => $this->text($sheet, $columns['no'] ?? null, $r),
                 'text'  => $this->text($sheet, $columns['item'], $r),
-                'spec'  => $this->text($sheet, $columns['spec'] ?? null, $r),
+                'spec'  => $this->textLines($sheet, $columns['spec'] ?? null, $r),
                 'price' => $this->number($sheet, $columns['price'] ?? null, $r),
                 'qty'   => $this->number($sheet, $columns['qty'] ?? null, $r),
                 'unit'  => $this->text($sheet, $units[0] ?? null, $r),
@@ -125,6 +125,13 @@ class QuotationItemImport
             }
 
             $hasAmount = ($row['price'] ?? 0) > 0 || ($row['total'] ?? 0) > 0;
+
+            // Baris jumlah yang labelnya ("TOTAL") ada di kolom lain: bukan item.
+            if ($text === '' && $hasAmount) {
+                $expected = $row['total'] ?? $row['price'];
+
+                continue;
+            }
 
             if (! $hasAmount) {
                 if ($text === '') {
@@ -271,7 +278,7 @@ class QuotationItemImport
             'name'       => $row['text'],
             'section'    => $section,
             'subsection' => $subsection,
-            'details'    => array_values(array_filter([$row['spec']])),
+            'details'    => $row['spec'],
             // Keterangan jumlah untuk lines() (bila tidak terbaca dari kolom Qty saja) …
             'note'       => $note,
             // … dan untuk rincian grouped().
@@ -303,7 +310,8 @@ class QuotationItemImport
             $units   = [];
 
             for ($c = 1; $c <= $lastColumn; $c++) {
-                $label = strtolower(trim(preg_replace('/\s+/', ' ', (string) $sheet->getCell([$c, $r])->getFormattedValue())));
+                // "@Harga" → "harga", "Kts." → "kts".
+                $label = strtolower(trim(preg_replace(['/\s+/', '/^@\s*/', '/\.$/'], [' ', '', ''], trim((string) $sheet->getCell([$c, $r])->getFormattedValue()))));
                 $span  = $spans[$r][$c] ?? [$c];
 
                 foreach (self::HEADERS as $field => $pattern) {
@@ -341,6 +349,28 @@ class QuotationItemImport
         }
 
         return '';
+    }
+
+    /**
+     * Isi sel per baris, tanpa tanda poin: "• ACP 4mm\n• HOLO 2x2" → ["ACP 4mm", "HOLO 2x2"].
+     *
+     * @param  array<int, int>|null  $columns
+     * @return array<int, string>
+     */
+    private function textLines(Worksheet $sheet, ?array $columns, int $row): array
+    {
+        foreach ($columns ?? [] as $column) {
+            $lines = array_values(array_filter(array_map(
+                fn (string $line) => trim(preg_replace(['/^[\s•·▪◦*–-]+/u', '/\s+/u'], ['', ' '], $line)),
+                preg_split('/\R/u', (string) $this->value($sheet->getCell([$column, $row])))
+            ), fn (string $line) => $line !== ''));
+
+            if ($lines) {
+                return $lines;
+            }
+        }
+
+        return [];
     }
 
     /**
@@ -409,7 +439,8 @@ class QuotationItemImport
 
     private function isGrandTotal(string $text): bool
     {
-        return (bool) preg_match('/^(grand\s*total|total keseluruhan)\b/i', $text);
+        // "GRAND TOTAL", atau baris jumlah di bawah tabel: "TOTAL", "Total Harga", "Jumlah".
+        return (bool) preg_match('/^(grand\s*total\b.*|total( keseluruhan| harga| akhir)?|jumlah( total| keseluruhan)?)$/i', trim($text, " \t:"));
     }
 
     private function format(float $number): string
