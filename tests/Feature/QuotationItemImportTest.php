@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\InvoiceResource\Pages\CreateInvoice;
 use App\Filament\Resources\QuotationResource\Pages\CreateQuotation;
 use App\Models\Quotation;
 use App\Models\User;
@@ -228,6 +229,46 @@ class QuotationItemImportTest extends TestCase
         $items = array_values($component->get('data.items'));
         $this->assertSame(['WORK PREPARATION', 'PARTITION', 'RENT AND OPERATIONAL COST'], array_column($items, 'item'));
         $this->assertEquals(45_000_000, $items[1]['total']);
+    }
+
+    public function test_tombol_import_juga_ada_di_form_invoice(): void
+    {
+        $user = User::forceCreate([
+            'username'     => 'invimp_' . Str::lower(Str::random(8)),
+            'firstname'    => 'Tes',
+            'lastname'     => 'Import',
+            'email'        => Str::lower(Str::random(10)) . '@example.test',
+            'password'     => bcrypt('rahasia'),
+            'is_active'    => true,
+            'push_enabled' => false,
+        ]);
+        $user->assignRole('super_admin');
+        $this->actingAs($user);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::test(CreateInvoice::class)
+            ->set('data.type_payment', 'dp_50')
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->set('mountedFormComponentActionsData.0.file', UploadedFile::fake()->createWithContent('budget.xlsx', file_get_contents($this->budget())))
+            ->call('callMountedFormComponentAction')
+            ->assertHasNoFormComponentActionErrors()
+            // Harga penuh walau invoice DP: DP-nya dihitung dari Total × 50%.
+            ->assertFormSet(['subtotal' => 187_000_000, 'grand_total' => 187_000_000]);
+
+        $items = array_values($component->get('data.invoicesItems'));
+        $this->assertCount(6, $items);
+        $this->assertSame('WORK PREPARATION', $items[0]['item']);
+        $this->assertEquals(40_000_000, $items[0]['original_price']);
+        $this->assertEquals([12, 3_000_000], [$items[4]['qty'], $items[4]['price']]);
+
+        $client = 'PT Invoice Import ' . Str::upper(Str::random(5));
+        $component->fillForm(['nama_perusahaan' => $client])->call('create')->assertHasNoFormErrors();
+
+        $invoice = \App\Models\Invoice::where('nama_perusahaan', $client)->sole();
+        $this->assertSame($user->id, $invoice->user_id, 'Pembuat invoice tercatat (dulu kosong sehingga simpan gagal).');
+        $this->assertCount(6, $invoice->invoicesItems);
+        $this->assertEquals(187_000_000, $invoice->grand_total);
+        $this->assertEquals(93_500_000, $invoice->amountDue(), 'Amount Due DP 50% dari nilai penuh.');
     }
 
     /**

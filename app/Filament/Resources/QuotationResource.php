@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\ImportItemsAction;
 use App\Filament\Resources\QuotationResource\Pages;
 use App\Helpers\AmountSearch;
 use App\Helpers\ColorHelper;
@@ -21,7 +22,6 @@ use Filament\Tables\Actions\Action;
 use Filament\Notifications\Notification;
 use App\Models\Invoice;
 use App\Models\InvoicesItem;
-use App\Services\QuotationItemImport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -222,7 +222,7 @@ class QuotationResource extends Resource
             Forms\Components\Section::make('Items')
                 ->key('itemsSection')
                 ->headerActions([
-                    static::importItemsAction(),
+                    ImportItemsAction::make('items', fn (Get $get, Set $set) => self::recalculateTotals($get, $set)),
                 ])
                 ->schema([
                     Forms\Components\Repeater::make('items')
@@ -358,108 +358,6 @@ class QuotationResource extends Resource
                 ])
                 ->columns(3),
         ]);
-    }
-
-    /**
-     * Isi item dari file Excel/CSV budget (lihat QuotationItemImport). Item
-     * hanya dimasukkan ke form; tersimpan setelah tombol Simpan ditekan.
-     */
-    protected static function importItemsAction(): Forms\Components\Actions\Action
-    {
-        return Forms\Components\Actions\Action::make('importItems')
-            ->label('Import dari Excel')
-            ->icon('heroicon-o-arrow-up-tray')
-            ->color('gray')
-            ->modalHeading('Import item dari Excel')
-            ->modalDescription('File budget dengan kolom ITEMS, PRICE/QTY, QTY, DUR, dan TOTAL; kolom lain (mis. USD) diabaikan. Judul bagian (mis. FLOORING) menjadi kategori, baris spesifikasi masuk ke deskripsi, qty = QTY × DUR, dan SUB TOTAL / GRAND TOTAL dicocokkan dengan jumlah item.')
-            ->modalSubmitActionLabel('Import')
-            ->form([
-                Forms\Components\FileUpload::make('file')
-                    ->label('File Excel / CSV')
-                    ->acceptedFileTypes([
-                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        'application/vnd.ms-excel',
-                        'text/csv',
-                        'text/plain',
-                    ])
-                    ->maxSize(10240)
-                    ->storeFiles(false)
-                    ->required(),
-
-                Forms\Components\TextInput::make('vat_percentage')
-                    ->label('PPN (%) untuk semua item')
-                    ->numeric()
-                    ->default(0)
-                    ->required(),
-
-                Forms\Components\Radio::make('layout')
-                    ->label('Susunan item')
-                    ->options([
-                        'lines'    => 'Setiap baris satu item: nama item = kategori (WORK PREPARATION), deskripsi = pekerjaannya',
-                        'category' => 'Satu item per kategori: harga = sub total, semua pekerjaannya di deskripsi',
-                    ])
-                    ->default('lines')
-                    ->required(),
-
-                Forms\Components\Toggle::make('replace')
-                    ->label('Ganti item yang sudah ada di form')
-                    ->default(true),
-            ])
-            ->action(function (array $data, Get $get, Set $set) {
-                try {
-                    $import = app(QuotationItemImport::class);
-                    $result = $import->parse($data['file']->getRealPath());
-                } catch (\Throwable $e) {
-                    Notification::make()->title('File tidak bisa dibaca')->body($e->getMessage())->danger()->send();
-
-                    return;
-                }
-
-                if (! $result['items']) {
-                    Notification::make()->title('Tidak ada item yang terbaca di file ini')->warning()->send();
-
-                    return;
-                }
-
-                $vat   = (float) $data['vat_percentage'];
-                $items = ($data['layout'] ?? 'lines') === 'category' ? $import->grouped($result['items']) : $import->lines($result['items']);
-
-                $imported = collect($items)->mapWithKeys(function (array $item) use ($vat) {
-                    $subtotal = $item['price'] * $item['qty'];
-
-                    return [(string) Str::uuid() => [
-                        'is_manual'      => true,
-                        'manual_text'    => $item['item'],
-                        'product_id'     => null,
-                        'item'           => $item['item'],
-                        'description'    => $item['description'],
-                        'qty'            => $item['qty'],
-                        'price'          => $item['price'],
-                        'discount'       => 0,
-                        'vat_percentage' => $vat,
-                        'vat'            => round($subtotal * $vat / 100, 2),
-                        'total'          => round($subtotal * (1 + $vat / 100), 2),
-                    ]];
-                })->all();
-
-                // Baris kosong bawaan form tidak ikut dipertahankan.
-                $existing = $data['replace'] ? [] : array_filter($get('items') ?? [], fn ($item) => filled($item['item'] ?? null));
-
-                $set('items', $existing + $imported);
-                self::recalculateTotals($get, $set);
-
-                $rupiah = fn (float $amount) => 'Rp ' . number_format($amount, 0, ',', '.');
-                $body   = $result['expected_total'] !== null && ! $result['warnings']
-                    ? 'Cocok dengan GRAND TOTAL di file. Periksa lalu tekan Simpan.'
-                    : implode("\n", [...$result['warnings'], 'Periksa lalu tekan Simpan.']);
-
-                Notification::make()
-                    ->title(count($items) . ' item diimpor · ' . $rupiah($result['total']) . ($vat > 0 ? " + PPN {$vat}%" : ''))
-                    ->body($body)
-                    ->{$result['warnings'] ? 'warning' : 'success'}()
-                    ->persistent()
-                    ->send();
-            });
     }
 
     protected static function recalculateTotals(callable $get, callable $set)
