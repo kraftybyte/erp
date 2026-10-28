@@ -23,12 +23,12 @@ class EmployeeProductivity extends BaseWidget
         $currentMonth = Carbon::now()->startOfMonth();
 
         // Tasks completed this month
-        $completedTasks = Task::where('status', 'Done')
+        $completedTasks = Task::where('status', 'done')
             ->whereBetween('selesai_task', [$currentMonth, now()])
             ->count();
 
         // On-time completion rate
-        $completedOnTime = Task::where('status', 'Done')
+        $completedOnTime = Task::where('status', 'done')
             ->whereBetween('selesai_task', [$currentMonth, now()])
             ->where('selesai_task', '>=', 'updated_at')
             ->count();
@@ -47,10 +47,10 @@ class EmployeeProductivity extends BaseWidget
         $avgTasksPerEmployee = $totalEmployees > 0 ? round($completedTasks / $totalEmployees, 1) : 0;
 
         // In-progress tasks
-        $inProgressTasks = Task::whereIn('status', ['Log', 'Process', 'Review'])->count();
+        $inProgressTasks = Task::whereIn('status', ['log', 'process', 'review'])->count();
 
         // Overdue tasks
-        $overdueTasks = Task::whereIn('status', ['Log', 'Process', 'Review'])
+        $overdueTasks = Task::whereIn('status', ['log', 'process', 'review'])
             ->where('selesai_task', '<', now())
             ->count();
 

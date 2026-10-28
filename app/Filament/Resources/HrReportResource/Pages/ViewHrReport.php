@@ -65,15 +65,15 @@ class ViewHrReport extends Page
             ->get();
 
         $total   = $tasks->count();
-        $done    = $tasks->where('status', 'Done')->count();
-        $process = $tasks->where('status', 'Process')->count();
-        $review  = $tasks->where('status', 'Review')->count();
-        $hold    = $tasks->where('status', 'Hold')->count();
+        $done    = $tasks->where('status', 'done')->count();
+        $process = $tasks->where('status', 'process')->count();
+        $review  = $tasks->where('status', 'review')->count();
+        $hold    = $tasks->where('status', 'hold')->count();
         $late    = $tasks->filter(fn($t) =>
-            $t->status !== 'Done' && $t->selesai_task && Carbon::parse($t->selesai_task)->isPast()
+            $t->status !== 'done' && $t->selesai_task && Carbon::parse($t->selesai_task)->isPast()
         )->count();
 
-        $doneTasks = $tasks->where('status', 'Done')->filter(fn($t) => $t->mulai_task && $t->updated_at);
+        $doneTasks = $tasks->where('status', 'done')->filter(fn($t) => $t->mulai_task && $t->updated_at);
         $avgDays   = $doneTasks->count() > 0
             ? round($doneTasks->avg(fn($t) => DateHelper::businessDaysBetween($t->mulai_task, $t->updated_at)))
             : null;
@@ -94,7 +94,7 @@ class ViewHrReport extends Page
         $this->taskDetail = $tasks->map(function($t) {
             $dur = null;
             $durLabel = '-';
-            if ($t->mulai_task && $t->updated_at && $t->status === 'Done') {
+            if ($t->mulai_task && $t->updated_at && $t->status === 'done') {
                 $dur = DateHelper::businessDaysBetween($t->mulai_task, $t->updated_at);
                 $durLabel = $dur . ' hari';
             } elseif ($t->mulai_task) {
@@ -102,7 +102,7 @@ class ViewHrReport extends Page
                 $durLabel = $dur . ' hari (jalan)';
             }
 
-            $isLate = $t->status !== 'Done' && $t->selesai_task && Carbon::parse($t->selesai_task)->isPast();
+            $isLate = $t->status !== 'done' && $t->selesai_task && Carbon::parse($t->selesai_task)->isPast();
 
             return [
                 'nama_task'  => $t->nama_task,
@@ -118,7 +118,7 @@ class ViewHrReport extends Page
         })->sortByDesc('dur_num')->values()->toArray();
 
         $this->doneNotes = $tasks
-            ->where('status', 'Done')->whereNotNull('done_note')
+            ->where('status', 'done')->whereNotNull('done_note')
             ->filter(fn($t) => trim($t->done_note ?? '') !== '')
             ->map(fn($t) => [
                 'nama_task' => $t->nama_task,
@@ -166,7 +166,7 @@ class ViewHrReport extends Page
                 ->select('tasks.status')->get();
 
             $taskTotal[] = $monthTasks->count();
-            $taskDone[]  = $monthTasks->where('status', 'Done')->count();
+            $taskDone[]  = $monthTasks->where('status', 'done')->count();
 
             $absent = DB::table('absences')
                 ->where('user_id', $userId)

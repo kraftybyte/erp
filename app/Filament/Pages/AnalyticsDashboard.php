@@ -174,9 +174,9 @@ class AnalyticsDashboard extends Page
 
             // Tasks
             'tasks' => [
-                'completed' => Task::where('status', 'Done')->whereBetween('selesai_task', [$startOfMonth, now()])->count(),
-                'in_progress' => Task::whereIn('status', ['Log', 'Process', 'Review'])->count(),
-                'overdue' => Task::whereIn('status', ['Log', 'Process', 'Review'])->where('selesai_task', '<', now())->count(),
+                'completed' => Task::where('status', 'done')->whereBetween('selesai_task', [$startOfMonth, now()])->count(),
+                'in_progress' => Task::whereIn('status', ['log', 'process', 'review'])->count(),
+                'overdue' => Task::whereIn('status', ['log', 'process', 'review'])->where('selesai_task', '<', now())->count(),
             ],
 
             // Payment Accounts

@@ -6,28 +6,13 @@ use App\Filament\Resources\AbsenceResource;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use App\Models\User;
 use App\Models\Absence;
 
 class CreateAbsence extends CreateRecord
 {
     protected static string $resource = AbsenceResource::class;
 
-    protected function afterCreate(): void
-    {
-
-        // Kirim notifikasi ke Director dan super_admin
-        $recipients = User::role(['Head', 'Director', 'super_admin'])->get();
-        $user = auth()->user();
-        $senderName = "{$user->firstname} {$user->lastname}";
-
-
-        Notification::make()
-            ->title('Pengajuan Absensi Baru')
-            ->body("{$senderName} baru saja mengajukan absensi.")
-            ->success()
-            ->sendToDatabase($recipients);
-    }
+    // Head, Director, dan super_admin diberi tahu oleh AbsenceObserver::created.
 
     protected function getCreatedNotification(): ?Notification
     {

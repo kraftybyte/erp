@@ -8,7 +8,6 @@ use App\Helpers\NotifHelper;
 use App\Services\WablasService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
 class TaskObserver
 {
@@ -30,10 +29,9 @@ class TaskObserver
     {
         Log::info('Observer UPDATED jalan', ['task_id' => $task->id]);
 
-        // 🔥 Anti spam
-        $cacheKey = "task_notif_{$task->id}";
-        if (Cache::has($cacheKey)) return;
-        Cache::put($cacheKey, true, now()->addSeconds(3));
+        // Dulu ada kunci cache 3 detik untuk menahan notifikasi dobel: observer ini
+        // terdaftar tiga kali. Kini terdaftar sekali (di model Task), jadi kunci itu
+        // dihapus — ia juga melewatkan update sah yang datang dalam 3 detik.
 
         // Sync to Event if dates or title changed
         if ($task->wasChanged(['mulai_task', 'selesai_task', 'nama_task', 'status'])) {
@@ -42,7 +40,10 @@ class TaskObserver
 
         if (!$task->wasChanged(['status', 'proritas', 'selesai_task'])) return;
 
-        $task = $task->fresh(['users', 'project']);
+        // load(), bukan fresh(): fresh() membuat objek baru tanpa catatan perubahan,
+        // sehingga semua wasChanged() di bawah bernilai false dan notifikasi status
+        // maupun deadline tidak pernah terkirim.
+        $task->load(['users', 'project']);
 
         $users       = $task->users;
         $project     = $task->project;
@@ -50,7 +51,8 @@ class TaskObserver
         $selesaiTask = Carbon::parse($task->selesai_task);
         $mulaiTask   = Carbon::parse($task->mulai_task);
         $durasiHari  = max(1, $mulaiTask->diffInDays($selesaiTask));
-        $isDone      = $task->status === 'Done';
+        $isDone      = $task->status === 'done';
+        $statusLabel = ucfirst((string) $task->status);
         $url         = '/admin/task-kanban-board';
 
         if ($users->isEmpty()) {
@@ -67,7 +69,7 @@ class TaskObserver
                 NotifHelper::send(
                     $user,
                     $isDone ? 'Task Selesai! 🎉' : 'Status Task Diperbarui',
-                    "\"{$task->nama_task}\" — status: {$task->status}",
+                    "\"{$task->nama_task}\" — status: {$statusLabel}",
                     $isDone ? 'heroicon-o-check-circle' : 'heroicon-o-arrow-path',
                     $isDone ? 'success' : 'info',
                     $url
@@ -98,7 +100,7 @@ class TaskObserver
                         "Hai {$user->firstname}, ada update tugas buat kamu! 🚀\n"
                         . "Tugas: *{$task->nama_task}*\n"
                         . "Klien: *{$klien}*\n"
-                        . "Status: *{$task->status}*\n"
+                        . "Status: *{$statusLabel}*\n"
                         . "Prioritas: *{$task->proritas}*\n"
                         . "Deadline: *{$selesaiTask->format('d M Y')}* ({$durasiHari} hari)\n\n"
                         . "Semangat 💪"
@@ -125,7 +127,7 @@ class TaskObserver
                 NotifHelper::send(
                     $creator,
                     $isDone ? 'Task Selesai! ✅' : 'Status Task Diperbarui',
-                    "\"{$task->nama_task}\" diubah ke {$task->status} oleh {$byName}.",
+                    "\"{$task->nama_task}\" diubah ke {$statusLabel} oleh {$byName}.",
                     $isDone ? 'heroicon-o-check-badge' : 'heroicon-o-arrow-path',
                     $isDone ? 'success' : 'info',
                     $url

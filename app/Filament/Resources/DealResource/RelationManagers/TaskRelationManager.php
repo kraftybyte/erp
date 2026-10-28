@@ -110,11 +110,11 @@ class TaskRelationManager extends RelationManager
                                 Forms\Components\Select::make('status')
                                 ->label('Status')
                                 ->options([
-                                    'Log' => 'Log',
-                                    'Process' => 'Process',
-                                    'Review' => 'Review',
-                                    'Done' => 'Done',
-                                    'Hold' => 'Hold',
+                                    'log' => 'Log',
+                                    'process' => 'Process',
+                                    'review' => 'Review',
+                                    'done' => 'Done',
+                                    'hold' => 'Hold',
                                 ])
                                 ->required()
                                 ->disabled(fn ($record) => $record && !Gate::allows('edit-task', $record)), // Non-editable jika tidak memiliki akses edit
@@ -209,7 +209,7 @@ class TaskRelationManager extends RelationManager
                         $now = Carbon::now();
                         $deadline = Carbon::parse($state);
 
-                        if ($record->status === 'Done') {
+                        if ($record->status === 'done') {
                             return 'Selesai';
                         }
 

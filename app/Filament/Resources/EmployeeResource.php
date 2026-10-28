@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\EmployeeResource\Pages;
 use App\Models\User;
+use App\Filament\Concerns\GuardsUserDeletion;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -52,6 +53,8 @@ class EmployeeResource extends Resource
                 ->required(),
             Forms\Components\TextInput::make('email')
                 ->email()
+                // Email unik di tabel users: tanpa ini simpan gagal dengan error database.
+                ->unique(ignoreRecord: true)
                 ->required(),
             Forms\Components\TextInput::make('phone')
                 ->label('Nomor HP')
@@ -144,12 +147,12 @@ class EmployeeResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
-                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete')->before(fn ($action, $record) => GuardsUserDeletion::single($action, $record)),
 
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->before(fn ($action, $records) => GuardsUserDeletion::bulk($action, $records)),
                 ]),
             ]);
     }

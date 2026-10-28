@@ -37,8 +37,8 @@ class TaskTodayWidget extends Widget
         $task = Task::find($taskId);
         if (!$task) return;
 
-        if ($task->status === 'Done') {
-            $task->status = 'Process';
+        if ($task->status === 'done') {
+            $task->status = 'process';
             $task->save();
             return;
         }
@@ -63,7 +63,7 @@ class TaskTodayWidget extends Widget
         $task = Task::find($this->modalTaskId);
         if (!$task) return;
 
-        $task->status = 'Done';
+        $task->status = 'done';
 
         if ($this->doneNote && \Illuminate\Support\Facades\Schema::hasColumn('tasks', 'done_note')) {
             $task->done_note = $this->doneNote;
@@ -112,21 +112,21 @@ class TaskTodayWidget extends Widget
 
         return match ($this->filter) {
             'done' => $query
-                ->where('status', 'Done')
+                ->where('status', 'done')
                 ->limit(10)
                 ->get(),
 
             'pending' => $query
-                ->where('status', '!=', 'Done')
+                ->where('status', '!=', 'done')
                 ->limit(10)
                 ->get(),
 
             // 'all' — tampilkan semua, tapi done yang lebih dari 3 hari disembunyikan
             default => $query
                 ->where(function ($q) use ($threeDaysAgo) {
-                    $q->where('status', '!=', 'Done')
+                    $q->where('status', '!=', 'done')
                       ->orWhere(function ($q2) use ($threeDaysAgo) {
-                          $q2->where('status', 'Done')
+                          $q2->where('status', 'done')
                              ->where('updated_at', '>=', $threeDaysAgo);
                       });
                 })
@@ -148,8 +148,8 @@ class TaskTodayWidget extends Widget
 
         $this->counts = [
             'all' => $baseQuery->count(),
-            'pending' => (clone $baseQuery)->where('status', '!=', 'Done')->count(),
-            'done' => (clone $baseQuery)->where('status', 'Done')->count(),
+            'pending' => (clone $baseQuery)->where('status', '!=', 'done')->count(),
+            'done' => (clone $baseQuery)->where('status', 'done')->count(),
         ];
     }
 

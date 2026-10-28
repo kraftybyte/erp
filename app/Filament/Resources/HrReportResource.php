@@ -46,12 +46,12 @@ class HrReportResource extends Resource
                     ->with(['roles'])
                     ->withCount([
                         'tasks as total_tasks',
-                        'tasks as done_tasks' => fn ($q) => $q->where('tasks.status', 'Done'),
-                        'tasks as late_tasks' => fn ($q) => $q->where('tasks.status', '!=', 'Done')
+                        'tasks as done_tasks' => fn ($q) => $q->where('tasks.status', 'done'),
+                        'tasks as late_tasks' => fn ($q) => $q->where('tasks.status', '!=', 'done')
                                                                ->whereDate('tasks.selesai_task', '<', now()),
                     ])
                     ->withAvg(
-                        ['tasks as avg_days' => fn ($q) => $q->where('tasks.status', 'Done')
+                        ['tasks as avg_days' => fn ($q) => $q->where('tasks.status', 'done')
                                                               ->whereNotNull('tasks.mulai_task')
                                                               ->whereNotNull('tasks.updated_at')],
                         DB::raw(DateHelper::businessDaysSql('tasks.mulai_task', 'tasks.updated_at'))

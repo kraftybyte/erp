@@ -40,13 +40,11 @@ use App\Policies\TaskPolicy;
 use App\Policies\TaskStagePolicy;
 use App\Policies\ProjectTimelineBoardPolicy;
 use App\Filament\Pages\ProjectTimelineBoard;
-use App\Observers\AnnouncementObserver;
 use App\Observers\ContractObserver;
 use App\Observers\DealObserver;
 use App\Observers\InvoiceObserver;
 use App\Observers\PaymentAccountObserver;
 use App\Observers\SocialAccountObserver;
-use App\Observers\TaskObserver;
 use Filament\Tables\Table;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
@@ -99,8 +97,8 @@ class AppServiceProvider extends ServiceProvider
         Contract::observe(ContractObserver::class);
         Deal::observe(DealObserver::class);
         SocialAccount::observe(SocialAccountObserver::class);
-        Task::observe(TaskObserver::class);
-        Announcement::observe(AnnouncementObserver::class);
+        // Task, Announcement, Advance, Expense, dan Absence mendaftarkan observer-nya
+        // sendiri di model; mendaftarkannya lagi di sini membuat notifikasi terkirim dobel.
         Invoice::observe(InvoiceObserver::class);
 
         // Dark Mode Configuration

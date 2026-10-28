@@ -4,6 +4,7 @@ namespace App\Filament\Resources\EmployeeResource\Pages;
 
 use App\Filament\Resources\EmployeeResource;
 use Filament\Actions;
+use App\Filament\Concerns\GuardsUserDeletion;
 use Filament\Resources\Pages\EditRecord;
 
 class EditEmployee extends EditRecord
@@ -17,7 +18,7 @@ class EditEmployee extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()->before(fn ($action, $record) => GuardsUserDeletion::single($action, $record)),
         ];
     }
 }

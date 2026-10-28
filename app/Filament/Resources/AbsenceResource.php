@@ -286,26 +286,15 @@ class AbsenceResource extends Resource
                             ? 'Pengajuan sakit dengan surat dokter. Pastikan surat sudah diverifikasi.'
                             : 'Approve pengajuan ini?'
                     )
+                    // Karyawan diberi tahu oleh AbsenceObserver::updated (satu pengirim,
+                    // supaya tidak dobel). Dulu di sini juga ada panggilan
+                    // AbsenceApprovalNotification::make() yang tidak ada, sehingga
+                    // Approve selalu berakhir error.
                     ->action(function ($record) {
                         $record->update([
                             'approval_status' => 'approved',
                             'approved_by' => auth()->id(),
                         ]);
-
-                        Notification::make()
-                            ->title('Berhasil Disetujui')
-                            ->body('Pengajuan ' . ucfirst($record->category) . ' telah disetujui.')
-                            ->success()
-                            ->sendToDatabase($record->user);
-
-                        // Broadcast
-                        \Illuminate\Support\Facades\Notification::send(
-                            $record->user,
-                            \App\Notifications\AbsenceApprovalNotification::make(
-                                $record,
-                                'approved'
-                            )
-                        );
                     })
                     ->visible(fn ($record) =>
                         $record->approval_status === 'pending' &&
@@ -325,26 +314,13 @@ class AbsenceResource extends Resource
                             ->required()
                             ->rows(3),
                     ])
+                    // Karyawan diberi tahu oleh AbsenceObserver::updated, termasuk alasannya.
                     ->action(function ($record, array $data) {
                         $record->update([
                             'approval_status' => 'rejected',
                             'approved_by' => auth()->id(),
                             'rejection_reason' => $data['rejection_reason'],
                         ]);
-
-                        Notification::make()
-                            ->title('Pengajuan Ditolak')
-                            ->body('Pengajuan ' . ucfirst($record->category) . ' ditolak. Alasan: ' . $data['rejection_reason'])
-                            ->warning()
-                            ->sendToDatabase($record->user);
-
-                        \Illuminate\Support\Facades\Notification::send(
-                            $record->user,
-                            \App\Notifications\AbsenceApprovalNotification::make(
-                                $record,
-                                'rejected'
-                            )
-                        );
                     })
                     ->visible(fn ($record) =>
                         $record->approval_status === 'pending' &&

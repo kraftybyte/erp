@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
+use App\Filament\Concerns\GuardsUserDeletion;
 use Closure;
 use App\Settings\MailSettings;
 use Exception;
@@ -208,11 +209,11 @@ class UserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
-                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete')->before(fn ($action, $record) => GuardsUserDeletion::single($action, $record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->before(fn ($action, $records) => GuardsUserDeletion::bulk($action, $records)),
                 ]),
             ]);
     }

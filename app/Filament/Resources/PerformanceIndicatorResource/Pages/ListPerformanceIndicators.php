@@ -21,6 +21,6 @@ class ListPerformanceIndicators extends ListRecords
 
     protected function getTableQuery(): Builder
     {
-        return parent::getTableQuery()->where('status', 'Done');
+        return parent::getTableQuery()->where('status', 'done');
     }
 }
