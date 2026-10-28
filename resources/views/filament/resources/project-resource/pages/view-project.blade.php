@@ -232,12 +232,12 @@
 
                             <span class="
                                 px-3 py-1 text-xs rounded-full
-                                @if($task->status === 'Done') bg-green-100 text-green-700
-                                @elseif($task->status === 'In Progress') bg-blue-100 text-blue-700
+                                @if($task->status === 'done') bg-green-100 text-green-700
+                                @elseif($task->status === 'process') bg-blue-100 text-blue-700
                                 @else bg-gray-100 text-gray-600
                                 @endif
                             ">
-                                {{ $task->status }}
+                                {{ ucfirst((string) $task->status) }}
                             </span>
 
                             <div class="flex -space-x-2 justify-end">

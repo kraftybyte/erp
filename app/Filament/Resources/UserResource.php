@@ -136,6 +136,14 @@ class UserResource extends Resource
                                 Forms\Components\TextInput::make('lastname')
                                     ->required()
                                     ->maxLength(255),
+
+                                Forms\Components\Toggle::make('is_active')
+                                    ->label('Akun aktif')
+                                    ->helperText('Matikan untuk karyawan yang sudah keluar: tidak bisa login ERP maupun memakai bot Telegram. Datanya tetap tersimpan.')
+                                    ->default(true)
+                                    // Akun sendiri tidak bisa dinonaktifkan, supaya tidak terkunci di luar.
+                                    ->disabled(fn ($record) => $record?->is(auth()->user()))
+                                    ->columnSpanFull(),
                             ])
                             ->columns(2),
 
@@ -188,6 +196,8 @@ class UserResource extends Resource
                     ->badge(),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable(),
+                Tables\Columns\IconColumn::make('is_active')->label('Aktif')
+                    ->boolean(),
                 Tables\Columns\TextColumn::make('email_verified_at')->label('Verified at')
                     ->dateTime()
                     ->sortable(),
@@ -206,6 +216,8 @@ class UserResource extends Resource
                 Tables\Filters\SelectFilter::make('roles')
                     ->label('Role')
                     ->relationship('roles', 'name'),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Akun aktif'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),

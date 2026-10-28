@@ -42,6 +42,26 @@ class Task extends Model
         return Attribute::make(set: fn (?string $value) => $value === null ? null : strtolower(trim($value)));
     }
 
+    /**
+     * Tanggal disimpan dalam format kolom DATETIME. DatePicker mengirim "2026-11-01"
+     * sedangkan nilai lama "2026-11-01 00:00:00"; tanpa ini setiap simpan dianggap
+     * mengubah deadline dan semua assignee dikirimi "Deadline Task Berubah" + WA.
+     */
+    protected function mulaiTask(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => self::dateTimeValue($value));
+    }
+
+    protected function selesaiTask(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => self::dateTimeValue($value));
+    }
+
+    private static function dateTimeValue(mixed $value): ?string
+    {
+        return blank($value) ? null : Carbon::parse($value)->format('Y-m-d H:i:s');
+    }
+
     public function users()
     {
         return $this->belongsToMany(User::class, 'task_user', 'task_id', 'user_id');

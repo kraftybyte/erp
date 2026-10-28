@@ -602,8 +602,8 @@
     $initials  = strtoupper(substr($employee->firstname ?? 'U',0,1).substr($employee->lastname ?? 'U',0,1));
     $avgLabel  = ($stats['avgDays'] !== null) ? $stats['avgDays'].' hari' : '-';
     $rateLabel = $stats['doneRate'].'%';
-    $statusColors  = ['Done'=>'#07a0cf','Process'=>'#ff5915','Review'=>'#f59e0b','Hold'=>'#94a3b8'];
-    $statusBgAlpha = ['Done'=>'rgba(7,160,207,.12)','Process'=>'rgba(255,89,21,.12)','Review'=>'rgba(245,158,11,.12)','Hold'=>'rgba(148,163,184,.12)'];
+    $statusColors  = ['done'=>'#07a0cf','process'=>'#ff5915','review'=>'#f59e0b','hold'=>'#94a3b8'];
+    $statusBgAlpha = ['done'=>'rgba(7,160,207,.12)','process'=>'rgba(255,89,21,.12)','review'=>'rgba(245,158,11,.12)','hold'=>'rgba(148,163,184,.12)'];
     $chartJson = json_encode($chartData ?? ['labels'=>[],'taskDone'=>[],'taskTotal'=>[],'attendance'=>[]]);
 
     $periodLabels = ['all_time'=>'Semua','this_year'=>'Tahun Ini','last_year'=>'Tahun Lalu','this_quarter'=>'Kuartal Ini','this_month'=>'Bulan Ini'];
@@ -917,12 +917,12 @@
                         <div class="task-client">{{ $t['client'] }}</div>
                     </div>
                     <div>
-                        <span class="status-chip" style="background:{{ $sbg }};color:{{ $sc }};">{{ $t['status'] }}</span>
+                        <span class="status-chip" style="background:{{ $sbg }};color:{{ $sc }};">{{ ucfirst((string) $t['status']) }}</span>
                         @if($t['is_late'])<div class="late-flag">⚠ Terlambat</div>@endif
                     </div>
                     <div class="task-date">{{ $t['mulai'] }}</div>
                     <div class="task-date" style="color:{{ $t['is_late'] ? '#ef4444' : '#64748b' }};">{{ $t['deadline'] }}</div>
-                    <div class="task-dur" style="color:{{ $t['status']==='Done' ? '#07a0cf' : '#f59e0b' }};">{{ $t['durasi'] }}</div>
+                    <div class="task-dur" style="color:{{ $t['status']==='done' ? '#07a0cf' : '#f59e0b' }};">{{ $t['durasi'] }}</div>
                     <div style="font-size:11px;color:#64748b;line-height:1.5;">
                         @if($t['done_note'])
                             <span style="font-style:italic;">{{ Str::limit($t['done_note'], 80) }}</span>

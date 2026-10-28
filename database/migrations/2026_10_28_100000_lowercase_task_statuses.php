@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\TaskStage;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +19,9 @@ return new class extends Migration
 
         if (Schema::hasTable('task_stages')) {
             DB::table('task_stages')->update(['key' => DB::raw('LOWER(TRIM(`key`))')]);
+
+            // Daftar tahap Kanban di-cache selamanya; tanpa ini board tetap memakai key lama.
+            TaskStage::clearCache();
         }
     }
 

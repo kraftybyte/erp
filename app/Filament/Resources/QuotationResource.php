@@ -261,11 +261,15 @@ class QuotationResource extends Resource
                                 ->preload()
                                 ->hidden(fn ($get) => $get('is_manual'))
                                 ->reactive()
-                                ->afterStateUpdated(function ($state, callable $set) {
+                                ->afterStateUpdated(function ($state, callable $get, callable $set) use ($updateItemTotals) {
                                     if ($product = Product::find($state)) {
                                         $set('item', $product->nama_layanan);
                                         $set('description', $product->detail_layanan);
                                         $set('price', $product->harga_layanan);
+
+                                        // VAT & total item ikut dihitung ulang; dulu tersimpan nilai lama
+                                        // dan ikut tersalin ke proforma saat quotation dikonversi.
+                                        $updateItemTotals($get, $set);
                                     }
                                 })
                                 ->columnSpanFull(),

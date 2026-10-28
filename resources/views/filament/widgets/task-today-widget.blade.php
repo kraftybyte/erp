@@ -46,7 +46,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
     </style>
     <div class="task-scroll-v" style="max-height:168px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#e2e8f0 transparent;">
         @forelse($this->getFilteredTasks() as $task)
-            @php $isDone = $task->status === 'Done'; @endphp
+            @php $isDone = $task->status === 'done'; @endphp
 
             <div wire:key="task-{{ $task->id }}"
                 style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f3f4f6;{{ $isDone ? 'opacity:0.5;' : '' }}">
@@ -99,15 +99,15 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                     {{-- Status badge --}}
                     @php
                         $badgeStyle = match($task->status) {
-                            'Done'    => 'background:'.$primary.'20;color:'.$primary.';',
-                            'Process' => 'background:#fff4ed;color:#ff5915;',
-                            'Review'  => 'background:#fff8e6;color:#f59e0b;',
-                            'Hold'    => 'background:#fff0eb;color:#ff5915;',
+                            'done'    => 'background:'.$primary.'20;color:'.$primary.';',
+                            'process' => 'background:#fff4ed;color:#ff5915;',
+                            'review'  => 'background:#fff8e6;color:#f59e0b;',
+                            'hold'    => 'background:#fff0eb;color:#ff5915;',
                             default   => 'background:#f3f4f6;color:#6b7280;',
                         };
                     @endphp
                     <span style="font-size:10px;font-weight:600;padding:5px 8px;border-radius:20px;white-space:nowrap;{{ $badgeStyle }}">
-                        {{ $task->status }}
+                        {{ ucfirst((string) $task->status) }}
                     </span>
             </div>
             </div>
