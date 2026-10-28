@@ -2,6 +2,7 @@
 
 namespace App\Services\Telegram;
 
+use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Invoice;
@@ -404,7 +405,7 @@ class FinanceBot
             foreach ($invoices->take(self::LIST_LIMIT) as $invoice) {
                 $date = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
 
-                $lines[] = "• {$date} · <b>" . e((string) $invoice->nama_perusahaan) . '</b> — '
+                $lines[] = "• {$date} · <b>" . e(ClientLabel::invoice($invoice)) . '</b> — '
                     . $this->kindLabel($invoice) . ' ' . $this->rupiah($invoice->grand_total);
             }
 
@@ -488,7 +489,7 @@ class FinanceBot
             $due     = $invoice->due_date ? Carbon::parse($invoice->due_date) : null;
             $overdue = $due && $due->lt($today) ? (int) $due->diffInDays($today) : 0;
 
-            $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e((string) $invoice->nama_perusahaan) . '</b> — sisa ' . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice))
+            $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e(ClientLabel::invoice($invoice)) . '</b> — sisa ' . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice))
                 . "\n   " . $this->kindLabel($invoice) . ' · total ' . $this->rupiah($invoice->grand_total) . ' · dibayar ' . $this->rupiah($invoice->paid)
                 . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . ($due ? $due->locale('id')->translatedFormat('j M Y') : '-')
                 . ($overdue > 0 ? " (lewat {$overdue} hari)" : '');

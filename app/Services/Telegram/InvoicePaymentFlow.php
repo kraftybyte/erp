@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Exceptions\InvoicePaymentException;
 use App\Helpers\AmountSearch;
+use App\Helpers\ClientLabel;
 use App\Models\Invoice;
 use App\Models\PaymentAccount;
 use App\Models\User;
@@ -112,7 +113,7 @@ class InvoicePaymentFlow
 
         $buttons = $invoices->take(self::LIST_LIMIT)
             ->map(fn (Invoice $invoice) => [[
-                'text'          => ($this->isOverdue($invoice) ? '🔴 ' : '🟡 ') . Str::limit((string) $invoice->nama_perusahaan, 26)
+                'text'          => ($this->isOverdue($invoice) ? '🔴 ' : '🟡 ') . Str::limit(ClientLabel::invoice($invoice), 40)
                     . ' · ' . $this->rupiah(InvoicePayment::remaining($invoice)),
                 'callback_data' => "pay:inv:{$invoice->id}",
             ]])
@@ -264,7 +265,7 @@ class InvoicePaymentFlow
             $this->reply($chatId, $messageId, implode("\n", [
                 '✅ <b>Pembayaran tercatat</b>',
                 '',
-                e((string) $invoice->uuid) . ' · ' . e((string) $invoice->nama_perusahaan),
+                e((string) $invoice->uuid) . ' · ' . e(ClientLabel::invoice($invoice)),
                 $this->rupiah($state['amount']) . ' diterima di ' . e($account->name),
                 'Status invoice: ' . ($invoice->status === 'paid' ? '<b>Lunas</b>' : 'dibayar sebagian, sisa ' . $this->rupiah(InvoicePayment::remaining($invoice))),
                 'Saldo ' . e($account->name) . ': ' . $this->rupiah($account->fresh()->current_balance),
@@ -323,12 +324,11 @@ class InvoicePaymentFlow
             default                                    => 'Bayar penuh',
         };
 
-        $pic = filled($invoice->nama_pic) && $invoice->nama_pic !== '-' ? ' — ' . e($invoice->nama_pic) : '';
         $due = $invoice->due_date ? ' · jatuh tempo ' . Carbon::parse($invoice->due_date)->locale('id')->translatedFormat('j M Y') : '';
 
         return implode("\n", [
             '📄 <b>' . e((string) $invoice->uuid) . '</b>',
-            e((string) $invoice->nama_perusahaan) . $pic,
+            e(ClientLabel::invoice($invoice)),
             "{$kind} · ditagih " . $this->rupiah($invoice->amountDue()) . ' · dibayar ' . $this->rupiah($invoice->paid),
             'Sisa: <b>' . $this->rupiah(InvoicePayment::remaining($invoice)) . '</b>' . $due . ($this->isOverdue($invoice) ? ' 🔴' : ''),
         ]);

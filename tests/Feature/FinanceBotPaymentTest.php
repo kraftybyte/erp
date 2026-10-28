@@ -98,6 +98,19 @@ class FinanceBotPaymentTest extends TestCase
         $this->assertTrue($invoice->invoiceLogs()->where('type', 'payment')->exists());
     }
 
+    public function test_invoice_ditampilkan_dengan_pic_dan_perusahaan(): void
+    {
+        $this->user('Finance');
+        $invoice = $this->invoice(['nama_pic' => 'Budi Santoso', 'grand_total' => 4_000_000]);
+        $label   = "Budi Santoso - {$this->client}";
+
+        $this->send($this->text('/bayar ' . $this->client));
+        $this->assertStringContainsString($label, json_encode($this->lastRequest()?->data()['reply_markup'] ?? [], JSON_UNESCAPED_UNICODE));
+
+        $this->send($this->tap("pay:inv:{$invoice->id}"));
+        $this->assertStringContainsString($label, $this->lastText());
+    }
+
     public function test_bayar_sebagian_dengan_mengetik_nominal(): void
     {
         $this->user('Director');
