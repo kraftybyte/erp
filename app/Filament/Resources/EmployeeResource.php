@@ -104,6 +104,12 @@ class EmployeeResource extends Resource
                 ])
                 ->searchable()
                 ->required(),
+            Forms\Components\Toggle::make('is_active')
+                ->label('Akun aktif')
+                ->helperText('Matikan untuk karyawan yang sudah keluar: tidak bisa login ERP maupun memakai bot Telegram. Datanya tetap tersimpan.')
+                ->default(true)
+                // Akun sendiri tidak bisa dinonaktifkan, supaya tidak terkunci di luar.
+                ->disabled(fn ($record) => $record?->is(auth()->user())),
             ]);
     }
 
@@ -128,6 +134,9 @@ class EmployeeResource extends Resource
             Tables\Columns\TextColumn::make('division')
                 ->label('Divisi')
                 ->sortable(),
+            Tables\Columns\IconColumn::make('is_active')
+                ->label('Aktif')
+                ->boolean(),
             Tables\Columns\TextColumn::make('created_at')
                 ->label('Tanggal Bergabung')
                 ->date()
@@ -144,6 +153,8 @@ class EmployeeResource extends Resource
                         'Graphic Design' => 'Graphic Design',
                         'Video Editor' => 'Video Editor',
                     ]),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Akun aktif'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),

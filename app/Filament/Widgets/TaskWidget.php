@@ -25,7 +25,7 @@ class TaskWidget extends Widget
             ->join('task_user', 'tasks.id', '=', 'task_user.task_id')
             ->where('task_user.user_id', $userId) // Menyaring berdasarkan user yang diassign
             ->where('tasks.creator_id', '!=', $userId) // Pastikan user bukan pembuat task
-            ->where('tasks.status', 'Done') // Hanya task yang sudah selesai
+            ->where('tasks.status', 'done') // Hanya task yang sudah selesai
             ->whereNotNull('tasks.selesai_task') // Pastikan selesai_task ada
             ->whereNotNull('tasks.mulai_task') // Pastikan mulai_task ada
             ->select(DB::raw('AVG(DATEDIFF(tasks.selesai_task, tasks.mulai_task)) as avg_days'))

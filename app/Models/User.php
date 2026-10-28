@@ -32,13 +32,15 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
 
     /*
     | Tabel-tabel ini memakai ON DELETE CASCADE ke users: menghapus user ikut
-    | menghapus expense, advance, invoice, cuti, aset, dst. miliknya. User yang
-    | punya data seperti itu tidak bisa dihapus — nonaktifkan saja (is_active).
+    | menghapus expense, advance, invoice, realisasi, cuti, aset, riwayat task,
+    | dst. miliknya. User yang punya data seperti itu tidak bisa dihapus —
+    | nonaktifkan saja (is_active).
     */
     private const OWNED_RECORDS = [
         'expenses'               => 'user_id',
         'advances'               => 'user_id',
         'invoices'               => 'user_id',
+        'realizasis'             => 'uploaded_by',
         'realisasi_batches'      => 'uploaded_by',
         'purchase_requests'      => 'requested_by',
         'absences'               => 'user_id',
@@ -46,12 +48,23 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'performance_indicators' => 'user_id',
         'announcements'          => 'user_id',
         'budget_logs'            => 'user_id',
+        'task_user'              => 'user_id',
+        'telegram_receipts'      => 'user_id',
+        'connected_accounts'     => 'user_id',
     ];
 
-    protected static function booted(): void
+    /**
+     * Berlaku untuk semua jalur (tombol hapus, hapus massal, kode): batal bila ada
+     * data. Dicek sebelum event "deleting", karena listener HasRoles dan media
+     * sudah melepas role dan menghapus avatar di event itu.
+     */
+    public function delete()
     {
-        // Berlaku untuk semua jalur (tombol hapus, hapus massal, kode): batal bila ada data.
-        static::deleting(fn (User $user) => $user->hasBusinessRecords() ? false : null);
+        if ($this->exists && $this->hasBusinessRecords()) {
+            return false;
+        }
+
+        return parent::delete();
     }
 
     public function hasBusinessRecords(): bool
@@ -83,7 +96,8 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'npwp',
         'division',
         'ktp',
-        'file_npwp'
+        'file_npwp',
+        'is_active',
     ];
 
     /**
@@ -107,6 +121,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'push_subscription' => 'array',
         'push_enabled' => 'boolean',
         'telegram_linked_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     /**
@@ -129,11 +144,9 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
 
     public function canAccessPanel(Panel $panel): bool
     {
-        // if ($panel->getId() === 'admin') {
-        //     return str_ends_with($this->email, '@yourdomain.com') && $this->hasVerifiedEmail();
-        // }
-
-        return true;
+        // Akun nonaktif (karyawan keluar) tidak bisa login; sesi yang masih
+        // terbuka ditolak di request berikutnya. Bot Telegram mengecek hal yang sama.
+        return $this->is_active !== false;
     }
 
     public function getFilamentAvatarUrl(): ?string

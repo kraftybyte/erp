@@ -35,7 +35,8 @@ class GuardsUserDeletion
         Notification::make()
             ->title('Tidak bisa dihapus')
             ->body($blocked->map(fn (User $user) => $user->name)->implode(', ')
-                . ' masih punya data (pengajuan, invoice, cuti, aset, dll.) yang akan ikut terhapus. Nonaktifkan akunnya saja.')
+                . ' masih punya data (pengajuan, invoice, cuti, aset, riwayat task, dll.) yang akan ikut terhapus. '
+                . 'Matikan "Akun aktif" di halaman edit-nya agar tidak bisa login lagi; datanya tetap tersimpan.')
             ->danger()
             ->persistent()
             ->send();
