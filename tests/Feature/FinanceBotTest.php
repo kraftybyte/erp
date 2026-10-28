@@ -112,6 +112,7 @@ class FinanceBotTest extends TestCase
                 'user_id'         => $user->id,
                 'type'            => 'sale',
                 'type_payment'    => 'dp_40',
+                'nama_pic'        => 'Rina Kartika',
                 'nama_perusahaan' => $client,
                 'grand_total'     => 777_000_000,
                 'paid'            => 310_800_000,
@@ -122,7 +123,7 @@ class FinanceBotTest extends TestCase
         $this->send($this->text('/piutang'));
 
         $this->assertStringNotContainsString('PT Sudah Lunas DP', $this->lastText(), 'Berstatus paid: tidak ditampilkan.');
-        $this->assertStringContainsString('PT Baru Sebagian</b> — sisa Rp 466.200.000', $this->lastText());
+        $this->assertStringContainsString('Rina Kartika - PT Baru Sebagian</b> — sisa Rp 466.200.000', $this->lastText());
     }
 
     public function test_tombol_excel_mengirim_file_berisi_seluruh_data(): void
@@ -146,6 +147,10 @@ class FinanceBotTest extends TestCase
         unlink($path);
 
         $this->assertSame(['Ringkasan', 'Invoice', 'Expense', 'Advance', 'Per Project'], $book->getSheetNames());
+        $this->assertSame(['PIC', 'Perusahaan'], [
+            $book->getSheetByName('Invoice')->getCell('D1')->getValue(),
+            $book->getSheetByName('Invoice')->getCell('E1')->getValue(),
+        ]);
     }
 
     public function test_akses_dicek_ulang_saat_tombol_ditekan(): void

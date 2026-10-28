@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Invoice;
@@ -404,13 +405,7 @@ class FinanceOverview
 
     public function projectLabel(?Project $project): string
     {
-        if (! $project) {
-            return 'Tanpa project';
-        }
-
-        $company = $project->nama_perusahaan ?: $project->deal?->nama_perusahaan;
-
-        return implode(' | ', array_filter([$company, $project->nama_project])) ?: "Project #{$project->id}";
+        return ClientLabel::project($project);
     }
 
     private function inPeriod(Builder $query, string $column = 'submission_date'): Builder

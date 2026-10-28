@@ -96,6 +96,7 @@ class FinanceExport
             $invoice->uuid,
             $this->date($invoice->date),
             $this->date($invoice->due_date),
+            $invoice->nama_pic === '-' ? null : $invoice->nama_pic,
             $invoice->nama_perusahaan,
             $kinds[FinanceOverview::invoiceKind($invoice)] . ($invoice->dpPercentage() !== null ? ' ' . $invoice->dpPercentage() . '%' : ''),
             (string) $invoice->status,
@@ -105,8 +106,8 @@ class FinanceExport
         ])->all();
 
         $this->sheet($book, 'Invoice', [
-            'No. invoice', 'Tanggal', 'Jatuh tempo', 'Klien', 'Jenis', 'Status', 'Total', 'Paid', 'Belum dibayarkan',
-        ], $rows, moneyColumns: ['G', 'H', 'I']);
+            'No. invoice', 'Tanggal', 'Jatuh tempo', 'PIC', 'Perusahaan', 'Jenis', 'Status', 'Total', 'Paid', 'Belum dibayarkan',
+        ], $rows, moneyColumns: ['H', 'I', 'J']);
     }
 
     private function expenseSheet(Spreadsheet $book): void

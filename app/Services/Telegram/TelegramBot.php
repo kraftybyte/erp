@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Enums\ExpenseStatus;
 use App\Enums\FinanceCategory;
+use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Project;
@@ -810,7 +811,7 @@ class TelegramBot
                 $draft,
                 "📝 <b>Draft Expense — {$count} struk</b>\nMenjadi {$count} pengajuan terpisah, masing-masing dengan strukny sendiri.\n\n"
                     . 'Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') . "\n"
-                    . 'Project: ' . ($project ? e($this->projectLabel($project)) . $this->picSuffix($project) : '-') . "\n"
+                    . 'Project: ' . ($project ? e($this->projectLabel($project)) : '-') . "\n"
                     . 'Kategori: ' . e($draft->category) . "\n"
                     . 'Keterangan: ' . e($draft->description) . "\n\n"
                     . $this->receiptLines($draft) . "\n"
@@ -977,7 +978,7 @@ class TelegramBot
                 $draft,
                 "🧾 <b>Draft Realisasi — {$count} struk</b>\nMenjadi 1 batch dengan {$count} item, masing-masing dengan strukny sendiri.\n\n"
                     . 'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
-                    . ($advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) . $this->picSuffix($advance->project) . "\n" : '')
+                    . ($advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) . "\n" : '')
                     . "\n" . $this->receiptLines($draft) . "\n"
                     . 'Total: <b>' . $this->rupiah($draft->total()) . "</b>\n"
                     . 'Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($after) . "\n\n"
@@ -1069,7 +1070,7 @@ class TelegramBot
         $lines = ['<b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid)];
 
         if ($advance->project) {
-            $lines[] = '   ' . e($this->projectLabel($advance->project)) . $this->picSuffix($advance->project);
+            $lines[] = '   ' . e($this->projectLabel($advance->project));
         }
 
         $lines[] = '   Sisa: ' . $this->rupiah($this->advances->remaining($advance));
@@ -1081,7 +1082,7 @@ class TelegramBot
     {
         return implode("\n", array_filter([
             'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
-            $advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) . $this->picSuffix($advance->project) : null,
+            $advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) : null,
             'Item: ' . e($draft->description),
             'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             'Lampiran: ' . $this->attachmentLabel($draft),
@@ -1274,18 +1275,15 @@ class TelegramBot
         $projects = $projects->values();
 
         $lines = $projects
-            ->map(fn (Project $project, int $index) => ($index + 1) . '. ' . e($this->projectLabel($project))
-                . (($pic = ProjectMatcher::pic($project)) ? "\n    PIC: " . e($pic) : ''))
+            ->map(fn (Project $project, int $index) => ($index + 1) . '. ' . e($this->projectLabel($project)))
             ->implode("\n");
 
+        // PIC di depan label, jadi project satu klien yang beda PIC tetap
+        // terbedakan walau teks tombolnya terpotong.
         $rows = $projects
-            ->map(function (Project $project, int $index) use ($draft) {
-                $pic   = ProjectMatcher::pic($project);
-                $label = ($index + 1) . '. ' . ($project->nama_project ?: $this->projectLabel($project))
-                    . ($pic ? ' · ' . Str::before($pic, ' ') : '');
-
-                return [$this->button(Str::limit($label, 60), $draft, 'project', $project->id)];
-            })
+            ->map(fn (Project $project, int $index) => [
+                $this->button(Str::limit(($index + 1) . '. ' . $this->projectLabel($project), 60), $draft, 'project', $project->id),
+            ])
             ->all();
 
         return [$lines, $rows];
@@ -1627,7 +1625,7 @@ class TelegramBot
 
         return implode("\n", [
             'Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y'),
-            'Project: ' . ($project ? e($this->projectLabel($project)) . $this->picSuffix($project) : '-'),
+            'Project: ' . ($project ? e($this->projectLabel($project)) : '-'),
             'Kategori: ' . e($draft->category),
             'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             'Keterangan: ' . e($draft->description),
@@ -1648,13 +1646,6 @@ class TelegramBot
         };
     }
 
-    private function picSuffix(Project $project): string
-    {
-        $pic = ProjectMatcher::pic($project);
-
-        return $pic ? ' · PIC ' . e($pic) : '';
-    }
-
     /**
      * Project yang ditawarkan ke AI dan ke daftar tombol: yang belum selesai,
      * terbaru dulu. Project lain tetap bisa dicari dengan mengetik namanya.
@@ -1670,17 +1661,16 @@ class TelegramBot
             ->get()
             // PIC ikut dikirim ke AI dan tampil di tombol: project satu klien
             // sering hanya bisa dibedakan dari PIC-nya.
-            ->mapWithKeys(fn (Project $project) => [
-                $project->id => $this->projectLabel($project) . (($pic = ProjectMatcher::pic($project)) ? " · {$pic}" : ''),
-            ])
+            ->mapWithKeys(fn (Project $project) => [$project->id => $this->projectLabel($project)])
             ->all();
     }
 
+    /**
+     * "PIC - Perusahaan | Nama project", sama di semua bot.
+     */
     private function projectLabel(Project $project): string
     {
-        $company = $project->nama_perusahaan ?: $project->deal?->nama_perusahaan;
-
-        return implode(' | ', array_filter([$company, $project->nama_project])) ?: "Project #{$project->id}";
+        return ClientLabel::project($project);
     }
 
     private function userFor(int|string $chatId): ?User

@@ -499,8 +499,8 @@ class TelegramBotTest extends TestCase
 
         $this->send($this->textUpdate('grab 50rb ke nestory'));
 
-        $this->assertStringContainsString('PIC: Budi Santoso', $this->lastText());
-        $this->assertStringContainsString('PIC: Sari Dewi', $this->lastText());
+        $this->assertStringContainsString('Budi Santoso - PT Nestory Indonesia | Video Profile', $this->lastText());
+        $this->assertStringContainsString('Sari Dewi - PT Nestory Indonesia | Konten Instagram', $this->lastText());
     }
 
     public function test_nama_pic_di_pesan_memilih_project_yang_tepat(): void
@@ -562,8 +562,8 @@ class TelegramBotTest extends TestCase
         $this->send($this->textUpdate('realisasi 100rb parkir nestory'));
 
         $this->assertStringContainsString('advance yang mana', $this->lastText());
-        $this->assertStringContainsString('PIC Budi Santoso', $this->lastText());
-        $this->assertStringContainsString('PIC Sari Dewi', $this->lastText());
+        $this->assertStringContainsString('Budi Santoso - PT Nestory Indonesia | Video Profile', $this->lastText());
+        $this->assertStringContainsString('Sari Dewi - PT Nestory Indonesia | Konten Instagram', $this->lastText());
 
         $draft = Draft::load($this->chatId);
         $this->send($this->tap("{$draft->id}:adv:{$video->id}"));
