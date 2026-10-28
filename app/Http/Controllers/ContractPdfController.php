@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ContractPdfController extends Controller
 {
@@ -37,10 +38,23 @@ class ContractPdfController extends Controller
 
         // For uploaded file type, serve the actual file [v2.2]
         if ($contract->type === 'file' && $contract->file_path) {
-            $filePath = storage_path('app/' . $contract->file_path);
-            if (file_exists($filePath)) {
-                $filename = 'kontrak-' . $contract->id . '-' . Str::slug($contract->deal?->nama_perusahaan ?? 'client') . '.pdf';
-                return response()->download($filePath, $filename);
+            $path = (string) $contract->file_path;
+
+            /*
+            | File kontrak di-upload Filament ke folder contracts/ di disk-nya
+            | (public). Hanya path di folder itu yang dilayani: file_path berasal
+            | dari form, jadi "../../.env" dan sejenisnya tidak boleh terbaca.
+            | Disk local tetap dicoba untuk upload lama.
+            */
+            if (str_starts_with($path, 'contracts/') && ! str_contains($path, '..')) {
+                foreach ([config('filament.default_filesystem_disk', 'public'), 'local'] as $disk) {
+                    if (Storage::disk($disk)->exists($path)) {
+                        $filename = 'kontrak-' . $contract->id . '-' . Str::slug($contract->deal?->nama_perusahaan ?? 'client')
+                            . '.' . (pathinfo($path, PATHINFO_EXTENSION) ?: 'pdf');
+
+                        return Storage::disk($disk)->download($path, $filename);
+                    }
+                }
             }
         }
 

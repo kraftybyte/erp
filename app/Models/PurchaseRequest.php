@@ -26,6 +26,22 @@ class PurchaseRequest extends Model
         'status' => 'string',
     ];
 
+    /*
+    | Nilai yang tersimpan mengikuti kolom enum('pending','approved','rejected').
+    | Dulu kode menulis "Disetujui"/"Ditolak", yang ditolak database sehingga
+    | Approve/Reject selalu error. Labelnya tetap berbahasa Indonesia.
+    */
+    public const STATUS_LABELS = [
+        'pending'  => 'Pending',
+        'approved' => 'Disetujui',
+        'rejected' => 'Ditolak',
+    ];
+
+    public static function statusLabel(?string $status): string
+    {
+        return self::STATUS_LABELS[strtolower((string) $status)] ?? (string) $status;
+    }
+
     /**
      * Get the user who requested the purchase.
      */

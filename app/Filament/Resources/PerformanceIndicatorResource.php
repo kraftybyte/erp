@@ -105,7 +105,7 @@ public static function shouldRegisterNavigation(): bool
                     $now = Carbon::now();
 
                     // Jika task sudah selesai (status 'Done')
-                    if ($record->status === 'Done') {
+                    if ($record->status === 'done') {
                         $diffInDays = intval($createdAt->diffInDays($updatedAt)); // Bilangan bulat
                         return "Selesai ({$diffInDays} hari)";
                     }
@@ -176,7 +176,7 @@ public static function shouldRegisterNavigation(): bool
     public static function canCreate(): bool
     {
         return auth()->user()->tasks()
-            ->where('status', 'Done')
+            ->where('status', 'done')
             ->doesntHave('performanceIndicator')
             ->exists();
     }

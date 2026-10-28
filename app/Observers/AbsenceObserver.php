@@ -51,10 +51,12 @@ class AbsenceObserver
         $isApproved = strtolower($status) === 'approved';
         $url        = '/admin/absences';
 
+        $alasan = ! $isApproved && filled($absence->rejection_reason) ? " Alasan: {$absence->rejection_reason}" : '';
+
         NotifHelper::send(
             $karyawan,
             $isApproved ? 'Absensi Disetujui ✅' : 'Absensi Ditolak ❌',
-            "Pengajuan {$kategori} ({$dari} – {$sampai}) telah " . strtolower($status) . ".",
+            "Pengajuan {$kategori} ({$dari} – {$sampai}) telah " . ($isApproved ? 'disetujui' : 'ditolak') . ".{$alasan}",
             $isApproved ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle',
             $isApproved ? 'success' : 'danger',
             $url

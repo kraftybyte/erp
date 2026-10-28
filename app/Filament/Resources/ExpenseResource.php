@@ -50,10 +50,8 @@ class ExpenseResource extends Resource
 
         return $form
             ->schema([
-                Forms\Components\Hidden::make('user_id')
-                    ->default(fn() => auth()->id()) // Default ke user yang login
-                    ->required(),
-
+                // Pengaju & status diisi server saat dibuat (Create…::mutateFormDataBeforeCreate),
+                // bukan dari field tersembunyi yang bisa diubah di browser.
                 Forms\Components\DatePicker::make('submission_date')
                     ->label('Tanggal Pengajuan')
                     ->default(now())
@@ -81,10 +79,6 @@ class ExpenseResource extends Resource
                     ->required()
                     ->prefix('Rp')
                     ->formatStateUsing(fn($state) => Money::inputValue($state)),
-
-                Forms\Components\Hidden::make('status')
-                    ->default('Pending')
-                    ->required(),
             ]);
     }
 

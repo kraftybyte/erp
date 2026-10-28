@@ -78,13 +78,13 @@
             @class([
                 'px-3 py-1 rounded-full text-xs font-semibold',
 
-                'bg-gray-100 text-gray-500' => $record->status === 'Done',
-                'bg-red-100 text-red-600' => $diffInDays < 0 && $record->status !== 'Done',
+                'bg-gray-100 text-gray-500' => $record->status === 'done',
+                'bg-red-100 text-red-600' => $diffInDays < 0 && $record->status !== 'done',
                 'bg-orange-100 text-orange-600' => $diffInDays === 0,
                 'bg-green-100 text-green-600' => $diffInDays > 0,
             ])
         >
-            @if($record->status === 'Done')
+            @if($record->status === 'done')
                 Selesai
             @elseif($diffInDays < 0)
                 {{ abs($diffInDays) }} hari terlambat

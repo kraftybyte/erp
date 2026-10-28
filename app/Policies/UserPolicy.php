@@ -10,6 +10,17 @@ class UserPolicy
 {
     use HandlesAuthorization;
 
+    /*
+    | Akun super_admin hanya boleh diubah atau dihapus oleh super_admin. Tanpa
+    | ini, siapa pun yang punya update_user (mis. pengelola data karyawan, yang
+    | memakai model User yang sama) bisa mengganti email/password super_admin.
+    | super_admin sendiri lolos lewat Gate::before (Shield), jadi tidak terkena.
+    */
+    private function protectsSuperAdmin(User $user, ?User $model): bool
+    {
+        return $model !== null && $model->hasRole('super_admin') && ! $user->hasRole('super_admin');
+    }
+
     /**
      * Determine whether the user can view any models.
      *
@@ -49,9 +60,9 @@ class UserPolicy
      * @param  \App\Models\User  $user
      * @return bool
      */
-    public function update(User $user): bool
+    public function update(User $user, ?User $model = null): bool
     {
-        return $user->can('update_user');
+        return $user->can('update_user') && ! $this->protectsSuperAdmin($user, $model);
     }
 
     /**
@@ -60,9 +71,9 @@ class UserPolicy
      * @param  \App\Models\User  $user
      * @return bool
      */
-    public function delete(User $user): bool
+    public function delete(User $user, ?User $model = null): bool
     {
-        return $user->can('delete_user');
+        return $user->can('delete_user') && ! $this->protectsSuperAdmin($user, $model);
     }
 
     /**
@@ -82,9 +93,9 @@ class UserPolicy
      * @param  \App\Models\User  $user
      * @return bool
      */
-    public function forceDelete(User $user): bool
+    public function forceDelete(User $user, ?User $model = null): bool
     {
-        return $user->can('force_delete_user');
+        return $user->can('force_delete_user') && ! $this->protectsSuperAdmin($user, $model);
     }
 
     /**
@@ -104,9 +115,9 @@ class UserPolicy
      * @param  \App\Models\User  $user
      * @return bool
      */
-    public function restore(User $user): bool
+    public function restore(User $user, ?User $model = null): bool
     {
-        return $user->can('restore_user');
+        return $user->can('restore_user') && ! $this->protectsSuperAdmin($user, $model);
     }
 
     /**
@@ -126,9 +137,9 @@ class UserPolicy
      * @param  \App\Models\User  $user
      * @return bool
      */
-    public function replicate(User $user): bool
+    public function replicate(User $user, ?User $model = null): bool
     {
-        return $user->can('replicate_user');
+        return $user->can('replicate_user') && ! $this->protectsSuperAdmin($user, $model);
     }
 
     /**

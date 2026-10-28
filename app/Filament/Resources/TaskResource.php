@@ -227,7 +227,7 @@ class TaskResource extends Resource implements HasShieldPermissions
                         $now = Carbon::now();
                         $deadline = Carbon::parse($state);
 
-                        if ($record->status === 'Done') {
+                        if ($record->status === 'done') {
                             return 'Selesai';
                         }
 

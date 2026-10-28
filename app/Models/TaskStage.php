@@ -22,6 +22,14 @@ class TaskStage extends Model
         'is_active',
     ];
 
+    /**
+     * Key tahap selalu huruf kecil, sama dengan status task.
+     */
+    protected function key(): \Illuminate\Database\Eloquent\Casts\Attribute
+    {
+        return \Illuminate\Database\Eloquent\Casts\Attribute::make(set: fn (?string $value) => $value === null ? null : strtolower(trim($value)));
+    }
+
     protected $casts = [
         'sort_order' => 'integer',
         'is_active' => 'boolean',

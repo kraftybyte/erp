@@ -288,7 +288,7 @@
                         <td style="text-align: center; font-size: 11px;">Service</td>
                         <td style="text-align: left; font-size: 11px;">
                         {{ $item->item }}<br><br>
-                        <span style="font-size: 9px;">{!! $item->description !!}</span>
+                        <span style="font-size: 9px;">{!! str($item->description ?? '')->sanitizeHtml() !!}</span>
                         </td>
                         <td style="text-align: center; font-size: 11px;">{{ $item->qty }} Month</td>
                         <td style="text-align: center; font-size: 11px;">Rp{{ number_format($item->price, 0, ',', '.') }}</td>

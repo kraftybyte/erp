@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\UserResource\Pages;
 
+use App\Filament\Concerns\GuardsUserDeletion;
 use App\Filament\Resources\UserResource;
 use Filament\Actions;
 use Filament\Forms;
@@ -49,6 +50,7 @@ class EditUser extends EditRecord
                     ->modalCancelActionLabel('Cancel'),
 
                 Actions\DeleteAction::make()
+                    ->before(fn ($action, $record) => GuardsUserDeletion::single($action, $record))
                     ->extraAttributes(["class" => "border-b"]),
 
                 Actions\CreateAction::make()

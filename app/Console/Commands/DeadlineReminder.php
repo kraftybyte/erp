@@ -26,7 +26,7 @@ class DeadlineReminder extends Command
         $count = 0;
 
         // ===== TASKS =====
-        $tasks = Task::whereIn('status', ['Log', 'Process', 'Review'])
+        $tasks = Task::whereIn('status', ['log', 'process', 'review'])
             ->whereBetween('selesai_task', [$startDate, $threshold])
             ->with(['users', 'project'])
             ->get();

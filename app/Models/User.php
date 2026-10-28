@@ -10,6 +10,8 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Image\Enums\Fit;
 use Spatie\MediaLibrary\HasMedia;
@@ -27,6 +29,41 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
     use InteractsWithMedia;
     use HasApiTokens, HasFactory;
     use Notifiable;
+
+    /*
+    | Tabel-tabel ini memakai ON DELETE CASCADE ke users: menghapus user ikut
+    | menghapus expense, advance, invoice, cuti, aset, dst. miliknya. User yang
+    | punya data seperti itu tidak bisa dihapus — nonaktifkan saja (is_active).
+    */
+    private const OWNED_RECORDS = [
+        'expenses'               => 'user_id',
+        'advances'               => 'user_id',
+        'invoices'               => 'user_id',
+        'realisasi_batches'      => 'uploaded_by',
+        'purchase_requests'      => 'requested_by',
+        'absences'               => 'user_id',
+        'assets'                 => 'penanggung_jawab_id',
+        'performance_indicators' => 'user_id',
+        'announcements'          => 'user_id',
+        'budget_logs'            => 'user_id',
+    ];
+
+    protected static function booted(): void
+    {
+        // Berlaku untuk semua jalur (tombol hapus, hapus massal, kode): batal bila ada data.
+        static::deleting(fn (User $user) => $user->hasBusinessRecords() ? false : null);
+    }
+
+    public function hasBusinessRecords(): bool
+    {
+        foreach (self::OWNED_RECORDS as $table => $column) {
+            if (Schema::hasTable($table) && DB::table($table)->where($column, $this->getKey())->exists()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * The attributes that are mass assignable.

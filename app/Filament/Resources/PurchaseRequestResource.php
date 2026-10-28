@@ -75,12 +75,8 @@ class PurchaseRequestResource extends Resource
                 ->helperText('Masukkan harga barang tanpa titik/koma'),
 
             Forms\Components\Select::make('status')
-                ->options([
-                    'Pending' => 'Pending',
-                    'Disetujui' => 'Disetujui',
-                    'Ditolak' => 'Ditolak',
-                ])
-                ->default('Pending')
+                ->options(PurchaseRequest::STATUS_LABELS)
+                ->default('pending')
                 ->hidden()
                 ->label('Status'),
 
@@ -88,8 +84,8 @@ class PurchaseRequestResource extends Resource
                 ->label('Alasan')
                 ->placeholder('Contoh: Barang ini dibutuhkan segera untuk proyek baru')
                 ->helperText('Berikan alasan jika permintaan ini disetujui atau ditolak')
-                ->hidden(fn ($get) => $get('status') === 'Pending')
-                ->required(fn ($get) => in_array($get('status'), ['Disetujui', 'Ditolak'])),
+                ->hidden(fn ($get) => $get('status') === 'pending')
+                ->required(fn ($get) => in_array($get('status'), ['approved', 'rejected'])),
         ]);
 }
 
@@ -126,8 +122,9 @@ class PurchaseRequestResource extends Resource
                 ->label('Status')
                 ->sortable()
                 ->badge()
-                ->color(fn ($record) => ColorHelper::status($record->status))
-                ->tooltip(fn($record) => $record?->status === 'Ditolak' ? $record->reason : null) // Tooltip hanya saat Rejected
+                ->formatStateUsing(fn ($state) => PurchaseRequest::statusLabel($state))
+                ->color(fn ($record) => ColorHelper::status(PurchaseRequest::statusLabel($record->status)))
+                ->tooltip(fn($record) => $record?->status === 'rejected' ? $record->reason : null) // Tooltip hanya saat Rejected
                 ->wrap()
                 ->alignment('center'), // Menengahkan teks
             
@@ -148,39 +145,30 @@ class PurchaseRequestResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
-                    ->options([
-                        'Pending' => 'Pending',
-                        'Disetujui' => 'Disetujui',
-                        'Ditolak' => 'Ditolak',
-                    ]),
+                    ->options(PurchaseRequest::STATUS_LABELS),
             ])
             ->actions([
             Tables\Actions\Action::make('approve')
                 ->label('Approve')
                 ->action(function ($record) {
-                    $record->update(['status' => 'Disetujui']);
+                    $record->update(['status' => 'approved']);
 
                     Notification::make()
                         ->title('Purchase Request Disetujui')
                         ->body("Permintaan {$record->item_name} telah disetujui.")
                         ->success()
                         ->sendToDatabase($record->user);
-
-                    \Illuminate\Support\Facades\Notification::send(
-                        $record->user,
-                        \App\Notifications\PurchaseRequestApprovalNotification::make($record, 'Disetujui')
-                    );
                 })
                 ->requiresConfirmation()
                 ->color('success')
                 ->icon('heroicon-o-check-circle')
-                ->hidden(fn() => !auth()->check() || !auth()->user()->hasRole(['Finance', 'super_admin'])),
+                ->hidden(fn ($record) => !auth()->check() || !auth()->user()->hasRole(['Finance', 'super_admin']) || $record->status !== 'pending'),
 
             Tables\Actions\Action::make('reject')
                 ->label('Reject')
                 ->action(function ($record, array $data) {
                     $record->update([
-                        'status' => 'Ditolak',
+                        'status' => 'rejected',
                         'reason' => $data['reason'],
                     ]);
 
@@ -189,11 +177,6 @@ class PurchaseRequestResource extends Resource
                         ->body("Permintaan {$record->item_name} ditolak. Alasan: {$data['reason']}")
                         ->warning()
                         ->sendToDatabase($record->user);
-
-                    \Illuminate\Support\Facades\Notification::send(
-                        $record->user,
-                        \App\Notifications\PurchaseRequestApprovalNotification::make($record, 'Ditolak')
-                    );
                 })
                 ->form([
                     Forms\Components\Textarea::make('reason')
@@ -204,7 +187,7 @@ class PurchaseRequestResource extends Resource
                 ->requiresConfirmation()
                 ->color('danger')
                 ->icon('heroicon-o-x-circle')
-                ->hidden(fn() => !auth()->check() || !auth()->user()->hasRole(['Finance', 'super_admin'])),
+                ->hidden(fn ($record) => !auth()->check() || !auth()->user()->hasRole(['Finance', 'super_admin']) || $record->status !== 'pending'),
 
 
 

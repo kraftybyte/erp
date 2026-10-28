@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
+use App\Filament\Concerns\GuardsUserDeletion;
+use Closure;
 use App\Settings\MailSettings;
 use Exception;
 use Filament\Facades\Filament;
@@ -19,10 +21,12 @@ use Filament\Tables;
 use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class UserResource extends Resource
 {
@@ -140,7 +144,18 @@ class UserResource extends Resource
                             ->schema([
                                 Select::make('roles')
                                     ->hiddenLabel()
-                                    ->relationship('roles', 'name')
+                                    // Role super_admin hanya bisa diberikan oleh super_admin. Pilihannya
+                                    // disembunyikan, dan aturan di bawah menolaknya di server karena
+                                    // relasi menyimpan ID apa pun yang dikirim.
+                                    ->relationship('roles', 'name', fn (Builder $query) => auth()->user()?->hasRole('super_admin')
+                                        ? $query
+                                        : $query->where('name', '!=', 'super_admin'))
+                                    ->rules([fn (): Closure => function (string $attribute, $value, Closure $fail) {
+                                        if (! auth()->user()?->hasRole('super_admin')
+                                            && Role::whereIn('id', (array) $value)->where('name', 'super_admin')->exists()) {
+                                            $fail('Hanya super_admin yang bisa memberikan role super_admin.');
+                                        }
+                                    }])
                                     ->getOptionLabelFromRecordUsing(fn(Model $record) => Str::headline($record->name))
                                     ->multiple()
                                     ->preload()
@@ -194,11 +209,11 @@ class UserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
-                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete')->before(fn ($action, $record) => GuardsUserDeletion::single($action, $record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->before(fn ($action, $records) => GuardsUserDeletion::bulk($action, $records)),
                 ]),
             ]);
     }

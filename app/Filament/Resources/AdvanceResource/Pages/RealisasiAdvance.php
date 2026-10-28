@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AdvanceResource\Pages;
 
+use App\Filament\Resources\AdvanceResource;
 use App\Models\Advance;
 use App\Models\Realisasi;
 use App\Models\RealisasiItem;
@@ -50,8 +51,43 @@ class RealisasiAdvance extends Page
 
     public function mount(Advance $record): void
     {
+        // Halaman ini hanya memeriksa izin melihat daftar advance; advance-nya
+        // sendiri harus boleh dilihat (pemilik, atau Finance/Director/super_admin).
+        abort_unless(AdvanceResource::canView($record), 403);
+
         $this->record = $record;
         $this->refreshStats();
+    }
+
+    /**
+     * Boleh menambah atau mengubah realisasi advance ini: pemiliknya atau
+     * Finance/Director/super_admin, hanya setelah dicairkan dan sebelum
+     * ditutup. Pemilik tidak bisa mengubah lagi setelah Siap Diselesaikan.
+     */
+    private function canChangeRealisasi(): bool
+    {
+        $user   = auth()->user();
+        $status = $this->record->refresh()->status;
+
+        if (! in_array($status, [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER, Advance::STATUS_READY_TO_CLOSE], true)) {
+            return false;
+        }
+
+        if ($user?->hasRole(['Finance', 'Director', 'super_admin'])) {
+            return true;
+        }
+
+        return $user?->id === $this->record->user_id && $status !== Advance::STATUS_READY_TO_CLOSE;
+    }
+
+    private function refuseChange(): void
+    {
+        Notification::make()
+            ->title('⚠️ Tidak bisa diubah')
+            ->body('Realisasi advance ini hanya bisa diubah pemiliknya atau Finance, setelah dicairkan dan sebelum diselesaikan.')
+            ->danger()
+            ->icon('heroicon-o-shield-exclamation')
+            ->send();
     }
 
     /**
@@ -158,6 +194,12 @@ class RealisasiAdvance extends Page
 
     public function saveBatch(): void
     {
+        if (! $this->canChangeRealisasi()) {
+            $this->refuseChange();
+
+            return;
+        }
+
         $validItems = array_filter($this->batchItems, fn($item) => !empty($item['name']) && $item['price'] > 0);
 
         if (empty($validItems)) {
@@ -244,7 +286,7 @@ class RealisasiAdvance extends Page
         }
 
         try {
-            $batch = Realisasi::find($batchId);
+            $batch = Realisasi::where('advance_id', $this->record->id)->findOrFail($batchId);
             $service = new RealisasiService();
             $service->deleteBatch($batch);
             $this->refreshStats();
@@ -375,8 +417,15 @@ class RealisasiAdvance extends Page
 
     public function deleteFile(int $fileId): void
     {
+        if (! $this->canChangeRealisasi()) {
+            $this->refuseChange();
+
+            return;
+        }
+
         try {
-            $file = RealisasiFile::find($fileId);
+            // Hanya file milik advance yang sedang dibuka.
+            $file = RealisasiFile::whereHas('realizedItem.realizasi', fn ($q) => $q->where('advance_id', $this->record->id))->findOrFail($fileId);
             $service = new RealisasiService();
             $service->deleteFile($file);
             $this->refreshStats();
@@ -396,8 +445,15 @@ class RealisasiAdvance extends Page
 
     public function updateItem(int $itemId, string $name, ?string $description, int $quantity, float $price): void
     {
+        if (! $this->canChangeRealisasi()) {
+            $this->refuseChange();
+
+            return;
+        }
+
         try {
-            $item = RealisasiItem::find($itemId);
+            // Hanya item milik advance yang sedang dibuka.
+            $item = RealisasiItem::whereHas('realizasi', fn ($q) => $q->where('advance_id', $this->record->id))->findOrFail($itemId);
             $service = new RealisasiService();
             $service->updateItem($item, [
                 'name' => $name,
