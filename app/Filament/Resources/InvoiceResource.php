@@ -417,7 +417,8 @@ class InvoiceResource extends BaseInvoiceResource
                     ImportItemsAction::make(
                         'invoicesItems',
                         fn (Get $get, Set $set) => self::recalculateTotals($get, $set),
-                        fn (array $item) => ['original_price' => $item['price']]
+                        fn (array $item) => ['original_price' => $item['price']],
+                        template: 'invoice',
                     ),
                 ])
                 ->schema([

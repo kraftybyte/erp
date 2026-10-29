@@ -23,8 +23,9 @@ class ImportItemsAction
      * @param  string  $repeater  state path repeater item, mis. "items" / "invoicesItems"
      * @param  Closure(Get, Set): void  $recalculate  hitung ulang total di form
      * @param  Closure(array): array|null  $extra  kolom tambahan per item, mis. original_price
+     * @param  string  $template  template Excel yang ditautkan: quotation | invoice
      */
-    public static function make(string $repeater, Closure $recalculate, ?Closure $extra = null): Action
+    public static function make(string $repeater, Closure $recalculate, ?Closure $extra = null, string $template = 'quotation'): Action
     {
         return Action::make('importItems')
             ->label('Import dari Excel')
@@ -37,7 +38,7 @@ class ImportItemsAction
                 Forms\Components\Placeholder::make('template')
                     ->hiddenLabel()
                     ->content(fn () => new HtmlString(
-                        'Belum punya file? <a href="' . e(route('import-template.items')) . '" target="_blank" class="font-semibold text-primary-600 underline">Unduh template Excel</a>: '
+                        'Belum punya file? <a href="' . e(route('import-template.items', $template)) . '" target="_blank" class="font-semibold text-primary-600 underline">Unduh template Excel</a>: '
                         . 'kolom Item, Deskripsi, Qty, Satuan, Harga, Total, dengan contoh dan petunjuk pengisian.'
                     )),
 

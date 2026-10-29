@@ -6,7 +6,7 @@ use App\Filament\Resources\InvoiceResource\Pages\CreateInvoice;
 use App\Filament\Resources\QuotationResource\Pages\CreateQuotation;
 use App\Models\Quotation;
 use App\Models\User;
-use App\Services\QuotationImportTemplate;
+use App\Services\ItemImportTemplate;
 use App\Services\QuotationItemImport;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -210,13 +210,13 @@ class QuotationItemImportTest extends TestCase
     {
         $this->actingAs($this->importer());
 
-        $response = $this->get(route('import-template.items'))->assertOk()->assertDownload(QuotationImportTemplate::FILENAME);
+        $response = $this->get(route('import-template.items', 'quotation'))->assertOk()->assertDownload('Template Import Item Quotation.xlsx');
 
         $path  = $response->baseResponse->getFile()->getPathname();
         $book  = IOFactory::load($path);
         $this->assertSame(['Item Quotation', 'Contoh', 'Petunjuk'], $book->getSheetNames());
         $this->assertSame('Item Quotation', $book->getActiveSheet()->getTitle(), 'Sheet isian yang dibaca importer.');
-        $this->assertSame(QuotationImportTemplate::HEADERS, $book->getActiveSheet()->rangeToArray('A1:F1')[0]);
+        $this->assertSame(ItemImportTemplate::HEADERS, $book->getActiveSheet()->rangeToArray('A1:F1')[0]);
 
         // Sheet contoh, bila diimpor, menghasilkan item yang sama persis dengan isinya.
         $book->setActiveSheetIndexByName('Contoh');
@@ -240,7 +240,28 @@ class QuotationItemImportTest extends TestCase
         $this->assertEquals([2, 13_000_000, 26_000_000], [$items[3]['qty'], $items[3]['price'], $items[3]['total']]);
     }
 
-    public function test_jendela_import_menautkan_template(): void
+    public function test_template_invoice_mengingatkan_harga_penuh_untuk_dp(): void
+    {
+        $this->actingAs($this->importer());
+
+        $response = $this->get(route('import-template.items', 'invoice'))->assertOk()->assertDownload('Template Import Item Invoice.xlsx');
+
+        $path = $response->baseResponse->getFile()->getPathname();
+        $book = IOFactory::load($path);
+        @unlink($path);
+
+        $this->assertSame(['Item Invoice', 'Contoh', 'Petunjuk'], $book->getSheetNames());
+        $this->assertSame(ItemImportTemplate::HEADERS, $book->getActiveSheet()->rangeToArray('A1:F1')[0]);
+
+        $guide = implode("\n", array_merge(...$book->getSheetByName('Petunjuk')->toArray()));
+        $this->assertStringContainsString('Untuk invoice DP tetap isi harga penuh', $guide);
+        $this->assertStringContainsString('Isi di sheet "Item Invoice"', $guide);
+        $book->disconnectWorksheets();
+
+        $this->get('/import-template/kontrak')->assertNotFound();
+    }
+
+    public function test_jendela_import_menautkan_template_masing_masing(): void
     {
         $this->actingAs($this->importer());
         Filament::setCurrentPanel(Filament::getPanel('admin'));
@@ -248,7 +269,11 @@ class QuotationItemImportTest extends TestCase
         Livewire::test(CreateQuotation::class)
             ->call('mountFormComponentAction', 'itemsSection', 'importItems')
             ->assertSee('Unduh template Excel')
-            ->assertSee(route('import-template.items'));
+            ->assertSee(route('import-template.items', 'quotation'));
+
+        Livewire::test(CreateInvoice::class)
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->assertSee(route('import-template.items', 'invoice'));
     }
 
     private function importer(): User
