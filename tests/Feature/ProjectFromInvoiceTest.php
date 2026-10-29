@@ -6,8 +6,11 @@ use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\EditProject;
+use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Models\Deal;
 use App\Models\Invoice;
+use App\Models\InvoicesItem;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\ProjectFromInvoice;
@@ -61,8 +64,8 @@ class ProjectFromInvoiceTest extends TestCase
         ]);
 
         $this->assertStringContainsString("Dari invoice {$invoice->uuid}", $project->detail_project);
-        $this->assertStringContainsString('- **Neon Box** (2x)', $project->detail_project);
-        $this->assertStringContainsString('• Lampu LED', $project->detail_project);
+        $this->assertStringContainsString("1. **Neon Box** · 2x\n   - Ukuran 2x1 m\n   - Akrilik susu\n   - Lampu LED", $project->detail_project);
+        $this->assertStringContainsString('2. **Huruf Timbul**', $project->detail_project);
         $this->assertStringNotContainsString('<', $project->detail_project, 'Tanpa tag HTML.');
 
         // Tombol yang sama kini membuka project itu, bukan membuat lagi.
@@ -130,6 +133,52 @@ class ProjectFromInvoiceTest extends TestCase
         $invoice = $this->invoice($this->deal('PT Tanpa Izin', 'Rina'), [['item' => 'Kontrak', 'qty' => 1, 'description' => null]]);
 
         Livewire::test(ListInvoices::class)->assertTableActionHidden('project', $invoice);
+    }
+
+    public function test_detail_rapi_dari_deskripsi_hasil_import(): void
+    {
+        $invoice = (new Invoice)->forceFill(['uuid' => '#PI/TES/00005']);
+        $invoice->setRelation('invoicesItems', collect([
+            ['Custom Signage', 1, '<p>FLORING 600X600 (MULTIPLEK 18MM + RANGKA 18MM + lapis HPL Warna Biru<br>Pantone 2143 C + LIGHTED)</p>'],
+            ['REVAMP Meja Cashier, Meja Display', 4, 'REVAMP (Meja Cashier, Meja Display)'],
+            ['Display MDF,Finishing Stiker', 2, 'Display (MDF,Finishing Stiker)'],
+            ['Kelistrikan', 1, 'Kelistrikan | Kabel Power Supreme/ Eterna Mcb)'],
+            ['M', 1, 'Mobilisasi (Loading in & Out)'],
+        ])->map(fn (array $row) => (new InvoicesItem)->forceFill(['item' => $row[0], 'qty' => $row[1], 'description' => $row[2]])));
+
+        $this->assertSame(implode("\n", [
+            'Dari invoice #PI/TES/00005',
+            '',
+            '1. **FLORING 600X600** (Custom Signage)',
+            '   - MULTIPLEK 18MM',
+            '   - RANGKA 18MM',
+            '   - Lapis HPL Warna Biru Pantone 2143 C',
+            '   - LIGHTED',
+            '2. **REVAMP** · 4x — Meja Cashier, Meja Display',
+            '3. **Display** · 2x — MDF, Finishing Stiker',
+            '4. **Kelistrikan** — Kabel Power Supreme/ Eterna Mcb',
+            '5. **Mobilisasi** — Loading in & Out',
+        ]), ProjectFromInvoice::detail($invoice));
+    }
+
+    public function test_detail_project_tampil_sebagai_markdown_dan_bisa_diambil_ulang(): void
+    {
+        $this->actingAs($this->user('super_admin'));
+
+        $invoice = $this->invoice($this->deal('PT Tampil Rapi', 'Andi'), [
+            ['item' => 'Booth', 'qty' => 1, 'description' => 'Booth 3x3 (Rangka besi + Cutting sticker)'],
+        ]);
+        $project = ProjectFromInvoice::create($invoice, 'SEO');
+        $project->update(['detail_project' => 'Catatan lama <script>alert(1)</script>']);
+
+        $page = Livewire::test(EditProject::class, ['record' => $project->getRouteKey()])
+            ->callAction('detailFromInvoice');
+        $this->assertStringContainsString('1. **Booth 3x3**', $page->get('data.detail_project'));
+        $page->call('save')->assertHasNoFormErrors();
+
+        Livewire::test(ViewProject::class, ['record' => $project->getRouteKey()])
+            ->assertSeeHtml('<strong>Booth 3x3</strong>')
+            ->assertSeeHtml('<li>Cutting sticker</li>');
     }
 
     public function test_simpan_invoice_tidak_menghapus_tautan_client(): void
