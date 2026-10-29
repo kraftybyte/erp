@@ -9,6 +9,7 @@ use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\AutoApproval;
 use App\Services\GeminiService;
 use App\Services\RealisasiService;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -1467,13 +1468,17 @@ class TelegramBot
         $link    = url(count($records) === 1 ? "/admin/{$path}/{$records[0]->id}" : "/admin/{$path}");
         $buttons = str_starts_with($link, 'https://') ? [[['text' => 'Lihat di ERP', 'url' => $link]]] : [];
 
+        $next = collect($records)->every(fn ($record) => AutoApproval::wasApplied($record))
+            ? 'dan langsung <b>disetujui</b> (auto approve), tinggal menunggu pembayaran Finance.'
+            : 'dan menunggu persetujuan Finance.';
+
         $this->show(
             $chatId,
             $messageId,
             $draft->isMulti() && $draft->type === 'expense'
-                ? '✅ <b>' . count($records) . " expense terkirim</b> dan menunggu persetujuan Finance.\n\n"
+                ? '✅ <b>' . count($records) . " expense terkirim</b> {$next}\n\n"
                     . $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\nKetik /status untuk memantau."
-                : "✅ <b>{$type['label']} terkirim</b> dan menunggu persetujuan Finance.\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
+                : "✅ <b>{$type['label']} terkirim</b> {$next}\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
             $buttons
         );
     }

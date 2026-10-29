@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AutoApproval;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,7 @@ class Expense extends Model
     protected static function boot(): void
     {
         parent::boot();
+        static::creating(fn (Expense $expense) => AutoApproval::apply($expense));
         static::observe(ExpenseObserver::class);
     }
 

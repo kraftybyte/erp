@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Setting;
 
+use App\Models\User;
 use App\Services\FileService;
 use App\Settings\GeneralSettings;
 use Filament\Forms;
@@ -357,6 +358,24 @@ class ManageGeneral extends SettingsPage
                                             ->label('URL Prefix QR Code')
                                             ->placeholder('https://erp.example.com/admin')
                                             ->helperText('QR akan mengarah ke /projects/{id}'),
+                                    ]),
+                            ]),
+                        Forms\Components\Tabs\Tab::make('Persetujuan')
+                            ->icon('heroicon-o-check-badge')
+                            ->schema([
+                                Forms\Components\Section::make('Auto approve expense & advance')
+                                    ->description('Pengajuan dari karyawan berikut, lewat ERP maupun bot Telegram, langsung berstatus Disetujui berapa pun nominalnya. Pembayarannya tetap dicatat Finance.')
+                                    ->schema([
+                                        Forms\Components\Select::make('auto_approve_user_ids')
+                                            ->label('Karyawan')
+                                            ->multiple()
+                                            ->searchable()
+                                            ->options(fn () => User::query()
+                                                ->where('is_active', true)
+                                                ->orderBy('firstname')
+                                                ->get()
+                                                ->mapWithKeys(fn (User $user) => [$user->id => trim("{$user->firstname} {$user->lastname}") . " ({$user->username})"]))
+                                            ->placeholder('Belum ada: semua pengajuan menunggu persetujuan'),
                                     ]),
                             ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')

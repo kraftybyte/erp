@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Models\Expense;
 use App\Models\User;
 use App\Helpers\NotifHelper;
+use App\Services\AutoApproval;
 
 class ExpenseObserver
 {
@@ -19,10 +20,14 @@ class ExpenseObserver
         $recipients = User::role(['Finance', 'Director', 'super_admin'])->get()
             ->filter(fn($u) => $u->id !== $expense->user_id);
 
+        // Karyawan dengan auto approve: tidak perlu disetujui, tinggal dibayar.
+        $auto = AutoApproval::wasApplied($expense);
+
         NotifHelper::send(
             $recipients,
-            'Pengajuan Expense Baru 💰',
-            "{$nama} mengajukan expense {$nominal} — {$expense->keterangan_expense}",
+            $auto ? 'Expense Disetujui Otomatis ✅' : 'Pengajuan Expense Baru 💰',
+            "{$nama} mengajukan expense {$nominal} — {$expense->keterangan_expense}"
+                . ($auto ? '. Disetujui otomatis, siap dibayar.' : ''),
             'heroicon-o-banknotes',
             'info',
             $url

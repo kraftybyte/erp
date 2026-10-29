@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Models\Advance;
 use App\Models\User;
 use App\Helpers\NotifHelper;
+use App\Services\AutoApproval;
 
 class AdvanceObserver
 {
@@ -19,10 +20,14 @@ class AdvanceObserver
         $recipients = User::role(['Finance', 'Director', 'super_admin'])->get()
             ->filter(fn($u) => $u->id !== $advance->user_id);
 
+        // Karyawan dengan auto approve: tidak perlu disetujui, tinggal dicairkan.
+        $auto = AutoApproval::wasApplied($advance);
+
         NotifHelper::send(
             $recipients,
-            'Pengajuan Advance Baru 💸',
-            "{$nama} mengajukan advance {$nominal} — {$advance->keterangan_advance}",
+            $auto ? 'Advance Disetujui Otomatis ✅' : 'Pengajuan Advance Baru 💸',
+            "{$nama} mengajukan advance {$nominal} — {$advance->keterangan_advance}"
+                . ($auto ? '. Disetujui otomatis, siap dicairkan.' : ''),
             'heroicon-o-banknotes',
             'info',
             $url
