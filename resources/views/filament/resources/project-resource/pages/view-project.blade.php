@@ -130,8 +130,19 @@
                         Detail Project
                     </h2>
 
-                    <div class="prose max-w-none text-sm leading-relaxed text-gray-700">
-                        {!! nl2br(e($record->detail_project)) !!}
+                    {{-- Markdown (MarkdownEditor); HTML mentah di-escape, baris baru tetap baris baru. --}}
+                    <style>
+                        .project-detail ol { list-style: decimal; padding-left: 1.5rem; margin: .5rem 0; }
+                        .project-detail ul { list-style: disc; padding-left: 1.25rem; margin: .25rem 0; }
+                        .project-detail li { margin: .2rem 0; }
+                        .project-detail p { margin: 0 0 .75rem; }
+                    </style>
+                    <div class="project-detail prose max-w-none text-sm leading-relaxed text-gray-700">
+                        {!! \Illuminate\Support\Str::markdown((string) $record->detail_project, [
+                            'html_input'         => 'escape',
+                            'allow_unsafe_links' => false,
+                            'renderer'           => ['soft_break' => "<br>\n"],
+                        ]) !!}
                     </div>
 
                 </div>
