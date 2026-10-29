@@ -174,6 +174,12 @@ class QuotationItemImport
                     // "A | Pekerjaan Shopfront/Area Depan": bagian baru.
                     [$section, $subsection, $pending, $sectionOpen] = [$text, null, [], true];
                     $previous = 'heading';
+                } elseif ($row['marker'] !== null && ctype_digit($row['marker']) && $section !== null) {
+                    // "4 | Logo KT&G" tanpa harga: tetap item sendiri (bukan rincian item
+                    // di atasnya), harga 0, dan pengguna diberi tahu.
+                    $items[]    = $this->item($row, $section, $subsection, $warnings);
+                    $warnings[] = "\"{$text}\" tidak punya harga di file; diimpor dengan harga Rp 0. Isi harganya atau hapus barisnya.";
+                    $previous   = 'item';
                 } elseif ($row['no'] !== '') {
                     // Baris bernomor tanpa harga (mis. "1  Main Flagship Store"): judul dokumen.
                     $pending = [];
