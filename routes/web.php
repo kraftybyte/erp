@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\InstagramConnectController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
+use App\Services\QuotationImportTemplate;
 use Filament\Notifications\Notification;
 
 
@@ -76,6 +77,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/thermal/{projectId}/pdf', [ThermalPrintController::class, 'downloadPdf'])
         ->name('thermal.pdf');
 });
+
+// Template Excel untuk tombol "Import dari Excel" di quotation & invoice.
+Route::get('/import-template/item-quotation', function (QuotationImportTemplate $template) {
+    $path = tempnam(sys_get_temp_dir(), 'template-');
+    $template->save($path);
+
+    return response()->download($path, QuotationImportTemplate::FILENAME)->deleteFileAfterSend();
+})->middleware('auth')->name('import-template.items');
 
 // WhatsApp Message Route
 Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');

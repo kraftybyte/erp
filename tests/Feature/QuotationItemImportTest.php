@@ -6,12 +6,14 @@ use App\Filament\Resources\InvoiceResource\Pages\CreateInvoice;
 use App\Filament\Resources\QuotationResource\Pages\CreateQuotation;
 use App\Models\Quotation;
 use App\Models\User;
+use App\Services\QuotationImportTemplate;
 use App\Services\QuotationItemImport;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -202,6 +204,67 @@ class QuotationItemImportTest extends TestCase
         $result = app(QuotationItemImport::class)->parse($this->hargaJual(shopfrontTotal: 90_000_000));
 
         $this->assertContains('Total Harga Pekerjaan Shopfront di file Rp 90.000.000, jumlah itemnya Rp 91.000.000.', $result['warnings']);
+    }
+
+    public function test_template_import_bisa_diunduh_dan_contohnya_terbaca(): void
+    {
+        $this->actingAs($this->importer());
+
+        $response = $this->get(route('import-template.items'))->assertOk()->assertDownload(QuotationImportTemplate::FILENAME);
+
+        $path  = $response->baseResponse->getFile()->getPathname();
+        $book  = IOFactory::load($path);
+        $this->assertSame(['Item Quotation', 'Contoh', 'Petunjuk'], $book->getSheetNames());
+        $this->assertSame('Item Quotation', $book->getActiveSheet()->getTitle(), 'Sheet isian yang dibaca importer.');
+        $this->assertSame(QuotationImportTemplate::HEADERS, $book->getActiveSheet()->rangeToArray('A1:F1')[0]);
+
+        // Sheet contoh, bila diimpor, menghasilkan item yang sama persis dengan isinya.
+        $book->setActiveSheetIndexByName('Contoh');
+        $contoh = tempnam(sys_get_temp_dir(), 'quo-') . '.xlsx';
+        $this->paths[] = $contoh;
+        (new Xlsx($book))->save($contoh);
+        $book->disconnectWorksheets();
+        @unlink($path);
+
+        $import = app(QuotationItemImport::class);
+        $result = $import->parse($contoh);
+        $this->assertSame([], $result['warnings']);
+        $this->assertEquals([137_000_000, 137_000_000], [$result['total'], $result['expected_total']]);
+
+        $items = $import->lines($result['items']);
+        $this->assertSame(['Persiapan Pekerjaan', 'Persiapan Pekerjaan', 'Pekerjaan Shopfront', 'Pekerjaan Furniture', 'Pekerjaan Elektrikal'], array_column($items, 'item'));
+        $this->assertSame(['Listrik & air kerja', 'By Owner'], $items[1]['description_lines']);
+        $this->assertEquals(0, $items[1]['price']);
+        $this->assertSame(['Facade Logo', 'Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver'], $items[2]['description_lines']);
+        $this->assertSame(['Sofa 3 seater', '2 Unit'], $items[3]['description_lines']);
+        $this->assertEquals([2, 13_000_000, 26_000_000], [$items[3]['qty'], $items[3]['price'], $items[3]['total']]);
+    }
+
+    public function test_jendela_import_menautkan_template(): void
+    {
+        $this->actingAs($this->importer());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::test(CreateQuotation::class)
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->assertSee('Unduh template Excel')
+            ->assertSee(route('import-template.items'));
+    }
+
+    private function importer(): User
+    {
+        $user = User::forceCreate([
+            'username'     => 'tpl_' . Str::lower(Str::random(8)),
+            'firstname'    => 'Tes',
+            'lastname'     => 'Template',
+            'email'        => Str::lower(Str::random(10)) . '@example.test',
+            'password'     => bcrypt('rahasia'),
+            'is_active'    => true,
+            'push_enabled' => false,
+        ]);
+        $user->assignRole('super_admin');
+
+        return $user;
     }
 
     public function test_tombol_import_mengisi_form_quotation(): void
