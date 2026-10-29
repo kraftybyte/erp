@@ -24,6 +24,11 @@ class ViewInvoice extends ViewRecord
                 ->color('info')
                 ->url(fn () => route('invoices.download', $this->record))
                 ->openUrlInNewTab(),
+            Actions\Action::make('project')
+                ->label(fn () => $this->record->projects->isNotEmpty() ? 'Lihat Project' : 'Buat Project')
+                ->icon('heroicon-o-briefcase')
+                ->url(fn () => InvoiceResource::projectUrl($this->record))
+                ->visible(fn () => InvoiceResource::projectUrl($this->record) !== null),
         ];
     }
 

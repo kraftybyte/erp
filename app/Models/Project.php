@@ -12,6 +12,7 @@ class Project extends Model
     protected $fillable = [
         'nama_project',
         'deal_id',
+        'invoice_id',
         'detail_project',
         'timeline_mulai',
         'timeline_selesai',
@@ -38,6 +39,14 @@ class Project extends Model
     public function Deal()
     {
         return $this->belongsTo(Deal::class, 'deal_id');
+    }
+
+    /**
+     * Invoice asal, bila project dibuat lewat tombol "Buat Project" di invoice.
+     */
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
     }
     public function product()
     {

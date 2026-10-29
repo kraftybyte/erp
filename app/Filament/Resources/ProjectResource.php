@@ -108,7 +108,7 @@ class ProjectResource extends Resource
                             Forms\Components\MarkdownEditor::make('detail_project')
                                 ->label('Detail Project')
                                 ->helperText('Tulis dengan detail.')
-                                ->maxLength(500)
+                                ->maxLength(5000)
                                 ->required()
                                 ->columnSpanFull(),
                         ])
