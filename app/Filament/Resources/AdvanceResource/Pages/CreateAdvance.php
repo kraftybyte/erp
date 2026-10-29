@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AdvanceResource\Pages;
 
 use App\Filament\Resources\AdvanceResource;
 use App\Models\Advance;
+use App\Services\AutoApproval;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -19,6 +20,13 @@ class CreateAdvance extends CreateRecord
         $data['status']  = Advance::STATUS_PENDING;
 
         return $data;
+    }
+
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return AutoApproval::wasApplied($this->record)
+            ? 'Advance terkirim dan langsung disetujui (auto approve)'
+            : parent::getCreatedNotificationTitle();
     }
 
     protected function getRedirectUrl(): string

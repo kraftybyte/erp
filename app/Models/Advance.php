@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AutoApproval;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +18,7 @@ class Advance extends Model
     protected static function boot(): void
     {
         parent::boot();
+        static::creating(fn (Advance $advance) => AutoApproval::apply($advance));
         static::observe(AdvanceObserver::class);
     }
 

@@ -75,6 +75,9 @@ class GeneralSettings extends Settings
     // Project Categories
     public mixed $project_categories = [];
 
+    // Karyawan (user id) yang pengajuan expense & advance-nya langsung Disetujui
+    public mixed $auto_approve_user_ids = [];
+
     // ID Prefix Settings
     public mixed $quotation_prefix = 'DG';
     public mixed $invoice_prefix = 'INV';

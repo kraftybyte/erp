@@ -161,6 +161,31 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('terkirim', $this->lastText());
     }
 
+    public function test_karyawan_auto_approve_langsung_disetujui_lewat_bot(): void
+    {
+        $user    = $this->user();
+        $project = $this->project();
+
+        $settings = app(\App\Settings\GeneralSettings::class);
+        $settings->auto_approve_user_ids = [$user->id];
+        $settings->save();
+
+        $this->fakeApis(gemini: $this->aiResult(
+            type: 'expense',
+            amount: 150_000,
+            description: 'Grab ke kantor klien',
+            category: 'Transport',
+            projectId: $project->id,
+        ));
+
+        $this->send($this->textUpdate('grab ke kantor klien 150rb'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertSame('Disetujui', Expense::where('user_id', $user->id)->latest('id')->value('status'));
+        $this->assertStringContainsString('langsung <b>disetujui</b>', $this->lastText());
+    }
+
     public function test_tanpa_ai_bot_menanyakan_yang_kurang_sampai_advance_terkirim(): void
     {
         $user    = $this->user();
