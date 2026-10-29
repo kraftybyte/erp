@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Exceptions\InvoicePaymentException;
+use App\Filament\Actions\ProjectFromInvoiceAction;
 use App\Filament\Forms\ImportItemsAction;
 use App\Helpers\AmountSearch;
 use App\Models\Invoice;
@@ -1134,25 +1135,6 @@ class InvoiceResource extends BaseInvoiceResource
         // Kolom "Customer / PIC" membaca $record->deal dan tombol Project membaca
         // $record->projects; tanpa eager load di sini tiap baris memicu query sendiri.
         return parent::getEloquentQuery()->with(['deal', 'projects:id,invoice_id']);
-    }
-
-    /**
-     * Project yang dibuat dari invoice ini, atau form project baru yang terisi
-     * dari invoice (client, PIC, detail item). Null bila pengguna tidak berhak.
-     */
-    public static function projectUrl(Invoice $invoice): ?string
-    {
-        if ($invoice->status === 'cancelled') {
-            return null;
-        }
-
-        $project = $invoice->projects->first();
-
-        if ($project) {
-            return ProjectResource::canView($project) ? ProjectResource::getUrl('view', ['record' => $project]) : null;
-        }
-
-        return ProjectResource::canCreate() ? ProjectResource::getUrl('create', ['invoice' => $invoice->id]) : null;
     }
 
     public static function table(
@@ -2783,18 +2765,12 @@ class InvoiceResource extends BaseInvoiceResource
                 | PROJECT
                 |--------------------------------------------------------------------------
                 |
-                | Buat project dari invoice ini, atau buka project yang sudah dibuat
-                | darinya. Kategori project dipilih di form project.
+                | Buat project langsung dari invoice ini (cukup pilih kategori), atau
+                | buka project yang sudah dibuat darinya.
                 |--------------------------------------------------------------------------
                 */
 
-                Tables\Actions\Action::make('project')
-                    ->iconButton()
-                    ->color('primary')
-                    ->icon('heroicon-o-briefcase')
-                    ->tooltip(fn (Invoice $record) => $record->projects->isNotEmpty() ? 'Lihat Project' : 'Buat Project')
-                    ->url(fn (Invoice $record) => self::projectUrl($record))
-                    ->visible(fn (Invoice $record) => self::projectUrl($record) !== null),
+                ProjectFromInvoiceAction::table(),
 
                 /*
                 |--------------------------------------------------------------------------

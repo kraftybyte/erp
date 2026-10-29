@@ -4,12 +4,13 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
+use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\ProjectResource;
-use App\Filament\Resources\ProjectResource\Pages\CreateProject;
 use App\Models\Deal;
 use App\Models\Invoice;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\ProjectFromInvoice;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
@@ -20,8 +21,8 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Tombol "Buat Project" di invoice: form project terisi dari invoice, tinggal
- * memilih kategori.
+ * Tombol "Buat Project" di invoice: cukup pilih kategori, project langsung
+ * dibuat dari invoice.
  */
 class ProjectFromInvoiceTest extends TestCase
 {
@@ -35,7 +36,7 @@ class ProjectFromInvoiceTest extends TestCase
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
-    public function test_project_dibuat_dari_invoice_dengan_data_terisi(): void
+    public function test_project_langsung_dibuat_cukup_pilih_kategori(): void
     {
         $this->actingAs($this->user('super_admin'));
 
@@ -44,66 +45,91 @@ class ProjectFromInvoiceTest extends TestCase
             ['item' => 'Neon Box', 'qty' => 2, 'description' => '<p>Ukuran 2x1 m</p><ul><li>Akrilik susu</li><li>Lampu LED</li></ul>'],
             ['item' => 'Huruf Timbul', 'qty' => 1, 'description' => null],
         ]);
-
-        $createUrl = ProjectResource::getUrl('create', ['invoice' => $invoice->id]);
+        $category = array_key_first(ProjectResource::getProjectCategoryOptions());
 
         Livewire::test(ListInvoices::class)
-            ->assertTableActionVisible('project', $invoice)
-            ->assertTableActionHasUrl('project', $createUrl, $invoice);
-
-        $page = Livewire::withQueryParams(['invoice' => $invoice->id])->test(CreateProject::class)
-            ->assertFormSet([
-                'deal_id'         => $deal->id,
-                'nama_perusahaan' => 'Toko Sinar',
-                'nama_pic'        => 'Budi Santoso',
-            ]);
-
-        $detail = $page->get('data.detail_project');
-        $this->assertStringContainsString("Dari invoice {$invoice->uuid}", $detail);
-        $this->assertStringContainsString('- **Neon Box** (2x)', $detail);
-        $this->assertStringContainsString('• Lampu LED', $detail);
-        $this->assertStringNotContainsString('<', $detail, 'Tanpa tag HTML.');
-
-        // Pengguna cukup memilih kategori.
-        $category = array_key_first(ProjectResource::getProjectCategoryOptions());
-        $page->fillForm(['nama_project' => $category])->call('create')->assertHasNoFormErrors();
+            ->callTableAction('project', $invoice, data: ['nama_project' => $category])
+            ->assertHasNoTableActionErrors()
+            ->assertNotified('Project dibuat');
 
         $project = Project::where('invoice_id', $invoice->id)->sole();
         $this->assertSame($category, $project->nama_project);
         $this->assertSame($deal->id, $project->deal_id);
+        $this->assertSame(['Toko Sinar', 'Budi Santoso'], [$project->nama_perusahaan, $project->nama_pic]);
+        $this->assertSame([today()->toDateString(), today()->addDays(14)->toDateString()], [
+            $project->timeline_mulai->toDateString(), $project->timeline_selesai->toDateString(),
+        ]);
+
+        $this->assertStringContainsString("Dari invoice {$invoice->uuid}", $project->detail_project);
+        $this->assertStringContainsString('- **Neon Box** (2x)', $project->detail_project);
+        $this->assertStringContainsString('• Lampu LED', $project->detail_project);
+        $this->assertStringNotContainsString('<', $project->detail_project, 'Tanpa tag HTML.');
 
         // Tombol yang sama kini membuka project itu, bukan membuat lagi.
         Livewire::test(ListInvoices::class)
             ->assertTableActionHasUrl('project', ProjectResource::getUrl('view', ['record' => $project]), $invoice->fresh());
     }
 
-    public function test_invoice_tanpa_tautan_mencari_client_dari_nama_dan_pic(): void
+    public function test_client_dibuat_otomatis_bila_belum_ada(): void
     {
         $this->actingAs($this->user('super_admin'));
 
+        $company = 'PT Klien Baru ' . Str::upper(Str::random(5));
+        $invoice = $this->invoice(null, [['item' => 'Booth', 'qty' => 1, 'description' => 'Booth 3x3']], [
+            'nama_perusahaan' => $company,
+            'nama_pic'        => 'Rina Kartika',
+            'telephone'       => '08123456789',
+            'alamat'          => 'Jl. Baru No. 2',
+        ]);
+
+        Livewire::test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])
+            ->callAction('project', data: ['nama_project' => array_key_first(ProjectResource::getProjectCategoryOptions())])
+            ->assertHasNoActionErrors();
+
+        $deal = Deal::where('nama_perusahaan', $company)->sole();
+        $this->assertSame(['Rina Kartika', '08123456789', 'Dalam Tahap Project'], [$deal->nama_pic, $deal->telephone, $deal->status]);
+        $this->assertSame($deal->id, $invoice->fresh()->deal_id, 'Invoice ikut tertaut ke client baru.');
+        $this->assertSame($deal->id, Project::where('invoice_id', $invoice->id)->value('deal_id'));
+    }
+
+    public function test_client_dicocokkan_dari_nama_dan_pic_tanpa_membuat_baru(): void
+    {
         $this->deal('PT Cabang Ganda', 'Sari Dewi');
         $budi    = $this->deal('PT Cabang Ganda', 'Budi Santoso');
         $invoice = $this->invoice(null, [['item' => 'Booth', 'qty' => 1, 'description' => 'Booth 3x3']], [
             'nama_perusahaan' => 'PT Cabang Ganda',
             'nama_pic'        => 'Budi Santoso',
         ]);
+        $deals = Deal::count();
 
-        Livewire::withQueryParams(['invoice' => $invoice->id])->test(CreateProject::class)
-            ->assertFormSet(['deal_id' => $budi->id, 'nama_pic' => 'Budi Santoso']);
+        $project = ProjectFromInvoice::create($invoice, 'SEO');
+
+        $this->assertSame($budi->id, $project->deal_id);
+        $this->assertSame($deals, Deal::count());
     }
 
-    public function test_invoice_yang_tidak_boleh_dilihat_tidak_dipakai_untuk_mengisi(): void
+    public function test_klik_ganda_tidak_membuat_project_dobel(): void
     {
-        $role = Role::findOrCreate('Tes Pembuat Project ' . Str::random(5), 'web');
-        $role->givePermissionTo(Permission::findOrCreate('create_project', 'web'));
+        $invoice = $this->invoice($this->deal('PT Sekali Saja', 'Andi'), [['item' => 'Video', 'qty' => 1, 'description' => null]]);
+
+        $first  = ProjectFromInvoice::create($invoice, 'SEO');
+        $second = ProjectFromInvoice::create($invoice, 'Website Development');
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame(1, Project::where('invoice_id', $invoice->id)->count());
+    }
+
+    public function test_tombol_tidak_tampil_tanpa_izin_membuat_project(): void
+    {
+        $role = Role::findOrCreate('Tes Lihat Invoice ' . Str::random(5), 'web');
+        foreach (['view_any_invoice', 'view_invoice'] as $permission) {
+            $role->givePermissionTo(Permission::findOrCreate($permission, 'web'));
+        }
         $this->actingAs($this->user($role->name));
 
-        $invoice = $this->invoice($this->deal('PT Rahasia', 'Rina'), [['item' => 'Kontrak Rahasia', 'qty' => 1, 'description' => 'Nilai besar']]);
+        $invoice = $this->invoice($this->deal('PT Tanpa Izin', 'Rina'), [['item' => 'Kontrak', 'qty' => 1, 'description' => null]]);
 
-        $page = Livewire::withQueryParams(['invoice' => $invoice->id])->test(CreateProject::class);
-
-        $this->assertNull($page->get('fromInvoice'));
-        $this->assertStringNotContainsString('Kontrak Rahasia', (string) $page->get('data.detail_project'));
+        Livewire::test(ListInvoices::class)->assertTableActionHidden('project', $invoice);
     }
 
     public function test_simpan_invoice_tidak_menghapus_tautan_client(): void
