@@ -286,8 +286,10 @@
                 </div>
                 @endif
 
-                {{-- Lampiran pengajuan, mis. penawaran/referensi yang dikirim lewat bot Telegram --}}
-                @php($lampiran = $record->attachmentPaths())
+                {{-- Lampiran pengajuan, mis. penawaran/referensi yang dikirim lewat bot Telegram.
+                     Bukan @php(...) satu baris: di file yang juga memakai @php ... @endphp, Blade
+                     menelan semua isi sampai @endphp berikutnya dan halaman ini error. --}}
+                @php $lampiran = $record->attachmentPaths(); @endphp
                 @if(count($lampiran))
                 <div class="mt-4 flex flex-wrap gap-2">
                     @foreach($lampiran as $path)
