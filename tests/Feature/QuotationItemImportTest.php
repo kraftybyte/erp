@@ -160,6 +160,45 @@ class QuotationItemImportTest extends TestCase
         $this->assertEquals([38, 5_250_000, 199_500_000], [$items[1]['qty'], $items[1]['price'], $items[1]['total']]);
     }
 
+    public function test_format_harga_jual_dengan_penanda_dan_sub_bagian(): void
+    {
+        $import = app(QuotationItemImport::class);
+        $result = $import->parse($this->hargaJual());
+
+        $this->assertEquals(167_157_000, $result['total']);
+        $this->assertEquals(167_157_000, $result['expected_total']);
+        $this->assertSame([
+            '"Lightbox Launge": Rp 8.568.385 × 1 = Rp 8.568.385, tapi total di file Rp 14.157.000. Dipakai Rp 14.157.000 (qty 1).',
+            'Tidak diimpor (tanpa harga, di luar tabel item): "Pekerjaan Renovasi", "Lingkup pekerjaan antara lain :".',
+        ], $result['warnings'], 'Sub total per bagian cocok; judul di atas tabel dilaporkan.');
+
+        $items = $import->lines($result['items']);
+
+        $this->assertSame([
+            'Persiapan Pekerjaan', 'Persiapan Pekerjaan',
+            'Pekerjaan Shopfront/Area Depan', 'Pekerjaan Shopfront/Area Depan',
+            'Pekerjaan Partisi · Sisi Kanan', 'Pekerjaan Partisi · Sisi Kiri',
+        ], array_column($items, 'item'));
+
+        // Harga "By Owner": tetap jadi item, harga 0, keterangannya ikut.
+        $this->assertSame(['Listrik & air kerja', 'By Owner'], $items[1]['description_lines']);
+        $this->assertEquals([1, 0, 0], [$items[1]['qty'], $items[1]['price'], $items[1]['total']]);
+
+        // Penanda "1" tidak menjadi nama; baris spesifikasi masuk ke item di atasnya.
+        $this->assertSame(['Facade Logo', 'Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver'], $items[2]['description_lines']);
+
+        // Satuan ikut tercatat.
+        $this->assertSame(['Kolom Stainless Hairline', '2 ls'], $items[3]['description_lines']);
+        $this->assertEquals([2, 18_000_000, 36_000_000], [$items[3]['qty'], $items[3]['price'], $items[3]['total']]);
+    }
+
+    public function test_sub_total_di_kolom_no_yang_tidak_cocok_diperingatkan(): void
+    {
+        $result = app(QuotationItemImport::class)->parse($this->hargaJual(shopfrontTotal: 90_000_000));
+
+        $this->assertContains('Total Harga Pekerjaan Shopfront di file Rp 90.000.000, jumlah itemnya Rp 91.000.000.', $result['warnings']);
+    }
+
     public function test_tombol_import_mengisi_form_quotation(): void
     {
         $user = User::forceCreate([
@@ -269,6 +308,51 @@ class QuotationItemImportTest extends TestCase
         $this->assertCount(6, $invoice->invoicesItems);
         $this->assertEquals(187_000_000, $invoice->grand_total);
         $this->assertEquals(93_500_000, $invoice->amountDue(), 'Amount Due DP 50% dari nilai penuh.');
+    }
+
+    /**
+     * Format "Harga Jual": NO | JENIS PEKERJAAN (B:D digabung, dengan penanda
+     * A / 1 / - di depan) | QTY | Satuan | Harga Satuan | Total Harga; sub total
+     * berlabel di kolom NO.
+     */
+    private function hargaJual(int $shopfrontTotal = 91_000_000): string
+    {
+        $rows = [
+            [null, 'Pekerjaan Renovasi'],
+            [null, 'Lingkup pekerjaan antara lain :'],
+            [null, ' - ', 'Persiapan Pekerjaan'],
+            [null, null, ' - ', 'Mobilisasi dan akomodasi', 1, 'ls', 40_000_000, 40_000_000],
+            [null, null, ' - ', 'Listrik & air kerja', 1, 'ls', 'By Owner', 'By Owner'],
+            [' ', null, null, null, null, null, null, 40_000_000],
+            [],
+            [null, 'A', 'Pekerjaan Shopfront/Area Depan'],
+            [null, null, 1, 'Facade Logo', 1, 'ls', 55_000_000, 55_000_000],
+            [null, null, null, ' - Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver'],
+            [null, null, 2, 'Kolom Stainless Hairline', 2, 'ls', 18_000_000, 36_000_000],
+            ['Total Harga Pekerjaan Shopfront ', null, null, null, null, null, null, $shopfrontTotal],
+            [],
+            [null, 'C', 'Pekerjaan Partisi'],
+            [null, null, null, 'Sisi Kanan'],
+            [null, null, 1, 'Video tron P2.5', 1, 'ls ', 22_000_000, 22_000_000],
+            [],
+            [null, null, null, 'Sisi Kiri'],
+            [null, null, 1, 'Lightbox Launge', 1, 'ls', 8_568_385, 14_157_000],
+            ['Total Harga Pekerjaan Partisi', null, null, null, null, null, null, 36_157_000],
+            ['Grand Total', null, null, null, null, null, null, 167_157_000],
+        ];
+
+        $book  = new Spreadsheet();
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray(['NO', 'JENIS PEKERJAAN', null, null, 'QTY', 'Satuan', 'Harga Satuan', 'Total Harga'], null, 'A2');
+        $sheet->mergeCells('B2:D2');
+        $sheet->fromArray($rows, null, 'A4', true);
+
+        $path = tempnam(sys_get_temp_dir(), 'quo-') . '.xlsx';
+        $this->paths[] = $path;
+        (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
+
+        return $path;
     }
 
     /**
