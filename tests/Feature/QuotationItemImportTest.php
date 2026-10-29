@@ -168,6 +168,7 @@ class QuotationItemImportTest extends TestCase
         $this->assertEquals(167_157_000, $result['total']);
         $this->assertEquals(167_157_000, $result['expected_total']);
         $this->assertSame([
+            '"Logo KT&G" tidak punya harga di file; diimpor dengan harga Rp 0. Isi harganya atau hapus barisnya.',
             '"Lightbox Launge": Rp 8.568.385 × 1 = Rp 8.568.385, tapi total di file Rp 14.157.000. Dipakai Rp 14.157.000 (qty 1).',
             'Tidak diimpor (tanpa harga, di luar tabel item): "Pekerjaan Renovasi", "Lingkup pekerjaan antara lain :".',
         ], $result['warnings'], 'Sub total per bagian cocok; judul di atas tabel dilaporkan.');
@@ -176,7 +177,7 @@ class QuotationItemImportTest extends TestCase
 
         $this->assertSame([
             'Persiapan Pekerjaan', 'Persiapan Pekerjaan',
-            'Pekerjaan Shopfront/Area Depan', 'Pekerjaan Shopfront/Area Depan',
+            'Pekerjaan Shopfront/Area Depan', 'Pekerjaan Shopfront/Area Depan', 'Pekerjaan Shopfront/Area Depan',
             'Pekerjaan Partisi · Sisi Kanan', 'Pekerjaan Partisi · Sisi Kiri',
         ], array_column($items, 'item'));
 
@@ -188,8 +189,12 @@ class QuotationItemImportTest extends TestCase
         $this->assertSame(['Facade Logo', 'Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver'], $items[2]['description_lines']);
 
         // Satuan ikut tercatat.
-        $this->assertSame(['Kolom Stainless Hairline', '2 ls'], $items[3]['description_lines']);
+        $this->assertSame(['Kolom Stainless Hairline', '2 ls'], $items[3]['description_lines'], 'Baris bernomor tanpa harga di bawahnya tidak menempel ke item ini.');
         $this->assertEquals([2, 18_000_000, 36_000_000], [$items[3]['qty'], $items[3]['price'], $items[3]['total']]);
+
+        // Item bernomor tanpa harga tetap item sendiri, harga 0.
+        $this->assertSame(['Logo KT&G'], $items[4]['description_lines']);
+        $this->assertEquals([1, 0, 0], [$items[4]['qty'], $items[4]['price'], $items[4]['total']]);
     }
 
     public function test_sub_total_di_kolom_no_yang_tidak_cocok_diperingatkan(): void
@@ -329,6 +334,8 @@ class QuotationItemImportTest extends TestCase
             [null, null, 1, 'Facade Logo', 1, 'ls', 55_000_000, 55_000_000],
             [null, null, null, ' - Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver'],
             [null, null, 2, 'Kolom Stainless Hairline', 2, 'ls', 18_000_000, 36_000_000],
+            // Harganya dihapus di file, barisnya tetap.
+            [null, null, 3, 'Logo KT&G', 1, 'ls'],
             ['Total Harga Pekerjaan Shopfront ', null, null, null, null, null, null, $shopfrontTotal],
             [],
             [null, 'C', 'Pekerjaan Partisi'],
