@@ -12,9 +12,9 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * Template Excel untuk tombol "Import dari Excel" di quotation dan invoice:
  * satu baris = satu item. Kolomnya dibaca QuotationItemImport apa adanya.
  */
-class QuotationImportTemplate
+class ItemImportTemplate
 {
-    public const FILENAME = 'Template Import Item Quotation.xlsx';
+    public const TYPES = ['quotation' => 'Quotation', 'invoice' => 'Invoice'];
 
     public const HEADERS = ['Item', 'Deskripsi', 'Qty', 'Satuan', 'Harga', 'Total'];
 
@@ -28,28 +28,36 @@ class QuotationImportTemplate
 
     private const GUIDE = [
         ['Kolom', 'Cara mengisi'],
-        ['Item', 'Wajib. Nama item yang tampil di quotation, mis. kategori pekerjaan (Pekerjaan Partisi) atau nama barang.'],
+        ['Item', 'Wajib. Nama item yang tampil di :document, mis. kategori pekerjaan (Pekerjaan Partisi) atau nama barang.'],
         ['Deskripsi', 'Rincian pekerjaan. Satu poin per baris di dalam sel (Alt+Enter di Windows, Option+Enter di Mac). Boleh kosong.'],
         ['Qty', 'Jumlah (angka). Kosong dianggap 1.'],
         ['Satuan', 'Opsional, mis. Unit, ls, ttk, m2. Bila Qty lebih dari 1, ditulis di deskripsi, mis. "2 Unit".'],
-        ['Harga', 'Harga satuan. Boleh 1250000, 1.250.000, atau Rp 1.250.000. Boleh teks seperti "By Owner": item masuk Rp 0 dengan keterangan itu.'],
+        ['Harga', 'Harga satuan. Boleh 1250000, 1.250.000, atau Rp 1.250.000. Boleh teks seperti "By Owner": item masuk Rp 0 dengan keterangan itu.:dp'],
         ['Total', 'Opsional, = Qty × Harga. Bila diisi tapi berbeda, Total ini yang dipakai (sebagai 1 paket) dan muncul peringatan.'],
         ['', ''],
         ['Aturan', ''],
-        ['1 baris = 1 item', 'Isi di sheet "Item Quotation" (sheet pertama). Sheet "Contoh" berisi contoh pengisian.'],
+        ['1 baris = 1 item', 'Isi di sheet "Item :Document" (sheet pertama). Sheet "Contoh" berisi contoh pengisian.'],
         ['Baris tanpa Harga', 'Dianggap rincian tambahan item di atasnya. Setiap item harus punya Harga (atau teks seperti "By Owner").'],
         ['Baris TOTAL', 'Opsional: tulis TOTAL di kolom Item dan jumlahnya di kolom Total, untuk dicocokkan dengan jumlah item.'],
         ['PPN', 'Tidak diisi di file. Pilih persentasenya di jendela Import.'],
         ['Susunan item', 'Saat import pilih "Setiap baris satu item".'],
     ];
 
-    public function save(string $path): void
+    public static function filename(string $type): string
+    {
+        return 'Template Import Item ' . self::TYPES[$type] . '.xlsx';
+    }
+
+    /**
+     * @param  string  $type  quotation | invoice
+     */
+    public function save(string $path, string $type = 'quotation'): void
     {
         $book = new Spreadsheet();
 
-        $this->itemSheet($book->getActiveSheet(), 'Item Quotation', []);
+        $this->itemSheet($book->getActiveSheet(), 'Item ' . self::TYPES[$type], []);
         $this->itemSheet($book->createSheet(), 'Contoh', self::EXAMPLES);
-        $this->guideSheet($book->createSheet());
+        $this->guideSheet($book->createSheet(), $type);
 
         // Importer membaca sheet yang aktif saat file disimpan.
         $book->setActiveSheetIndex(0);
@@ -97,10 +105,21 @@ class QuotationImportTemplate
         $sheet->freezePane('A2');
     }
 
-    private function guideSheet(Worksheet $sheet): void
+    private function guideSheet(Worksheet $sheet, string $type): void
     {
+        $replace = [
+            ':document' => strtolower(self::TYPES[$type]),
+            ':Document' => self::TYPES[$type],
+            // Invoice DP menyimpan nilai penuh pekerjaan; DP-nya dihitung dari Total × persen.
+            ':dp'       => $type === 'invoice'
+                ? ' Untuk invoice DP tetap isi harga penuh: persentase DP dipilih di Tipe Pembayaran, nilai DP-nya dihitung otomatis.'
+                : '',
+        ];
+
+        $rows = array_map(fn (array $row) => array_map(fn (string $text) => strtr($text, $replace), $row), self::GUIDE);
+
         $sheet->setTitle('Petunjuk');
-        $sheet->fromArray(self::GUIDE, null, 'A1');
+        $sheet->fromArray($rows, null, 'A1');
 
         $sheet->getStyle('A1:B1')->getFont()->setBold(true);
         $sheet->getStyle('A9')->getFont()->setBold(true);

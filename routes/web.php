@@ -10,7 +10,7 @@ use App\Http\Controllers\Auth\InstagramConnectController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
-use App\Services\QuotationImportTemplate;
+use App\Services\ItemImportTemplate;
 use Filament\Notifications\Notification;
 
 
@@ -79,12 +79,12 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Template Excel untuk tombol "Import dari Excel" di quotation & invoice.
-Route::get('/import-template/item-quotation', function (QuotationImportTemplate $template) {
+Route::get('/import-template/{type}', function (ItemImportTemplate $template, string $type) {
     $path = tempnam(sys_get_temp_dir(), 'template-');
-    $template->save($path);
+    $template->save($path, $type);
 
-    return response()->download($path, QuotationImportTemplate::FILENAME)->deleteFileAfterSend();
-})->middleware('auth')->name('import-template.items');
+    return response()->download($path, ItemImportTemplate::filename($type))->deleteFileAfterSend();
+})->whereIn('type', array_keys(ItemImportTemplate::TYPES))->middleware('auth')->name('import-template.items');
 
 // WhatsApp Message Route
 Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');
