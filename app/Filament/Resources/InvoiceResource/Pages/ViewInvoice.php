@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use Filament\Resources\Pages\ViewRecord;
+use App\Filament\Actions\ProjectFromInvoiceAction;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\Deal;
 use Filament\Actions;
@@ -24,11 +25,7 @@ class ViewInvoice extends ViewRecord
                 ->color('info')
                 ->url(fn () => route('invoices.download', $this->record))
                 ->openUrlInNewTab(),
-            Actions\Action::make('project')
-                ->label(fn () => $this->record->projects->isNotEmpty() ? 'Lihat Project' : 'Buat Project')
-                ->icon('heroicon-o-briefcase')
-                ->url(fn () => InvoiceResource::projectUrl($this->record))
-                ->visible(fn () => InvoiceResource::projectUrl($this->record) !== null),
+            ProjectFromInvoiceAction::page(),
         ];
     }
 

@@ -2,39 +2,49 @@
 
 namespace App\Services;
 
+use App\Enums\DealStatus;
 use App\Models\Deal;
 use App\Models\Invoice;
-use App\Models\InvoicesItem;
+use App\Models\Project;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Isi form project dari invoice: client, PIC, alamat, dan rincian pekerjaan
- * dari item invoice. Kategori project tetap dipilih sendiri oleh pengguna.
+ * Project langsung dari invoice: client, PIC, alamat, dan rincian pekerjaan
+ * diambil dari invoice; pengguna hanya memilih kategori project.
  */
 class ProjectFromInvoice
 {
-    public static function formData(Invoice $invoice): array
+    /**
+     * Buat project untuk invoice ini, atau kembalikan project yang sudah dibuat
+     * darinya (klik ganda / dua orang bersamaan tidak membuat project dobel).
+     */
+    public static function create(Invoice $invoice, string $category): Project
     {
-        $deal  = self::deal($invoice);
-        $start = $invoice->date ? Carbon::parse($invoice->date) : today();
-        $due   = $invoice->due_date ? Carbon::parse($invoice->due_date) : null;
+        return DB::transaction(function () use ($invoice, $category) {
+            $invoice = Invoice::with('invoicesItems')->lockForUpdate()->findOrFail($invoice->getKey());
 
-        return [
-            'deal_id'          => $deal?->id,
-            // PIC & alamat order ini bisa berbeda dari data client, jadi invoice didahulukan.
-            'nama_perusahaan'  => $invoice->nama_perusahaan ?: $deal?->nama_perusahaan,
-            'nama_pic'         => self::filled($invoice->nama_pic) ?? $deal?->nama_pic,
-            'alamat'           => self::filled($invoice->alamat) ?? $deal?->alamat,
-            'notes'            => $deal?->notes,
-            'detail_project'   => self::detail($invoice),
-            'timeline_mulai'   => $start->toDateString(),
-            'timeline_selesai' => ($due && $due->gt($start) ? $due : $start->copy()->addDays(30))->toDateString(),
-        ];
+            if ($existing = $invoice->projects()->first()) {
+                return $existing;
+            }
+
+            $deal = self::deal($invoice) ?? self::createDeal($invoice);
+
+            // Invoice ikut tertaut ke client-nya (dulu tautan ini sering hilang).
+            if ($invoice->deal_id !== $deal->id) {
+                $invoice->forceFill(['deal_id' => $deal->id])->saveQuietly();
+            }
+
+            return Project::create(self::attributes($invoice, $deal) + [
+                'nama_project' => $category,
+                'invoice_id'   => $invoice->id,
+            ]);
+        });
     }
 
     /**
      * Client invoice: tautan deal_id, atau client dengan nama perusahaan yang sama
-     * (dan PIC yang sama bila ada beberapa). Null bila tidak bisa dipastikan.
+     * (dan PIC yang sama bila ada beberapa). Null bila belum ada.
      */
     public static function deal(Invoice $invoice): ?Deal
     {
@@ -53,11 +63,44 @@ class ProjectFromInvoice
     }
 
     /**
+     * Isi project. PIC & alamat order ini bisa berbeda dari data client, jadi
+     * invoice didahulukan.
+     */
+    public static function attributes(Invoice $invoice, Deal $deal): array
+    {
+        [$start, $end] = self::timeline($invoice);
+
+        return [
+            'deal_id'          => $deal->id,
+            'nama_perusahaan'  => self::filled($invoice->nama_perusahaan) ?? $deal->nama_perusahaan,
+            'nama_pic'         => self::filled($invoice->nama_pic) ?? $deal->nama_pic,
+            'alamat'           => self::filled($invoice->alamat) ?? $deal->alamat,
+            'notes'            => $deal->notes,
+            'detail_project'   => self::detail($invoice),
+            'timeline_mulai'   => $start->toDateString(),
+            'timeline_selesai' => $end->toDateString(),
+        ];
+    }
+
+    /**
+     * Tanggal invoice s/d jatuh tempo, atau 30 hari bila jatuh tempo kosong.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    public static function timeline(Invoice $invoice): array
+    {
+        $start = $invoice->date ? Carbon::parse($invoice->date) : today();
+        $due   = $invoice->due_date ? Carbon::parse($invoice->due_date) : null;
+
+        return [$start, $due && $due->gt($start) ? $due : $start->copy()->addDays(30)];
+    }
+
+    /**
      * Rincian pekerjaan dalam Markdown, satu butir per item invoice.
      */
     public static function detail(Invoice $invoice): string
     {
-        $items = $invoice->invoicesItems->map(function (InvoicesItem $item) {
+        $items = $invoice->invoicesItems->map(function ($item) {
             $qty  = (float) $item->qty;
             $line = '- **' . trim((string) $item->item) . '**' . ($qty > 0 && $qty != 1 ? ' (' . ($qty + 0) . 'x)' : '');
 
@@ -69,6 +112,21 @@ class ProjectFromInvoice
         });
 
         return trim('Dari invoice ' . $invoice->uuid . "\n\n" . $items->implode("\n"));
+    }
+
+    /**
+     * Client baru dari data invoice, untuk pelanggan yang belum tercatat di CRM.
+     */
+    private static function createDeal(Invoice $invoice): Deal
+    {
+        return Deal::create([
+            'nama_perusahaan' => self::filled($invoice->nama_perusahaan) ?? self::filled($invoice->nama_pic) ?? 'Tanpa nama',
+            'nama_pic'        => self::filled($invoice->nama_pic) ?? '',
+            'telephone'       => self::filled($invoice->telephone),
+            'alamat'          => self::filled($invoice->alamat),
+            'status'          => DealStatus::DalamTahapProject->value,
+            'notes'           => "Dibuat otomatis dari invoice {$invoice->uuid}.",
+        ]);
     }
 
     /**
