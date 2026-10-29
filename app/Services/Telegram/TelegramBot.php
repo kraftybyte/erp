@@ -810,11 +810,11 @@ class TelegramBot
                 $chatId,
                 $messageId,
                 $draft,
-                "📝 <b>Draft Expense — {$count} struk</b>\nMenjadi {$count} pengajuan terpisah, masing-masing dengan strukny sendiri.\n\n"
-                    . 'Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') . "\n"
-                    . 'Project: ' . ($project ? e($this->projectLabel($project)) : '-') . "\n"
-                    . 'Kategori: ' . e($draft->category) . "\n"
-                    . 'Keterangan: ' . e($draft->description) . "\n\n"
+                "📝 <b>Draft Expense — {$count} struk</b>\nMenjadi {$count} pengajuan terpisah, masing-masing dengan struknya sendiri.\n\n"
+                    . '📅 Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') . "\n"
+                    . '🏷 Kategori: ' . e($draft->category) . "\n"
+                    . '📁 Project: ' . ($project ? $this->projectLines($project) : '-') . "\n"
+                    . '🗒 Keterangan: ' . e($draft->description) . "\n\n"
                     . $this->receiptLines($draft) . "\n"
                     . 'Total: <b>' . $this->rupiah($draft->total()) . "</b>\n\n"
                     . $this->totalMismatchWarning($draft)
@@ -912,7 +912,7 @@ class TelegramBot
         $draft->save($chatId);
 
         $list = $open
-            ->map(fn (Advance $advance) => '• ' . e(Str::limit((string) $advance->keterangan_advance, 60))
+            ->map(fn (Advance $advance) => '• ' . e(Text::short($advance->keterangan_advance, 60))
                 . ' — sisa ' . $this->rupiah($this->advances->remaining($advance)))
             ->implode("\n");
 
@@ -977,9 +977,9 @@ class TelegramBot
                 $chatId,
                 $messageId,
                 $draft,
-                "🧾 <b>Draft Realisasi — {$count} struk</b>\nMenjadi 1 batch dengan {$count} item, masing-masing dengan strukny sendiri.\n\n"
-                    . 'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
-                    . ($advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) . "\n" : '')
+                "🧾 <b>Draft Realisasi — {$count} struk</b>\nMenjadi 1 batch dengan {$count} item, masing-masing dengan struknya sendiri.\n\n"
+                    . '💸 Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
+                    . ($advance->project ? '📁 Project: ' . $this->projectLines($advance->project) . "\n" : '')
                     . "\n" . $this->receiptLines($draft) . "\n"
                     . 'Total: <b>' . $this->rupiah($draft->total()) . "</b>\n"
                     . 'Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($after) . "\n\n"
@@ -1049,7 +1049,7 @@ class TelegramBot
 
         $rows = $choices
             ->map(fn (Advance $advance, int $index) => [$this->button(
-                ($index + 1) . '. ' . Str::limit((string) $advance->keterangan_advance, 28) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
+                ($index + 1) . '. ' . Text::short($advance->keterangan_advance, 30) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
                 $draft,
                 'adv',
                 $advance->id
@@ -1068,10 +1068,10 @@ class TelegramBot
 
     private function advanceSummary(Advance $advance): string
     {
-        $lines = ['<b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid)];
+        $lines = ['<b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid)];
 
         if ($advance->project) {
-            $lines[] = '   ' . e($this->projectLabel($advance->project));
+            $lines[] = '   📁 ' . $this->projectLines($advance->project, '       ');
         }
 
         $lines[] = '   Sisa: ' . $this->rupiah($this->advances->remaining($advance));
@@ -1082,12 +1082,12 @@ class TelegramBot
     private function realisasiDetails(Draft $draft, Advance $advance, float $remaining): string
     {
         return implode("\n", array_filter([
-            'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
-            $advance->project ? 'Project: ' . e($this->projectLabel($advance->project)) : null,
-            'Item: ' . e($draft->description),
-            'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
-            'Lampiran: ' . $this->attachmentLabel($draft),
-            'Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($remaining - $draft->amount),
+            '💸 Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
+            $advance->project ? '📁 Project: ' . $this->projectLines($advance->project) : null,
+            '🗒 Item: ' . e($draft->description),
+            '💰 Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
+            '📎 Lampiran: ' . $this->attachmentLabel($draft),
+            '📉 Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($remaining - $draft->amount),
         ]));
     }
 
@@ -1148,7 +1148,7 @@ class TelegramBot
                 // Aturan realisasi (status advance, overrun yang belum disetujui)
                 // dijaga RealisasiService, sama seperti dari halaman ERP.
                 $this->realisasi->createBatch($advance, ['notes' => 'Dikirim lewat bot Telegram', 'uploaded_by' => $user->id], $items);
-                $this->rememberReceipts($draft, $user, 'Realisasi ' . Str::limit((string) $advance->keterangan_advance, 40));
+                $this->rememberReceipts($draft, $user, 'Realisasi ' . Text::short($advance->keterangan_advance, 40));
             });
         } catch (InvalidArgumentException $e) {
             $this->deleteStored($files);
@@ -1187,7 +1187,7 @@ class TelegramBot
             $chatId,
             $messageId,
             "✅ <b>Realisasi terkirim</b>\n\n"
-                . 'Advance: <b>' . e(Str::limit((string) $advance->keterangan_advance, 80)) . "</b>\n"
+                . 'Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . "</b>\n"
                 . ($draft->isMulti()
                     ? $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\n"
                     : 'Item: ' . e($draft->description) . ' — ' . $this->rupiah($draft->amount) . "\n"
@@ -1213,7 +1213,7 @@ class TelegramBot
 
         $rows = [];
         foreach ($pages[$page] ?? [] as $id => $label) {
-            $rows[] = [$this->button(Str::limit($label, 60), $draft, 'project', $id)];
+            $rows[] = [$this->button(Text::short($label, 60), $draft, 'project', $id)];
         }
 
         $nav = [];
@@ -1276,14 +1276,14 @@ class TelegramBot
         $projects = $projects->values();
 
         $lines = $projects
-            ->map(fn (Project $project, int $index) => ($index + 1) . '. ' . e($this->projectLabel($project)))
+            ->map(fn (Project $project, int $index) => ($index + 1) . '. ' . $this->projectLines($project, '    '))
             ->implode("\n");
 
         // PIC di depan label, jadi project satu klien yang beda PIC tetap
         // terbedakan walau teks tombolnya terpotong.
         $rows = $projects
             ->map(fn (Project $project, int $index) => [
-                $this->button(Str::limit(($index + 1) . '. ' . $this->projectLabel($project), 60), $draft, 'project', $project->id),
+                $this->button(Text::short(($index + 1) . '. ' . $this->projectLabel($project), 60), $draft, 'project', $project->id),
             ])
             ->all();
 
@@ -1446,7 +1446,7 @@ class TelegramBot
                     $records[] = $expense;
                 }
 
-                $this->rememberReceipts($draft, $user, self::TYPES[$draft->type]['label'] . ' ' . Str::limit((string) $draft->description, 40));
+                $this->rememberReceipts($draft, $user, self::TYPES[$draft->type]['label'] . ' ' . Text::short($draft->description, 40));
 
                 return $records;
             });
@@ -1542,22 +1542,22 @@ class TelegramBot
             $date = $item['at'] ? Carbon::parse($item['at'])->locale('id')->translatedFormat('j M') . ' · ' : '';
 
             return "{$type['icon']} <b>{$type['label']}</b> · {$this->rupiah($item['amount'])} · <i>" . e($item['status']) . "</i>\n"
-                . $date . e(Str::limit((string) $item['description'], 60));
+                . $date . e(Text::short($item['description'], 70));
         });
 
-        $message = "<b>5 pengajuan terakhir</b>\n\n" . $lines->implode("\n\n");
+        $message = "<b>{$items->count()} pengajuan terakhir</b>\n\n" . $lines->implode("\n\n");
 
         if ($open->isNotEmpty()) {
             $progress = $open->map(function (Advance $advance) {
                 $realized = $this->advances->realized($advance);
                 $percent  = (float) $advance->paid > 0 ? round($realized / (float) $advance->paid * 100) : 0;
 
-                return '🧾 ' . e(Str::limit((string) $advance->keterangan_advance, 50)) . "\n"
-                    . $this->rupiah($realized) . ' / ' . $this->rupiah($advance->paid) . " ({$percent}%)";
+                return '🧾 ' . e(Text::short($advance->keterangan_advance, 60)) . "\n"
+                    . 'Terealisasi ' . $this->rupiah($realized) . ' dari ' . $this->rupiah($advance->paid) . " ({$percent}%)";
             });
 
             $message .= "\n\n<b>Advance yang perlu direalisasi</b>\n\n" . $progress->implode("\n\n")
-                . "\n\nKirim struk + <i>realisasi …</i> untuk melaporkannya.";
+                . "\n\nUntuk melaporkan pemakaiannya, kirim foto struk dengan keterangan <i>realisasi 350rb …</i>";
         }
 
         $this->telegram->sendMessage($chatId, $message);
@@ -1576,14 +1576,19 @@ class TelegramBot
     private function helpText(): string
     {
         return <<<'HTML'
+        <b>Cara mengajukan</b>
         1. Kirim <b>foto struk/invoice</b> (boleh dilewati).
-        2. Tulis keterangannya dalam satu pesan, misalnya:
+        2. Tulis keperluannya dalam satu pesan, misalnya:
         • <i>expense 150rb grab ke kantor klien nestory</i>
-        • <i>advance 2jt beli properti shooting video profile</i>
-        • <i>realisasi 350rb sewa lighting nestory</i> — melaporkan pemakaian advance yang sudah dibayarkan
+        • <i>advance 2jt beli properti shooting</i>
+        • <i>realisasi 350rb sewa lighting nestory</i>
 
-        Bot mengenali kategori, project, dan advance-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi. Tidak ada yang tersimpan sebelum kamu menekan <b>Kirim</b>.
+        <i>Realisasi</i> = laporan pemakaian advance yang sudah dibayarkan.
 
+        Bot mengenali kategori, project, dan advance-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi.
+        Belum ada yang tersimpan sampai kamu menekan <b>Kirim</b>.
+
+        <b>Perintah</b>
         /expense – ajukan expense (reimburse)
         /advance – ajukan advance (uang muka)
         /realisasi – laporkan pemakaian advance
@@ -1629,13 +1634,28 @@ class TelegramBot
         $project = Project::with('deal')->find($draft->projectId);
 
         return implode("\n", [
-            'Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y'),
-            'Project: ' . ($project ? e($this->projectLabel($project)) : '-'),
-            'Kategori: ' . e($draft->category),
-            'Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
-            'Keterangan: ' . e($draft->description),
-            'Lampiran: ' . $this->attachmentLabel($draft),
+            '📅 Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y'),
+            '💰 Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
+            '🏷 Kategori: ' . e($draft->category),
+            '📁 Project: ' . ($project ? $this->projectLines($project) : '-'),
+            '🗒 Keterangan: ' . e($draft->description),
+            '📎 Lampiran: ' . $this->attachmentLabel($draft),
         ]);
+    }
+
+    /**
+     * "PIC - Perusahaan", lalu nama project di baris berikutnya. Dalam satu baris,
+     * "PIC - Perusahaan | Project" terpenggal tidak rapi di layar HP.
+     */
+    private function projectLines(Project $project, string $indent = '      '): string
+    {
+        [$client, $name] = ClientLabel::projectParts($project);
+
+        if ($client === null || $name === null) {
+            return e($this->projectLabel($project));
+        }
+
+        return e($client) . "\n{$indent}↳ " . e($name);
     }
 
     private function attachmentLabel(Draft $draft): string

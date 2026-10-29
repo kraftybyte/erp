@@ -123,7 +123,7 @@ class FinanceBotTest extends TestCase
         $this->send($this->text('/piutang'));
 
         $this->assertStringNotContainsString('PT Sudah Lunas DP', $this->lastText(), 'Berstatus paid: tidak ditampilkan.');
-        $this->assertStringContainsString('Rina Kartika - PT Baru Sebagian</b> — sisa Rp 466.200.000', $this->lastText());
+        $this->assertStringContainsString("Rina Kartika - PT Baru Sebagian</b>\n   Sisa <b>Rp 466.200.000</b> dari Rp 777.000.000 · DP 40%", $this->lastText());
     }
 
     public function test_tombol_excel_mengirim_file_berisi_seluruh_data(): void

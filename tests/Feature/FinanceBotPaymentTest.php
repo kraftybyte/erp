@@ -111,6 +111,22 @@ class FinanceBotPaymentTest extends TestCase
         $this->assertStringContainsString($label, $this->lastText());
     }
 
+    public function test_pemilih_periode_yang_terbuka_tidak_menelan_nominal(): void
+    {
+        $this->user('Finance');
+        $invoice = $this->invoice(['grand_total' => 30_000_000]);
+
+        // Pemilih periode dibuka, lalu langsung mencatat pembayaran dari pesan lain.
+        $this->send($this->tap('fin:periode:ringkasan'));
+        $this->send($this->tap('pay:list'));
+        $this->send($this->tap("pay:inv:{$invoice->id}"));
+        $this->send($this->tap("pay:acc:{$this->account->id}"));
+
+        $this->send($this->text('12,5jt'));
+        $this->assertStringContainsString('Konfirmasi pembayaran', $this->lastText(), 'Dulu terbaca sebagai tanggal: "Tanggal tidak terbaca".');
+        $this->assertStringContainsString('sisa Rp 17.500.000', $this->lastText());
+    }
+
     public function test_bayar_sebagian_dengan_mengetik_nominal(): void
     {
         $this->user('Director');
