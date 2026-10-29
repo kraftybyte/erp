@@ -9,6 +9,7 @@ use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Notifications\Notification;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
@@ -30,9 +31,16 @@ class ImportItemsAction
             ->icon('heroicon-o-arrow-up-tray')
             ->color('gray')
             ->modalHeading('Import item dari Excel')
-            ->modalDescription('File budget dengan kolom ITEMS / Nama Barang, PRICE/QTY / Harga, QTY, DUR, dan TOTAL; kolom lain (mis. USD) diabaikan. Judul bagian (mis. FLOORING) menjadi kategori, baris spesifikasi atau keterangan masuk ke deskripsi, qty = QTY × DUR, dan SUB TOTAL / TOTAL dicocokkan dengan jumlah item.')
+            ->modalDescription('Template ERP (satu baris satu item), atau file budget/penawaran dengan kolom ITEMS / Nama Barang / Jenis Pekerjaan, Harga, QTY, dan Total; kolom lain (mis. USD) diabaikan. Judul bagian menjadi kategori, baris spesifikasi masuk ke deskripsi, dan SUB TOTAL / TOTAL dicocokkan dengan jumlah item.')
             ->modalSubmitActionLabel('Import')
             ->form([
+                Forms\Components\Placeholder::make('template')
+                    ->hiddenLabel()
+                    ->content(fn () => new HtmlString(
+                        'Belum punya file? <a href="' . e(route('import-template.items')) . '" target="_blank" class="font-semibold text-primary-600 underline">Unduh template Excel</a>: '
+                        . 'kolom Item, Deskripsi, Qty, Satuan, Harga, Total, dengan contoh dan petunjuk pengisian.'
+                    )),
+
                 Forms\Components\FileUpload::make('file')
                     ->label('File Excel / CSV')
                     ->acceptedFileTypes([
