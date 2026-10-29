@@ -11,13 +11,17 @@ use RuntimeException;
 /**
  * Membaca item quotation dari file Excel/CSV budget, mis. format
  * NO | ITEMS | PRICE/QTY | QTY | UNIT | DUR | UNIT | TOTAL (kolom lain seperti
- * USD diabaikan).
+ * USD diabaikan), atau NO | JENIS PEKERJAAN | QTY | Satuan | Harga Satuan |
+ * Total Harga dengan penanda di depan nama (A / 1 / -).
  *
- * - Baris berharga = item; qty = QTY × DUR.
- * - Baris HURUF BESAR tanpa harga = judul bagian / kategori (mis. PARTITION →
- *   RIGHT PARTS).
- * - Baris lain tanpa harga = spesifikasi item di atasnya.
- * - SUB TOTAL / GRAND TOTAL tidak diimpor, tapi dicocokkan dengan jumlah item.
+ * - Baris berharga = item; qty = QTY × DUR. Harga berupa teks ("By Owner")
+ *   tetap menjadi item, harga 0, dengan teks itu sebagai keterangan.
+ * - Baris HURUF BESAR tanpa harga, atau berpenanda bagian ("A  Pekerjaan
+ *   Lantai") = judul bagian / kategori (mis. PARTITION → RIGHT PARTS).
+ * - Baris lain tanpa harga = spesifikasi item di atasnya; di format berpenanda,
+ *   baris tanpa harga setelah judul atau baris kosong = sub-bagian ("Sisi Kanan").
+ * - SUB TOTAL / Total Harga Pekerjaan … / GRAND TOTAL tidak diimpor, tapi
+ *   dicocokkan dengan jumlah item.
  *
  * parse() mengembalikan baris mentah; susunannya untuk quotation lewat lines()
  * (kategori sebagai nama item, setiap baris satu item) atau grouped() (satu
@@ -26,7 +30,7 @@ use RuntimeException;
 class QuotationItemImport
 {
     private const HEADERS = [
-        'item'        => '/^(items?|nama( item| barang| pekerjaan)?|uraian( pekerjaan)?|pekerjaan|description)$/',
+        'item'        => '/^(items?|nama( item| barang| pekerjaan)?|uraian( pekerjaan)?|(jenis )?pekerjaan|jenis barang|description)$/',
         'price'       => '/^(price\/?qty|price|unit price|harga( satuan)?|harga\/?qty)$/',
         'qty'         => '/^(qty|quantity|kts|kuantitas|jumlah|jml|vol(ume)?)$/',
         'dur'         => '/^(dur|durasi|duration)$/',
@@ -68,9 +72,14 @@ class QuotationItemImport
 
         $rows = [];
         for ($r = $headerRow + 1, $last = $sheet->getHighestDataRow(); $r <= $last; $r++) {
+            [$marker, $depth, $text] = $this->itemText($sheet, $columns['item'], $r);
+
             $rows[] = [
-                'no'    => $this->text($sheet, $columns['no'] ?? null, $r),
-                'text'  => $this->text($sheet, $columns['item'], $r),
+                'no'     => $this->text($sheet, $columns['no'] ?? null, $r),
+                'text'   => $text,
+                'marker' => $marker,
+                'depth'  => $depth,
+                'remark' => $this->remark($sheet, [...($columns['price'] ?? []), ...($columns['total'] ?? [])], $r),
                 'spec'  => $this->textLines($sheet, $columns['spec'] ?? null, $r),
                 'price' => $this->number($sheet, $columns['price'] ?? null, $r),
                 'qty'   => $this->number($sheet, $columns['qty'] ?? null, $r),
@@ -91,21 +100,28 @@ class QuotationItemImport
     {
         // Tanpa baris SUB TOTAL, setiap judul dianggap bagian baru.
         $hasSubtotals = collect($rows)->contains(fn ($row) => $this->isSubtotal($row['text']));
+        $usesMarkers  = collect($rows)->contains(fn ($row) => $row['marker'] !== null);
 
         $items       = [];
         $warnings    = [];
+        $skipped     = [];
         $expected    = null;
         $pending     = [];
         $section     = null;
         $subsection  = null;
         $sectionOpen = false;
         $running     = 0.0;
+        $previous    = 'blank';
 
         foreach ($rows as $row) {
             $text = $row['text'];
+            // Label jumlah bisa ada di kolom NO, mis. "Grand Total".
+            $label = $text !== '' ? $text : $row['no'];
 
-            if ($this->isGrandTotal($text)) {
+            if ($this->isGrandTotal($label)) {
                 $expected = $row['total'] ?? $row['price'];
+                $running  = 0.0;
+                $previous = 'total';
 
                 continue;
             }
@@ -120,31 +136,59 @@ class QuotationItemImport
 
                 $running     = 0.0;
                 $sectionOpen = false;
+                $previous    = 'total';
 
                 continue;
             }
 
             $hasAmount = ($row['price'] ?? 0) > 0 || ($row['total'] ?? 0) > 0;
 
-            // Baris jumlah yang labelnya ("TOTAL") ada di kolom lain: bukan item.
+            // Baris jumlah tanpa nama item: "TOTAL" di kolom lain, atau "Total Harga
+            // Pekerjaan Lantai" di kolom NO. Sama dengan semua item = total keseluruhan;
+            // selain itu sub total bagian yang baru selesai.
             if ($text === '' && $hasAmount) {
-                $expected = $row['total'] ?? $row['price'];
+                $value = $row['total'] ?? $row['price'];
+
+                if (abs($value - array_sum(array_column($items, 'total'))) <= 1) {
+                    $expected = $value;
+                } elseif (abs($value - $running) > 1) {
+                    $warnings[] = ($label !== '' ? $label : 'Sub total ' . ($section ?? '')) . ' di file ' . $this->rupiah($value)
+                        . ', jumlah itemnya ' . $this->rupiah($running) . '.';
+                }
+
+                $running     = 0.0;
+                $sectionOpen = false;
+                $previous    = 'total';
 
                 continue;
             }
 
-            if (! $hasAmount) {
+            if (! $hasAmount && ($row['remark'] === null || $text === '')) {
                 if ($text === '') {
+                    $previous = 'blank';
+
                     continue;
                 }
 
-                // Baris bernomor tanpa harga (mis. "1  Main Flagship Store"): judul dokumen.
-                if ($row['no'] !== '') {
+                if ($row['marker'] !== null && $row['depth'] === 0) {
+                    // "A | Pekerjaan Shopfront/Area Depan": bagian baru.
+                    [$section, $subsection, $pending, $sectionOpen] = [$text, null, [], true];
+                    $previous = 'heading';
+                } elseif ($row['no'] !== '') {
+                    // Baris bernomor tanpa harga (mis. "1  Main Flagship Store"): judul dokumen.
                     $pending = [];
                 } elseif ($this->isHeading($text)) {
                     $pending[] = $text;
+                    $previous  = 'heading';
+                } elseif ($usesMarkers && $section !== null && $previous !== 'item' && $previous !== 'spec') {
+                    // "Sisi Kanan" di bawah judul bagian atau setelah baris kosong.
+                    $subsection = $text;
+                    $previous   = 'heading';
                 } elseif ($items && ! $pending) {
                     $items[array_key_last($items)]['details'][] = ltrim($text, "- \t");
+                    $previous = 'spec';
+                } else {
+                    $skipped[] = $text;
                 }
 
                 continue;
@@ -164,12 +208,17 @@ class QuotationItemImport
 
             $items[] = $this->item($row, $section, $subsection, $warnings);
             $running += $items[array_key_last($items)]['total'];
+            $previous = 'item';
         }
 
         $total = round(array_sum(array_column($items, 'total')), 2);
 
         if ($expected !== null && abs($expected - $total) > 1) {
             $warnings[] = 'Grand total di file ' . $this->rupiah($expected) . ', jumlah item yang terbaca ' . $this->rupiah($total) . '.';
+        }
+
+        if ($skipped) {
+            $warnings[] = 'Tidak diimpor (tanpa harga, di luar tabel item): "' . implode('", "', $skipped) . '".';
         }
 
         return ['items' => $items, 'warnings' => $warnings, 'total' => $total, 'expected_total' => $expected];
@@ -235,6 +284,7 @@ class QuotationItemImport
 
             $line = '- ' . $item['name']
                 . ($item['quantity'] ? " ({$item['quantity']})" : '')
+                . ($item['remark'] ? " ({$item['remark']})" : '')
                 . ($item['details'] ? ' — ' . implode('; ', $item['details']) : '');
 
             $groups[$key]['lines'][] = $line;
@@ -274,10 +324,20 @@ class QuotationItemImport
             $note ??= $qty > 1 ? $quantity : null;
         }
 
+        // Satuan ikut tercatat ("2 Unit", "4 ttk"); kolom qty quotation hanya angka.
+        $note ??= $qty > 1 && $row['unit'] !== '' ? $quantity : null;
+
+        // Harga berupa teks ("By Owner"): item tetap ada, harga 0, teksnya jadi keterangan.
+        $remark = $price <= 0 && $total <= 0 ? $row['remark'] : null;
+        if ($remark !== null) {
+            $note = implode(' · ', array_filter([$note, $remark]));
+        }
+
         return [
             'name'       => $row['text'],
             'section'    => $section,
             'subsection' => $subsection,
+            'remark'     => $remark,
             'details'    => $row['spec'],
             // Keterangan jumlah untuk lines() (bila tidak terbaca dari kolom Qty saja) …
             'note'       => $note,
@@ -349,6 +409,55 @@ class QuotationItemImport
         }
 
         return '';
+    }
+
+    /**
+     * Nama item beserta penandanya. Kolom item yang digabung (mis. B:D) bisa
+     * diawali penanda: "A | Pekerjaan Lantai" (bagian, kolom pertama) atau
+     * "1 | Facade Logo" / "- | Mobilisasi" (item, kolom berikutnya).
+     *
+     * @param  array<int, int>  $columns
+     * @return array{0: ?string, 1: ?int, 2: string}  penanda, letak kolomnya (0 = pertama), nama
+     */
+    private function itemText(Worksheet $sheet, array $columns, int $row): array
+    {
+        $values = [];
+        foreach ($columns as $index => $column) {
+            $value = trim(preg_replace('/\s+/u', ' ', (string) $this->value($sheet->getCell([$column, $row]))));
+
+            if ($value !== '') {
+                $values[$index] = $value;
+            }
+        }
+
+        $first = array_key_first($values);
+
+        if (count($values) > 1 && preg_match('/^(?:[A-Za-z]|\d{1,3}|[IVX]+)[.)]?$|^[-–•·*]$/u', $values[$first])) {
+            $marker = $values[$first];
+            unset($values[$first]);
+
+            return [$marker, $first, reset($values)];
+        }
+
+        return [null, null, $first === null ? '' : $values[$first]];
+    }
+
+    /**
+     * Teks di kolom harga/total yang bukan angka, mis. "By Owner" ("Rp" dan "-" tidak dihitung).
+     *
+     * @param  array<int, int>  $columns
+     */
+    private function remark(Worksheet $sheet, array $columns, int $row): ?string
+    {
+        foreach ($columns as $column) {
+            $value = $this->value($sheet->getCell([$column, $row]));
+
+            if (is_string($value) && ($value = trim($value)) !== '' && ! preg_match('/\d/', $value) && ! preg_match('/^(rp\.?|-|–)$/iu', $value)) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
