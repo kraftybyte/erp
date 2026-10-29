@@ -108,6 +108,14 @@ class Invoice extends BaseInvoice
     }
 
     /**
+     * Project yang dibuat dari invoice ini.
+     */
+    public function projects()
+    {
+        return $this->hasMany(Project::class);
+    }
+
+    /**
      * Invoice DP yang mendahului invoice pelunasan ini.
      */
     public function parentInvoice()
