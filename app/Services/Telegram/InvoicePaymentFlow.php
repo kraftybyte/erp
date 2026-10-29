@@ -103,7 +103,7 @@ class InvoicePaymentFlow
         $lines = [
             '💳 <b>Catat pembayaran invoice</b>',
             '',
-            "{$invoices->count()} invoice belum lunas{$for}. Pilih invoice yang dibayar, atau ketik nomor invoice / nama klien untuk mencari.",
+            "{$invoices->count()} invoice belum lunas{$for}.\nPilih invoice yang dibayar, atau ketik nomor invoice / nama klien untuk mencari.",
         ];
 
         if ($invoices->count() > self::LIST_LIMIT) {
@@ -113,7 +113,7 @@ class InvoicePaymentFlow
 
         $buttons = $invoices->take(self::LIST_LIMIT)
             ->map(fn (Invoice $invoice) => [[
-                'text'          => ($this->isOverdue($invoice) ? '🔴 ' : '🟡 ') . Str::limit(ClientLabel::invoice($invoice), 40)
+                'text'          => ($this->isOverdue($invoice) ? '🔴 ' : '🟡 ') . Text::short(ClientLabel::invoice($invoice), 38)
                     . ' · ' . $this->rupiah(InvoicePayment::remaining($invoice)),
                 'callback_data' => "pay:inv:{$invoice->id}",
             ]])
@@ -147,7 +147,7 @@ class InvoicePaymentFlow
 
         $buttons = $accounts
             ->map(fn (PaymentAccount $account) => [
-                'text'          => Str::limit($account->name . ($account->bank_name ? " ({$account->bank_name})" : ''), 30),
+                'text'          => Text::short($account->name . ($account->bank_name ? " ({$account->bank_name})" : ''), 32),
                 'callback_data' => "pay:acc:{$account->id}",
             ])
             ->chunk(2)
@@ -179,7 +179,9 @@ class InvoicePaymentFlow
 
         $this->telegram->sendMessage(
             $chatId,
-            'Sisa tagihan <b>' . $this->rupiah($remaining) . "</b>.\n\nKetik nominal yang diterima (mis. <code>25jt</code> atau <code>25.000.000</code>) bila dibayar sebagian, atau pilih:",
+            'Sisa tagihan <b>' . $this->rupiah($remaining) . "</b>.\n\n"
+                . "• Dibayar lunas? Tekan tombol di bawah.\n"
+                . '• Dibayar sebagian? Ketik nominal yang diterima, mis. <code>25jt</code> atau <code>25.000.000</code>.',
             [
                 [['text' => '✅ Lunas — ' . $this->rupiah($remaining), 'callback_data' => 'pay:full']],
                 [['text' => '❌ Batal', 'callback_data' => 'pay:cancel']],
@@ -265,7 +267,8 @@ class InvoicePaymentFlow
             $this->reply($chatId, $messageId, implode("\n", [
                 '✅ <b>Pembayaran tercatat</b>',
                 '',
-                e((string) $invoice->uuid) . ' · ' . e(ClientLabel::invoice($invoice)),
+                '📄 ' . e((string) $invoice->uuid),
+                e(ClientLabel::invoice($invoice)),
                 $this->rupiah($state['amount']) . ' diterima di ' . e($account->name),
                 'Status invoice: ' . ($invoice->status === 'paid' ? '<b>Lunas</b>' : 'dibayar sebagian, sisa ' . $this->rupiah(InvoicePayment::remaining($invoice))),
                 'Saldo ' . e($account->name) . ': ' . $this->rupiah($account->fresh()->current_balance),

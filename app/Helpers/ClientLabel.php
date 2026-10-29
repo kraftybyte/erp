@@ -39,13 +39,23 @@ class ClientLabel
             return 'Tanpa project';
         }
 
+        return implode(' | ', array_filter(self::projectParts($project))) ?: "Project #{$project->id}";
+    }
+
+    /**
+     * Klien ("PIC - Perusahaan") dan nama project secara terpisah, untuk pesan
+     * yang menaruh keduanya di baris sendiri.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    public static function projectParts(Project $project): array
+    {
         $client = self::of(
             $project->nama_pic ?: $project->deal?->nama_pic,
             $project->nama_perusahaan ?: $project->deal?->nama_perusahaan,
         );
 
-        return implode(' | ', array_filter([$client === '-' ? null : $client, self::clean($project->nama_project)]))
-            ?: "Project #{$project->id}";
+        return [$client === '-' ? null : $client, self::clean($project->nama_project)];
     }
 
     /**

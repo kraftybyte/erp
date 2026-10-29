@@ -86,6 +86,7 @@ class FinanceBot
         $args    = $match ? trim(Str::after($text, $match[0])) : '';
 
         if ($command === 'bayar') {
+            Cache::forget($this->periodAwaitKey($chatId));
             $this->payment->start($chatId, $args);
 
             return;
@@ -101,16 +102,18 @@ class FinanceBot
             return;
         }
 
-        // Teks biasa: rentang tanggal yang diminta, atau isian pencatatan pembayaran.
+        // Teks biasa: isian pencatatan pembayaran, atau rentang tanggal yang diminta.
+        // Pembayaran didahulukan: dulu "25jt" bisa terbaca sebagai tanggal bila
+        // pemilih periode sempat dibuka sebelumnya.
         if (! $match) {
-            if ($section = Cache::get($this->periodAwaitKey($chatId))) {
-                $this->setPeriodFromText($chatId, $text, $section);
+            if ($this->payment->awaitingText($chatId)) {
+                $this->payment->handleText($chatId, $text);
 
                 return;
             }
 
-            if ($this->payment->awaitingText($chatId)) {
-                $this->payment->handleText($chatId, $text);
+            if ($section = Cache::get($this->periodAwaitKey($chatId))) {
+                $this->setPeriodFromText($chatId, $text, $section);
 
                 return;
             }
@@ -152,6 +155,7 @@ class FinanceBot
         }
 
         if (str_starts_with($data, 'pay:')) {
+            Cache::forget($this->periodAwaitKey($chatId));
             $this->payment->handleCallback($callback, $user);
 
             return;
@@ -182,11 +186,14 @@ class FinanceBot
 
         // fin:periode:<bagian> — buka pilihan periode.
         if (str_starts_with($data, 'fin:periode')) {
+            $this->payment->forget($chatId);
             $this->showPeriodPicker($chatId, $messageId, $this->section(Str::after($data, 'fin:periode:')));
 
             return;
         }
 
+        // Bagian laporan (termasuk "Kembali" dari pemilih periode): isian periode ditutup.
+        Cache::forget($this->periodAwaitKey($chatId));
         $this->show($chatId, $messageId, $this->section(Str::after($data, 'fin:')));
     }
 
@@ -367,7 +374,8 @@ class FinanceBot
             'Belum dibayarkan: <b>' . $this->rupiah($advanceUnpaid['amount']) . "</b> ({$advanceUnpaid['count']})",
             'Belum dipertanggungjawabkan: ' . $this->rupiah($a['outstanding']['amount']) . " ({$a['outstanding']['count']})",
             '',
-            '<i>Langsung dari tabel invoice, expense, dan advance. Invoice menurut tanggal invoice (proforma & yang dibatalkan tidak dihitung); expense & advance menurut tanggal pengajuan (yang ditolak tidak dihitung).</i>',
+            '<i>ℹ️ Invoice dihitung dari tanggal invoice, tanpa proforma dan yang dibatalkan.',
+            'Expense dan advance dihitung dari tanggal pengajuan, tanpa yang ditolak.</i>',
         ]);
     }
 
@@ -405,8 +413,8 @@ class FinanceBot
             foreach ($invoices->take(self::LIST_LIMIT) as $invoice) {
                 $date = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
 
-                $lines[] = "• {$date} · <b>" . e(ClientLabel::invoice($invoice)) . '</b> — '
-                    . $this->kindLabel($invoice) . ' ' . $this->rupiah($invoice->grand_total);
+                $lines[] = '• <b>' . e(ClientLabel::invoice($invoice)) . '</b>'
+                    . "\n   {$date} · " . $this->kindLabel($invoice) . ' · ' . $this->rupiah($invoice->grand_total);
             }
 
             if ($invoices->count() > self::LIST_LIMIT) {
@@ -415,7 +423,9 @@ class FinanceBot
         }
 
         $lines[] = '';
-        $lines[] = '<i>Nilai = kolom Total di invoice. Belum dibayarkan = Total − Paid pada invoice yang belum berstatus paid. Proforma dan yang dibatalkan tidak dihitung.</i>';
+        $lines[] = '<i>ℹ️ Nilai = Total di invoice (invoice DP: nilai penuh pekerjaan).';
+        $lines[] = 'Belum dibayarkan = Total dikurangi yang sudah dibayar.';
+        $lines[] = 'Proforma dan yang dibatalkan tidak dihitung.</i>';
 
         return implode("\n", $lines);
     }
@@ -440,7 +450,8 @@ class FinanceBot
 
         return implode("\n", [...$lines, '', '<b>Per project</b>', ...$this->topList(
             $this->view->expenseByProject(),
-            fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
+            fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})",
+            projects: true,
         )]);
     }
 
@@ -468,7 +479,8 @@ class FinanceBot
             $this->view->advanceByProject(),
             fn (array $row) => $this->rupiah($row['amount']) . " ({$row['count']})"
                 . "\n   cair " . $this->rupiah($row['disbursed']) . ' · realisasi ' . $this->rupiah($row['realized'])
-                . ($row['outstanding'] > 0 ? ' · <b>sisa ' . $this->rupiah($row['outstanding']) . '</b>' : '')
+                . ($row['outstanding'] > 0 ? ' · <b>sisa ' . $this->rupiah($row['outstanding']) . '</b>' : ''),
+            projects: true,
         )]);
     }
 
@@ -489,8 +501,9 @@ class FinanceBot
             $due     = $invoice->due_date ? Carbon::parse($invoice->due_date) : null;
             $overdue = $due && $due->lt($today) ? (int) $due->diffInDays($today) : 0;
 
-            $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e(ClientLabel::invoice($invoice)) . '</b> — sisa ' . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice))
-                . "\n   " . $this->kindLabel($invoice) . ' · total ' . $this->rupiah($invoice->grand_total) . ' · dibayar ' . $this->rupiah($invoice->paid)
+            $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e(ClientLabel::invoice($invoice)) . '</b>'
+                . "\n   Sisa <b>" . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice)) . '</b> dari ' . $this->rupiah($invoice->grand_total)
+                . ' · ' . $this->kindLabel($invoice)
                 . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . ($due ? $due->locale('id')->translatedFormat('j M Y') : '-')
                 . ($overdue > 0 ? " (lewat {$overdue} hari)" : '');
         }
@@ -532,7 +545,7 @@ class FinanceBot
                 $waiting     = $item->status === 'Disetujui' ? 'perlu dibayar' : 'perlu persetujuan';
 
                 $lines[] = '• ' . e($this->name($item->user)) . ' — ' . $this->rupiah($item->amount) . " · <i>{$waiting}</i>"
-                    . "\n   " . e(Str::limit((string) $description, 50))
+                    . "\n   " . e(Text::short($description, 60))
                     . ' · ' . $item->created_at?->locale('id')->diffForHumans();
             }
         }
@@ -545,14 +558,26 @@ class FinanceBot
      *
      * @return array<int, string>
      */
-    private function topList(\Illuminate\Support\Collection $rows, \Closure $describe): array
+    private function topList(\Illuminate\Support\Collection $rows, \Closure $describe, bool $projects = false): array
     {
         if ($rows->isEmpty()) {
             return ['-'];
         }
 
         $lines = $rows->take(self::LIST_LIMIT)
-            ->map(fn (array $row) => '• ' . e($row['label']) . ': ' . $describe($row))
+            ->map(function (array $row) use ($describe, $projects) {
+                if (! $projects) {
+                    return '• ' . e($row['label']) . ': ' . $describe($row);
+                }
+
+                // "PIC - Perusahaan | Project": klien tebal di baris sendiri, nama
+                // project dan angkanya di bawahnya, supaya tidak terpenggal di HP.
+                [$client, $name] = str_contains($row['label'], ' | ')
+                    ? [Str::beforeLast($row['label'], ' | '), Str::afterLast($row['label'], ' | ')]
+                    : [$row['label'], null];
+
+                return '• <b>' . e($client) . "</b>\n   " . ($name !== null ? e($name) . ' · ' : '') . $describe($row);
+            })
             ->all();
 
         if ($rows->count() > self::LIST_LIMIT) {
@@ -591,17 +616,23 @@ class FinanceBot
         return <<<'HTML'
         📊 <b>Bot laporan keuangan</b>
 
-        /ringkasan – invoice masuk (DP, full payment), expense, advance
+        <b>Laporan</b>
+        /ringkasan – ringkasan invoice, expense, dan advance
         /invoice – invoice masuk per jenis dan daftarnya
-        /expense – per kategori dan per project
-        /advance – per project: dicairkan, realisasi, sisa
+        /expense – expense per kategori dan per project
+        /advance – advance per project: cair, realisasi, sisa
         /piutang – invoice yang belum dibayar
-        /pending – pengajuan yang menunggu persetujuan atau pembayaran
-        /periode – pilih periode, mis. <code>/periode 1/10/2026 - 31/10/2026</code>
-        /excel – unduh data periode ini dalam satu file Excel
-        /bayar – catat pembayaran invoice yang masuk (bisa /bayar nama klien)
+        /pending – pengajuan yang menunggu diproses
 
-        Periode berlaku untuk semua laporan dan Excel sampai diganti. Selain /bayar, bot ini hanya membaca data.
+        <b>Periode &amp; file</b>
+        /periode – ganti periode, mis. <code>/periode oktober 2026</code>
+        /excel – unduh data periode ini dalam file Excel
+
+        <b>Pembayaran</b>
+        /bayar – catat pembayaran invoice yang masuk
+        Bisa langsung mencari: <code>/bayar nama klien</code>
+
+        <i>Periode berlaku untuk semua laporan sampai diganti. Selain /bayar, bot ini hanya membaca data.</i>
         HTML;
     }
 
