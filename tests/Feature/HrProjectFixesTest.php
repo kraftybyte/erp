@@ -5,14 +5,18 @@ namespace Tests\Feature;
 use App\Filament\Resources\AbsenceResource\Pages\ListAbsences;
 use App\Filament\Resources\EmployeeResource\Pages\CreateEmployee;
 use App\Filament\Resources\EmployeeResource\Pages\ListEmployees;
+use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\CreateProject;
 use App\Filament\Resources\PurchaseRequestResource\Pages\ListPurchaseRequests;
 use App\Filament\Resources\QuotationResource\Pages\CreateQuotation;
 use App\Filament\Resources\UserResource\Pages\EditUser;
 use App\Filament\Widgets\TaskTodayWidget;
 use App\Models\Absence;
 use App\Models\Announcement;
+use App\Models\Deal;
 use App\Models\Expense;
 use App\Models\Product;
+use App\Models\Project;
 use App\Models\PurchaseRequest;
 use App\Models\Task;
 use App\Models\User;
@@ -250,6 +254,31 @@ class HrProjectFixesTest extends TestCase
             ->set("data.items.{$key}.product_id", $product->id)
             ->assertSet("data.items.{$key}.vat", 1_094_500.0)
             ->assertSet("data.items.{$key}.total", 11_044_500.0);
+    }
+
+    public function test_project_bisa_dibuat_untuk_client_tanpa_catatan(): void
+    {
+        $this->actingAs($this->user('super_admin'));
+
+        $deal = Deal::forceCreate([
+            'nama_perusahaan' => 'PT Tanpa Catatan ' . Str::upper(Str::random(4)),
+            'nama_pic'        => 'Budi Santoso',
+            'alamat'          => 'Jl. Tes',
+            'notes'           => null,
+        ]);
+
+        Livewire::test(CreateProject::class)
+            ->fillForm([
+                'deal_id'          => $deal->id,
+                'nama_project'     => array_key_first(ProjectResource::getProjectCategoryOptions()),
+                'detail_project'   => 'Optimasi website',
+                'timeline_mulai'   => today()->toDateString(),
+                'timeline_selesai' => today()->addMonth()->toDateString(),
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertTrue(Project::where('deal_id', $deal->id)->exists());
     }
 
     // =================================================================

@@ -166,7 +166,7 @@ class ProjectResource extends Resource
                             Forms\Components\textarea::make('notes')
                                 ->label('Catatan Informasi Klien')
                                 ->maxLength(500)
-                                ->required()
+                                // Terisi dari catatan client; boleh kosong bila client-nya tidak punya catatan.
                                 ->reactive()
                                 ->readonly() // Make the field read-only
                                 ->columnSpanFull(),
