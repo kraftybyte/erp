@@ -22,7 +22,7 @@ class ProjectFromInvoiceAction
 {
     public static function table(): TableAction
     {
-        return self::configure(TableAction::make('project'))->iconButton();
+        return self::configure(TableAction::make('project'));
     }
 
     public static function page(): PageAction
@@ -34,7 +34,6 @@ class ProjectFromInvoiceAction
     {
         return $action
             ->label(fn (Invoice $record) => $record->projects->isNotEmpty() ? 'Lihat Project' : 'Buat Project')
-            ->tooltip(fn (Invoice $record) => $record->projects->isNotEmpty() ? 'Lihat Project' : 'Buat Project')
             ->icon('heroicon-o-briefcase')
             ->color('primary')
             ->url(fn (Invoice $record) => ($project = $record->projects->first())

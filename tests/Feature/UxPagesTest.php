@@ -15,6 +15,8 @@ use App\Models\Project;
 use App\Models\Transaction;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Resources\Pages\ListRecords;
+use Filament\Tables\Actions\ActionGroup;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -101,6 +103,30 @@ class UxPagesTest extends TestCase
             ->assertSee('u.p. Budi')
             ->assertSee('Rp 2.500.000')
             ->assertDontSee('2,500,000.00');
+    }
+
+    public function test_menu_titik_tiga_menampilkan_label_aksi(): void
+    {
+        // iconButton() di dalam ActionGroup mengalahkan tampilan dropdown: menu
+        // Invoice dulu hanya berisi ikon tanpa teks.
+        foreach (Filament::getPanel('admin')->getResources() as $resource) {
+            $index = $resource::getPages()['index'] ?? null;
+            if (! $index || ! is_subclass_of($index->getPage(), ListRecords::class)) {
+                continue;
+            }
+
+            $table = Livewire::test($index->getPage())->instance()->getTable();
+
+            foreach ($table->getActions() as $group) {
+                if (! $group instanceof ActionGroup) {
+                    continue;
+                }
+
+                foreach ($group->getActions() as $action) {
+                    $this->assertSame($action::GROUPED_VIEW, $action->getView(), "{$resource}: aksi {$action->getName()}");
+                }
+            }
+        }
     }
 
     public function test_rupiah_bertanda_untuk_saldo_dan_transaksi_keluar(): void
