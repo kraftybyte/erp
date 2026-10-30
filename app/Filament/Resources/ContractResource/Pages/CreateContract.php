@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource;
+use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
 use Filament\Forms;
 use Filament\Forms\Components\Repeater;
@@ -19,7 +20,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class CreateContract extends CreateRecord
 {
+    use HasContractPreview;
+
     protected static string $resource = ContractResource::class;
+
+    protected static string $view = 'filament.resources.contracts.form-with-preview';
 
     /** @var array|null */
     protected ?array $sowCategoriesData = null;
@@ -27,6 +32,8 @@ class CreateContract extends CreateRecord
     public function form(Forms\Form $form): Forms\Form
     {
         return $form
+            // Setiap perubahan isian memperbarui pratinjau kontrak di samping form.
+            ->live(debounce: 600)
             ->schema([
                 // Section 1: Contract Info
                 Section::make('Informasi Kontrak')

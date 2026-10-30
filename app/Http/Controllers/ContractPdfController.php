@@ -24,10 +24,7 @@ class ContractPdfController extends Controller
                 ->header('Content-Type', 'text/plain');
         }
 
-        $service = app(ContractTemplateService::class);
-        $html = $service->generate($contract);
-
-        return response($html)->header('Content-Type', 'text/html');
+        return response(app(ContractTemplateService::class)->preview($contract))->header('Content-Type', 'text/html');
     }
 
     public function downloadPdf(Request $request, Contract $contract)

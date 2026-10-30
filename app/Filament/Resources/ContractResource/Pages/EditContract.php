@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource;
+use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
 use Filament\Forms;
 use Filament\Forms\Components\Repeater;
@@ -19,7 +20,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class EditContract extends EditRecord
 {
+    use HasContractPreview;
+
     protected static string $resource = ContractResource::class;
+
+    protected static string $view = 'filament.resources.contracts.form-with-preview';
 
     /** @var array|null */
     protected ?array $sowCategoriesData = null;
@@ -57,6 +62,8 @@ class EditContract extends EditRecord
         })->toArray();
 
         return $form
+            // Setiap perubahan isian memperbarui pratinjau kontrak di samping form.
+            ->live(debounce: 600)
             ->schema([
                 // Section 1: Contract Info
                 Section::make('Informasi Kontrak')
