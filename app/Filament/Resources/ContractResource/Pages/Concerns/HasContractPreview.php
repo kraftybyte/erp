@@ -4,10 +4,19 @@ namespace App\Filament\Resources\ContractResource\Pages\Concerns;
 
 use App\Models\Contract;
 use App\Models\ContractItem;
+use App\Services\ContractDefaultBody;
 use App\Services\ContractTemplateService;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\MaxWidth;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\HtmlString;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Pratinjau kontrak di samping form Buat/Edit: HTML yang sama dengan PDF,
@@ -16,6 +25,80 @@ use Illuminate\Support\Collection;
  */
 trait HasContractPreview
 {
+    /**
+     * Isi kontrak (judul, pembukaan, pasal, penutup) dan kop/kaki suratnya.
+     * Default-nya teks template bawaan; pasal bisa ditambah, dihapus, diurutkan.
+     */
+    protected static function contractBodySections(): array
+    {
+        $default = fn (string $key) => fn () => ContractDefaultBody::make()[$key];
+        $toolbar = ['bold', 'italic', 'underline', 'strike', 'orderedList', 'bulletList', 'h3', 'blockquote', 'undo', 'redo'];
+
+        $placeholders = collect(ContractDefaultBody::PLACEHOLDERS)
+            ->map(fn (string $label, string $key) => '<div><code>{' . e($key) . '}</code> ' . e($label) . '</div>')
+            ->implode('');
+
+        return [
+            Section::make('Isi Kontrak')
+                ->icon('heroicon-o-pencil-square')
+                ->description('Semua teks kontrak bisa diubah. Penanda seperti {nama_klien} diisi otomatis dari data di form.')
+                ->collapsible()
+                ->schema([
+                    TextInput::make('document_title')
+                        ->label('Judul dokumen')
+                        ->default($default('document_title'))
+                        ->maxLength(255),
+                    RichEditor::make('opening_text')
+                        ->label('Pembukaan dan para pihak')
+                        ->toolbarButtons($toolbar)
+                        ->default($default('opening_text')),
+                    Repeater::make('articles')
+                        ->label('Pasal')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Judul pasal')
+                                ->maxLength(255),
+                            RichEditor::make('content')
+                                ->label('Isi pasal')
+                                ->toolbarButtons($toolbar),
+                        ])
+                        ->default($default('articles'))
+                        // Nomor pasal mengikuti urutan, sama dengan di dokumen.
+                        ->itemLabel(function (array $state, string $uuid, Repeater $component): string {
+                            $number = array_search($uuid, array_keys($component->getState() ?? []), true) + 1;
+
+                            return 'Pasal ' . $number . (filled($state['title'] ?? null) ? ' · ' . $state['title'] : '');
+                        })
+                        ->collapsible()
+                        ->collapsed()
+                        ->addActionLabel('Tambah pasal'),
+                    RichEditor::make('closing_text')
+                        ->label('Penutup (di atas tanda tangan)')
+                        ->toolbarButtons($toolbar)
+                        ->default($default('closing_text')),
+                    Placeholder::make('placeholder_list')
+                        ->label('Penanda isian otomatis')
+                        ->content(new HtmlString('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .25rem 1rem; font-size: .8125rem;">' . $placeholders . '</div>')),
+                ]),
+
+            Section::make('Kop & Kaki Surat')
+                ->icon('heroicon-o-photo')
+                ->description('Kosongkan untuk memakai kop dan kaki surat dari Pengaturan → Contract Template.')
+                ->collapsed()
+                ->columns(2)
+                ->schema([
+                    FileUpload::make('header_image')
+                        ->label('Kop surat (header)')
+                        ->image()
+                        ->directory('contracts/letterhead'),
+                    FileUpload::make('footer_image')
+                        ->label('Kaki surat (footer)')
+                        ->image()
+                        ->directory('contracts/letterhead'),
+                ]),
+        ];
+    }
+
     public function getMaxContentWidth(): MaxWidth
     {
         return MaxWidth::Full;
@@ -43,6 +126,17 @@ trait HasContractPreview
     {
         $contract = new Contract();
         $fillable = $contract->getFillable();
+
+        // Upload kop/kaki surat yang belum disimpan tampil lewat URL sementaranya.
+        foreach (['header_image', 'footer_image'] as $key) {
+            $file = is_array($data[$key] ?? null) ? Arr::first($data[$key]) : ($data[$key] ?? null);
+
+            $data[$key] = match (true) {
+                $file instanceof TemporaryUploadedFile => rescue(fn () => $file->temporaryUrl(), null, false),
+                is_string($file)                       => $file,
+                default                                => null,
+            };
+        }
 
         // Edit: kolom yang tidak ada di form (mis. penanda tangan agensi) dari kontrak tersimpan.
         $attributes = array_merge(

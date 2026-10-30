@@ -12,7 +12,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Grid;
-use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Resources\Pages\CreateRecord;
@@ -160,7 +159,7 @@ class CreateContract extends CreateRecord
                                     ->numeric()
                                     ->default(20),
                             ]),
-                        Grid::make(2)
+                        Grid::make(3)
                             ->schema([
                                 TextInput::make('max_revisions')
                                     ->label('Maksimal Revisi')
@@ -170,6 +169,11 @@ class CreateContract extends CreateRecord
                                     ->label('Durasi (Bulan)')
                                     ->numeric()
                                     ->default(3),
+                                // Dipakai di Pasal Jangka Waktu lewat {hari_pengakhiran}.
+                                TextInput::make('termination_notice_days')
+                                    ->label('Hari Pengakhiran Kontrak')
+                                    ->numeric()
+                                    ->default(30),
                             ]),
                     ]),
 
@@ -251,27 +255,8 @@ class CreateContract extends CreateRecord
                             ->visible(fn (callable $get) => $get('has_third_party')),
                     ]),
 
-                // Section 8: Additional Terms
-                Section::make('Ketentuan Tambahan')
-                    ->icon('heroicon-o-document-text')
-                    ->collapsed()
-                    ->schema([
-                        MarkdownEditor::make('content')
-                            ->label('Klausul / Catatan Tambahan')
-                            ->columnSpanFull(),
-                        MarkdownEditor::make('penalty_clause')
-                            ->label('Klausul Denda')
-                            ->columnSpanFull(),
-                        Grid::make(2)
-                            ->schema([
-                                Toggle::make('force_majeure_extended')
-                                    ->label('Force Majeure Extended'),
-                                TextInput::make('termination_notice_days')
-                                    ->label('Hari Pengakhiran Kontrak')
-                                    ->numeric()
-                                    ->default(30),
-                            ]),
-                    ]),
+                // Isi kontrak (semua teks bisa diedit) dan kop/kaki surat.
+                ...static::contractBodySections(),
             ]);
     }
 

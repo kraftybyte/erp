@@ -78,6 +78,10 @@ class GeneralSettings extends Settings
     // Karyawan (user id) yang pengajuan expense & advance-nya langsung Disetujui
     public mixed $auto_approve_user_ids = [];
 
+    // Kop dan kaki surat kontrak (path di disk public).
+    public mixed $contract_header = null;
+    public mixed $contract_footer = null;
+
     // ID Prefix Settings
     public mixed $quotation_prefix = 'DG';
     public mixed $invoice_prefix = 'INV';

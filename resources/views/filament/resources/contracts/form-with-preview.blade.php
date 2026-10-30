@@ -81,6 +81,7 @@
                         <iframe
                             x-ref="frame"
                             srcdoc="{{ $previewHtml }}"
+                            sandbox="allow-same-origin"
                             title="Preview kontrak"
                             x-on:load="restore()"
                             x-bind:style="{ transform: `scale(${scale})`, height: `${height}px` }"

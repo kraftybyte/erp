@@ -329,6 +329,28 @@ class ManageGeneral extends SettingsPage
                                         ]),
                                     ]),
                             ]),
+                        Forms\Components\Tabs\Tab::make('Contract Template')
+                            ->schema([
+                                Forms\Components\Section::make('Kop & Kaki Surat Kontrak')
+                                    ->description('Dipakai semua kontrak yang tidak punya kop sendiri. Kosongkan untuk memakai kop bawaan.')
+                                    ->columns(2)
+                                    ->schema([
+                                        FileUpload::make('contract_header')
+                                            ->label('Kop surat (header)')
+                                            ->image()
+                                            ->directory('contract/letterhead')
+                                            ->visibility('public')
+                                            ->nullable()
+                                            ->helperText('Gambar selebar halaman A4, mis. 2480 × 350 px.'),
+                                        FileUpload::make('contract_footer')
+                                            ->label('Kaki surat (footer)')
+                                            ->image()
+                                            ->directory('contract/letterhead')
+                                            ->visibility('public')
+                                            ->nullable()
+                                            ->helperText('Gambar selebar halaman A4, mis. 2480 × 250 px.'),
+                                    ]),
+                            ]),
                         Forms\Components\Tabs\Tab::make('Project Categories')
                             ->label('Project Categories')
                             ->icon('heroicon-o-folder')

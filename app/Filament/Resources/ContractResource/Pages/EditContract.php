@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ContractResource\Pages;
 use App\Filament\Resources\ContractResource;
 use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
+use App\Services\ContractDefaultBody;
 use Filament\Forms;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Section;
@@ -12,7 +13,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Grid;
-use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Resources\Pages\EditRecord;
@@ -189,7 +189,7 @@ class EditContract extends EditRecord
                                     ->numeric()
                                     ->default(20),
                             ]),
-                        Grid::make(2)
+                        Grid::make(3)
                             ->schema([
                                 TextInput::make('max_revisions')
                                     ->label('Maksimal Revisi')
@@ -199,6 +199,11 @@ class EditContract extends EditRecord
                                     ->label('Durasi (Bulan)')
                                     ->numeric()
                                     ->default(3),
+                                // Dipakai di Pasal Jangka Waktu lewat {hari_pengakhiran}.
+                                TextInput::make('termination_notice_days')
+                                    ->label('Hari Pengakhiran Kontrak')
+                                    ->numeric()
+                                    ->default(30),
                             ]),
                     ]),
 
@@ -288,28 +293,20 @@ class EditContract extends EditRecord
                             ->visible(fn (callable $get) => $get('has_third_party')),
                     ]),
 
-                // Section 8: Additional Terms
-                Section::make('Ketentuan Tambahan')
-                    ->icon('heroicon-o-document-text')
-                    ->collapsed()
-                    ->schema([
-                        MarkdownEditor::make('content')
-                            ->label('Klausul / Catatan Tambahan')
-                            ->columnSpanFull(),
-                        MarkdownEditor::make('penalty_clause')
-                            ->label('Klausul Denda')
-                            ->columnSpanFull(),
-                        Grid::make(2)
-                            ->schema([
-                                Toggle::make('force_majeure_extended')
-                                    ->label('Force Majeure Extended'),
-                                TextInput::make('termination_notice_days')
-                                    ->label('Hari Pengakhiran Kontrak')
-                                    ->numeric()
-                                    ->default(30),
-                            ]),
-                    ]),
+                // Isi kontrak (semua teks bisa diedit) dan kop/kaki surat.
+                ...static::contractBodySections(),
             ]);
+    }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // Kontrak yang isinya belum pernah diedit mulai dari teks bawaan, sama
+        // dengan PDF-nya sekarang (termasuk klausul tambahan/denda lamanya).
+        if (! is_array($data['articles'] ?? null)) {
+            $data = array_merge($data, ContractDefaultBody::make($this->record));
+        }
+
+        return $data;
     }
 
     protected function mutateFormDataBeforeSave(array $data): array

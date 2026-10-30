@@ -6,6 +6,7 @@ use App\Models\Contract;
 use App\Settings\GeneralSettings;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ContractTemplateService
 {
@@ -85,6 +86,10 @@ class ContractTemplateService
         // === PAYMENT TYPE ===
         $paymentType = $contract->payment_type ?? 'full';
 
+        // === KOP & KAKI SURAT: milik kontrak, lalu default di Pengaturan, lalu file bawaan ===
+        $headerSrc = $this->letterhead($contract->header_image, $settings->contract_header ?? null, 'sites/header.png');
+        $footerSrc = $this->letterhead($contract->footer_image, $settings->contract_footer ?? null, 'sites/footer.png');
+
         // === BUILD HTML ===
         return $this->buildHtml(compact(
             'logoHtml', 'agencyName', 'agencyAddress', 'agencyPhone', 'agencyShortName',
@@ -96,7 +101,8 @@ class ContractTemplateService
             'scopeOfWork', 'additionalClauses', 'paymentType', 'contract',
             'projectDescription', 'forceMajeureExtended', 'terminationDays', 'penaltyClause',
             'agencyBankName', 'agencyBankAccount', 'agencyBankAccountName',
-            'lampiranTitle', 'lampiranDescription', 'tableATitle', 'tableBTitle', 'tableBDescription'
+            'lampiranTitle', 'lampiranDescription', 'tableATitle', 'tableBTitle', 'tableBDescription',
+            'headerSrc', 'footerSrc'
         ));
     }
 
@@ -109,9 +115,10 @@ class ContractTemplateService
      */
     public function preview(Contract $contract): string
     {
+        // Gambar di disk public (kop bawaan dan upload) lewat URL /storage/...
         $html = str_replace(
-            Storage::path('sites/'),
-            parse_url(Storage::url('sites/'), PHP_URL_PATH),
+            Storage::disk('public')->path(''),
+            parse_url(Storage::disk('public')->url(''), PHP_URL_PATH),
             $this->generate($contract),
         );
 
@@ -126,6 +133,313 @@ class ContractTemplateService
 }
 </style>
 </head>', $html);
+    }
+
+    /**
+     * Judul s.d. pasal terakhir dari template bawaan, untuk kontrak yang isinya
+     * belum pernah diedit.
+     */
+    private function legacyBody(array $data): string
+    {
+        extract($data);
+
+        $dayName = $this->getDayName($effectiveDate);
+        $formattedEffectiveDate = $this->formatDateIndonesia($effectiveDate);
+
+        // Running counter for "Pasal N" numbers in the optional/dynamic
+        // clauses appended after Pasal 10, so numbering stays sequential
+        // even if one of the optional clauses (additional / penalty) is empty.
+        $nextArticleNumber = 11;
+
+        $html = '  <div class="title">Perjanjian Kerja Sama</div>
+  <div class="contract-number">' . htmlspecialchars($contractNumber) . '</div>
+
+  <p>Perjanjian Kerja Sama ini (untuk selanjutnya disebut "Perjanjian") dibuat pada hari <strong>' . $dayName . '</strong>, tanggal <strong>' . $formattedEffectiveDate . '</strong>, oleh dan antara Para Pihak di bawah ini:</p>
+
+  <div class="party-title">1. PIHAK PERTAMA</div>
+  <div class="indent">
+    <strong>' . htmlspecialchars($agencyName) . '</strong>, suatu perseroan terbatas yang didirikan menurut dan berdasarkan hukum Indonesia, berkedudukan di ' . nl2br(htmlspecialchars($agencyAddress)) . ' yang dalam hal ini diwakili oleh <strong>' . htmlspecialchars($agencySignName) . '</strong> dalam kedudukannya selaku <strong>' . htmlspecialchars($agencySignTitle) . '</strong> dan oleh karena itu sah bertindak untuk dan atas nama <strong>' . htmlspecialchars($agencyName) . '</strong>. Untuk selanjutnya disebut "<strong>Pihak Pertama</strong>", dan
+  </div>
+
+  <div class="party-title" style="margin-top: 0.2cm;">2. PIHAK KEDUA</div>
+  <div class="indent">
+    <strong>' . htmlspecialchars($clientName) . '</strong>, berkedudukan di ' . nl2br(htmlspecialchars($clientAddress)) . '. Dalam hal ini diwakili oleh <strong>' . htmlspecialchars($clientSignName) . '</strong>, dalam kedudukannya selaku <strong>' . htmlspecialchars($clientSignTitle) . '</strong>, dan oleh karena itu sah bertindak untuk dan atas nama <strong>' . htmlspecialchars($clientName) . '</strong>. Untuk selanjutnya disebut "<strong>Pihak Kedua</strong>",
+  </div>
+
+  <p style="margin-top: 0.2cm;">Pihak Pertama dan Pihak Kedua untuk selanjutnya secara bersama-sama dalam Perjanjian ini disebut sebagai "<strong>Para Pihak</strong>" dan masing-masing disebut sebagai "<strong>Pihak</strong>".</p>
+
+  <!-- PASAL 1 -->
+  <div class="article">
+    <div class="article-title">Pasal 1 <br> Definisi</div>
+    <p>Istilah-istilah berikut yang digunakan dalam Perjanjian ini memiliki pengertian sebagai berikut:</p>
+    <ol class="article-list">
+      <li><strong>Jasa</strong> adalah seluruh lingkup pekerjaan yang dilakukan oleh Pihak Pertama kepada Pihak Kedua sesuai dengan Lampiran 1 Perjanjian ini.</li>
+      <li><strong>Biaya Jasa</strong> adalah besaran biaya yang harus dibayarkan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan Lampiran 2 Perjanjian ini.</li>
+      <li><strong>Pihak Ketiga</strong> adalah penyedia third-party yang dibutuhkan selama pekerjaan berjalan.</li>
+      <li><strong>Invoice</strong> adalah surat penagihan yang dikeluarkan oleh Pihak Pertama kepada Pihak Kedua.</li>
+      <li><strong>Hari Kerja</strong> adalah hari di luar hari Sabtu, Minggu dan hari libur nasional Indonesia.</li>
+      <li><strong>Hari Kalender</strong> adalah setiap hari di kalender Gregorius termasuk Sabtu, Minggu dan hari libur nasional Indonesia.</li>
+    </ol>
+  </div>
+
+  <!-- PASAL 2 -->
+  <div class="article">
+    <div class="article-title">Pasal 2 <br> Kewajiban Pihak Pertama</div>' .
+
+(!empty($projectDescription) ? '
+
+<table class="contract-table" style="margin-bottom:15px;">
+    <tr>
+        <th style="width:180px;">Deskripsi Proyek</th>
+        <td>' . nl2br(htmlspecialchars($projectDescription)) . '</td>
+    </tr>
+</table>
+
+' : '') . '
+    <ol class="article-list">
+      <li>Pihak Pertama akan memberikan Jasa untuk kepentingan Pihak Kedua sesuai dengan ruang lingkup pengerjaan yang tercantum dalam Lampiran 1 Perjanjian ini' . (!empty($scopeOfWork) ? ', yaitu: ' . nl2br(htmlspecialchars($scopeOfWork)) : '') . '.</li>
+      <li>Pihak Pertama akan memberikan Jasa kepada Pihak Kedua dengan didasarkan pada jangka waktu <strong>' . $durationMonths . ' bulan</strong> pengerjaan terhitung dari pembayaran diterima oleh Pihak Pertama.</li>
+      <li>Pekerjaan Jasa akan dimulai oleh Pihak Pertama dalam waktu 1 (satu) hari kerja setelah pembayaran pertama dibayarkan oleh Pihak Kedua.</li>
+      <li>Dengan ditandatanganinya Perjanjian ini, Pihak Kedua dianggap telah memesan Jasa kepada Pihak Kedua, yang mana pemesanan tersebut tidak dapat dibatalkan tanpa persetujuan tertulis dari Pihak Pertama.</li>
+      <li>Kegiatan kunjungan yang bersifat pengambilan konten yang berada di wilayah kerja di luar Jabodetabek, maka biaya operasional menjadi kewajiban Pihak Kedua.</li>
+    </ol>
+  </div>
+
+  <!-- SOW TABLE -->
+  ' . $this->buildSowTable($contract) . '
+
+  <!-- PASAL 3 -->
+  <div class="article">
+    <div class="article-title">Pasal 3 <br> Kewajiban Pihak Kedua</div>
+    <p>Untuk memastikan Pihak Pertama dapat memberikan Jasa kepada Pihak Kedua sesuai dengan kewajiban dan jangka waktu pengerjaan yang diatur di dalam Perjanjian ini maka Pihak Kedua wajib memenuhi kewajiban pembayaran biaya jasa sebagaimana diatur di dalam Lampiran 1.</p>
+  </div>
+
+  <!-- PASAL 4 -->
+  <div class="article">
+    <div class="article-title">Pasal 4 <br> Biaya Jasa dan Pembayaran</div>
+    <ol class="article-list">
+      <li>Para Pihak sepakat bahwa untuk Biaya Jasa adalah mengacu pada Lampiran 2 Tabel A dari Perjanjian ini.</li>
+      <li>Biaya Jasa tidak dapat diubah tanpa persetujuan tertulis terlebih dahulu dari Para Pihak.</li>
+      <li>Pembayaran wajib dilakukan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan jangka waktu pembayaran yang diatur di dalam Lampiran 2 Tabel A dari Perjanjian ini.</li>
+      <li>Pembayaran wajib dilakukan oleh Pihak Kedua ke rekening Pihak Pertama sebagai berikut:<br>
+        <strong>Nama Bank</strong> : ' . htmlspecialchars($agencyBankName) . '<br>
+        <strong>No. Rek</strong> : ' . htmlspecialchars($agencyBankAccount) . '<br>
+        <strong>Nama Perusahaan</strong> : ' . htmlspecialchars($agencyBankAccountName) . '
+      </li>
+      <li>Pembayaran dari Pihak Kedua dianggap sah apabila dana telah diterima di rekening pihak pertama.</li>
+      <li>Segala pembayaran yang telah diterima oleh Pihak Pertama tidak dapat dikembalikan kepada Pihak Kedua dengan alasan apapun juga.</li>
+    </ol>
+  </div>
+
+  <!-- PASAL 5 -->
+  <div class="article">
+    <div class="article-title">Pasal 5 <br> Kerahasiaan</div>
+    <ol class="article-list">
+      <li>Para Pihak wajib untuk merahasiakan seluruh informasi, data dan fakta yang diperoleh selama berlangsungnya Perjanjian ini sehingga hanya dipergunakan untuk keperluan internal dalam pelaksanaan pekerjaan sejak tanggal Perjanjian ini sampai dengan selesai, kecuali dipersyaratkan atau diperintahkan oleh aparat berwenang termasuk pengadilan atau berdasarkan peraturan yang berlaku.</li>
+      <li>Para Pihak sepakat dan saling menjamin bahwa karyawannya, agennya, penasihatnya dan/atau pihak-pihak yang terkait lainnya tidak akan memberikan Informasi Rahasia kepada siapapun tanpa persetujuan tertulis dari Pihak lainnya, baik selama berlangsungnya Perjanjian sampai dengan 3 (tiga) tahun setelah Perjanjian ini berakhir atau diakhiri.</li>
+    </ol>
+  </div>
+
+  <!-- PASAL 6 -->
+  <div class="article">
+    <div class="article-title">Pasal 6 <br> Force Majeure</div>
+    <ol class="article-list">
+      <li>Tidak dilaksanakannya atau tertundanya pelaksanaan sebagian atau keseluruhan ketentuan Perjanjian ini oleh salah satu pihak tidak termasuk sebagai pelanggaran Perjanjian ini apabila hal tersebut disebabkan oleh adanya Force Majeure, maka Para Pihak sepakat untuk menyelesaikannya melalui musyawarah mufakat.</li>
+      <li>Yang termasuk sebagai peristiwa Force Majeure adalah sebagai berikut:<br>
+        a. Bencana alam / wabah penyakit / angin taufan / banjir / tanah longsor / gempa bumi<br>
+        b. Huru-hara / perang / pemberontakan<br>
+        c. Pemogokan umum / sabotase / kebakaran<br>
+        d. Perubahan peraturan perundang-undangan atau kebijaksanaan pemerintah yang mengakibatkan Perjanjian ini tidak dapat dilaksanakan<br>
+        e. Hal-hal lain di luar kontrol dari salah satu pihak
+      </li>
+      <li>Dalam hal terjadi peristiwa sebagaimana dimaksud dalam ayat 1 Pasal ini, Para Pihak secara bersama-sama maupun sendiri-sendiri dengan dilandasi iktikad baik akan melakukan upaya semaksimal mungkin agar akibat dari peristiwa tersebut dapat ditekan seminimal mungkin.</li>
+      <li>Semua kerugian dan biaya yang diderita oleh salah satu Pihak sebagai akibat terjadinya Force Majeure tidak menjadi tanggung jawab pihak lainnya.</li>
+      <li>Untuk menghindari keragu-raguan, kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama, termasuk pembayaran denda, tidak dapat ditunda, dikurangi dengan alasan Force Majeure.</li>' .
+      ($forceMajeureExtended ? '
+      <li>Termasuk pula sebagai peristiwa Force Majeure adalah gangguan yang bersifat sistemik di luar kendali Para Pihak, antara lain namun tidak terbatas pada gangguan siber berskala luas, gangguan infrastruktur telekomunikasi/internet nasional, kebijakan pembatasan wilayah (lockdown) oleh pemerintah, dan gangguan rantai pasok global, yang secara material menghalangi pelaksanaan kewajiban salah satu Pihak.</li>' : '') . '
+    </ol>
+  </div>
+
+  <!-- PASAL 7 -->
+  <div class="article">
+    <div class="article-title">Pasal 7 <br> Jangka Waktu dan Pengakhiran Perjanjian</div>
+    <ol class="article-list">
+      <li>Perjanjian ini mulai berlaku dari <strong>' . $dayName . ', ' . $formattedEffectiveDate . '</strong> sampai dengan seluruh kewajiban dari masing-masing Pihak sebagaimana diatur di dalam Perjanjian ini telah terpenuhi kecuali diakhiri menurut ketentuan ayat 2 di bawah ini.</li>
+      <li>Para Pihak memiliki hak untuk mengakhiri Perjanjian dengan pemberitahuan tertulis kepada pihak lain, <strong>' . $terminationDays . ' hari kalender</strong> sebelum tanggal efektif pengakhiran Perjanjian dengan alasan sebagai berikut:<br>
+        a. Salah satu pihak gagal untuk memperbaiki kesalahannya selama ' . $terminationDays . ' hari kalender sejak menerima surat peringatan dari pihak lain, atau<br>
+        b. Perjanjian diakhiri berdasarkan kesepakatan Para Pihak.
+      </li>
+      <li>Perjanjian layanan ini dapat diakhiri oleh Pihak Pertama secara sepihak dengan pemberitahuan tertulis apabila Pihak Kedua lalai membayar lebih dari 14 (empat belas) hari kalender setelah jatuh tempo, kecuali disepakati lain oleh Pihak Pertama.</li>
+      <li>Para Pihak sepakat untuk mengesampingkan ketentuan Pasal 1266 Kitab Undang-Undang Hukum Perdata Republik Indonesia untuk mengakhiri Perjanjian ini.</li>
+      <li>Dalam hal terjadi pengakhiran Perjanjian maka segala tagihan dari Pihak Pertama kepada Pihak Kedua menjadi jatuh tempo dan Pihak Kedua berkewajiban untuk melakukan pembayaran kepada Pihak Pertama dalam jangka waktu paling lambat 14 hari kalender sejak tanggal surat pemberitahuan dikirimkan.</li>
+      <li>Setelah pengakhiran, pembayaran apa pun yang telah dilakukan oleh Pihak Kedua kepada Pihak Pertama tidak dapat dikembalikan.</li>
+      <li>Kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama tetap mengikat Pihak Kedua meski Perjanjian ini diakhiri.</li>
+    </ol>
+  </div>
+
+  <!-- PASAL 8 -->
+  <div class="article">
+    <div class="article-title">Pasal 8 <br> Pilihan Hukum dan Penyelesaian Perselisihan</div>
+    <ol class="article-list">
+      <li>Perjanjian ini wajib ditafsirkan dan dilaksanakan berdasarkan hukum Republik Indonesia.</li>
+      <li>Jika terjadi perselisihan atau sengketa di antara Para Pihak mengenai atau sehubungan dengan Perjanjian ini, para Pihak akan berusaha untuk menyelesaikan perselisihan atau sengketa tersebut secara musyawarah.</li>
+      <li>Apabila sengketa tidak dapat diselesaikan dalam jangka waktu 30 (tiga puluh) hari kalender sejak Para Pihak memulai negosiasi, maka salah satu Pihak atau Para Pihak secara bersama-sama dapat mengajukan perselisihan atau sengketa tersebut kepada arbitrase untuk penyelesaian secara eksklusif dan terakhir. Arbitrase dilaksanakan di Jakarta, Indonesia, sesuai dengan peraturan Badan Arbitrase Nasional Indonesia (BANI), dengan menggunakan Bahasa Indonesia di hadapan 3 (tiga) orang arbiter; masing-masing Pihak akan menunjuk 1 (satu) orang arbiter dan kedua orang arbiter tersebut yang nantinya akan menunjuk arbiter ketiga yang akan bertindak sebagai ketua arbitrase.</li>
+      <li>Ketentuan ayat (3) mengikat Para Pihak untuk menyerahkan semua Perselisihan yang tidak dapat diselesaikan secara musyawarah kepada keputusan Badan Arbitrase yang bersifat final dan mengikat sesuai dengan ketentuan Undang-Undang Arbitrase. Keputusan Badan Arbitrase bersifat final, mengikat dan tidak dapat dilakukan upaya banding, serta dapat digunakan sebagai dasar untuk pelaksanaan putusan di Indonesia dan dimanapun juga.</li>
+      <li>Selama jangka waktu pengajuan penyelesaian Perselisihan kepada Badan Arbitrase dan sampai dihasilkan keputusan Badan Arbitrase, Para Pihak akan melanjutkan pemenuhan kewajibannya berdasarkan Perjanjian, tanpa mengurangi keputusan final yang diputuskan oleh Badan Arbitrase tersebut.</li>
+    </ol>
+  </div>
+
+  <!-- PASAL 9 -->
+  <div class="article">
+    <div class="article-title">Pasal 9 <br> Pengalihan Perjanjian</div>
+    <p>Para Pihak sepakat untuk tidak mengalihkan sebagian atau keseluruhan dari isi Perjanjian ini kepada Pihak Lainnya kecuali atas kesepakatan tertulis Para Pihak.</p>
+  </div>
+
+  <!-- PASAL 10 -->
+  <div class="article">
+    <div class="article-title">Pasal 10 <br> Lain-Lain</div>
+    <ol class="article-list">
+      <li>Segala sesuatu yang belum diatur di dalam Perjanjian ini, atau adanya tambahan / perubahan-perubahan yang disepakati oleh Para Pihak, maka akan dibuatkan perjanjian tambahan / addendum / atau amandemen perjanjian secara tertulis yang disetujui dan ditandatangani oleh Para Pihak di atas serta merupakan bagian yang tak terpisahkan dari isi Perjanjian ini.</li>
+      <li>Apabila suatu ketentuan dari Perjanjian ini atau bagian darinya dinyatakan tidak sah, tidak berlaku, tidak dapat dilaksanakan, bertentangan dengan ketentuan hukum yang berlaku, maka ketidakabsahan, ketidakberlakuan, tidak dapat dilaksanakannya, pertentangan, atau ketidaksesuaian tersebut hanya berlaku terhadap ketentuan tersebut atau bagian dari ketentuan tersebut, sedangkan keabsahan, keberlakuan, dan pelaksanaan bagian lain dari ketentuan tersebut serta ketentuan-ketentuan lain dari Perjanjian ini tidak terpengaruh atau terganggu dan oleh karenanya tetap berlaku secara penuh dan sah.</li>
+      <li>Perjanjian ini akan mengikat atas dan timbul untuk kepentingan Para Pihak berikut pengganti dan penerus masing-masing Pihak. Hak-hak dan kewajiban-kewajiban Para Pihak yang timbul berdasarkan Perjanjian ini tidak dapat dipindahkan atau dengan cara apapun dialihkan kepada pihak ketiga lain manapun tanpa adanya persetujuan tertulis dari Pihak lainnya dalam Perjanjian ini.</li>
+      <li>Tiada satu pihak pun yang bertanggung jawab untuk semua kerugian baik langsung maupun tidak langsung yang diderita oleh pihak lain sehubungan dengan pelaksanaan Perjanjian ini.</li>
+      <li>Segala lampiran dari Perjanjian ini merupakan bagian yang tidak terpisahkan dari Perjanjian ini.</li>
+      <li>Sehubungan dengan Perjanjian ini dan akibat hukumnya, masing-masing pihak menyatakan dan menjamin hal-hal sebagai berikut:<br>
+        a. Masing-masing pihak adalah pihak-pihak yang berhak, berwenang, memiliki izin-izin yang diperlukan dan/atau mempunyai kemampuan untuk melaksanakan kegiatan usahanya dan/atau kewajibannya berdasarkan Perjanjian ini.<br>
+        b. Perwakilan masing-masing pihak yang menandatangani Perjanjian ini adalah pihak yang berwenang bertindak untuk dan atas nama masing-masing pihak dan telah memperoleh izin-izin yang diperlukan untuk mewakili masing-masing pihak termasuk untuk menandatangani dan melaksanakan Perjanjian ini.<br>
+        c. Penandatanganan dan pelaksanaan Perjanjian ini tidak melanggar Perjanjian-perjanjian lain yang mengikat Para Pihak.
+      </li>
+      <li>Apabila pernyataan-pernyataan pada ayat 6 di atas, ternyata di kemudian hari terbukti tidak benar dan/atau menyesatkan dan menimbulkan kerugian terhadap pihak lainnya, maka pihak yang mengakibatkan timbulnya kerugian tersebut wajib mengganti segala kerugian pihak lainnya sebagai akibat dari pernyataan yang tidak benar dan/atau menyesatkan tersebut.</li>
+    </ol>
+  </div>';
+
+        // Additional clauses (Pasal number assigned dynamically so it stays
+        // sequential even if the penalty clause below is the only one present)
+        if (!empty($additionalClauses)) {
+            $html .= '
+  <div class="article">
+    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Ketentuan Tambahan</div>
+    <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($additionalClauses)) . '</div>
+  </div>';
+            $nextArticleNumber++;
+        }
+
+        // Penalty clause
+        if (!empty($penaltyClause)) {
+            $html .= '
+  <div class="article">
+    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Klausul Denda</div>
+    <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($penaltyClause)) . '</div>
+  </div>';
+            $nextArticleNumber++;
+        }
+
+        return $html;
+    }
+
+    /**
+     * Judul, pembukaan, dan pasal yang diedit di form. Nomor pasal mengikuti
+     * urutannya; pasal tanpa judul dan isi dilewati.
+     */
+    private function customBody(array $data): string
+    {
+        $contract = $data['contract'];
+
+        $html = '
+  <div class="title">' . htmlspecialchars($contract->document_title ?: 'Perjanjian Kerja Sama') . '</div>
+  <div class="contract-number">' . htmlspecialchars($data['contractNumber']) . '</div>
+  <div class="rich">' . $this->fillPlaceholders($contract->opening_text ?? '', $data) . '</div>';
+
+        $number = 1;
+        foreach ($contract->articles as $article) {
+            $title   = trim((string) ($article['title'] ?? ''));
+            $content = (string) ($article['content'] ?? '');
+
+            if ($title === '' && trim(strip_tags($content)) === '') {
+                continue;
+            }
+
+            $html .= '
+  <div class="article">
+    <div class="article-title">Pasal ' . $number++ . ($title !== '' ? ' <br> ' . htmlspecialchars($title) : '') . '</div>
+    <div class="rich">' . $this->fillPlaceholders($content, $data) . '</div>
+  </div>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * HTML dari RichEditor, dibersihkan dulu (tanpa skrip/atribut berbahaya),
+     * lalu penanda {nama_klien} dkk. diganti nilai kontrak.
+     */
+    private function fillPlaceholders(string $html, array $data): string
+    {
+        extract($data);
+
+        $projectTable = filled($projectDescription) ? '<table class="contract-table" style="margin-bottom:15px;">
+    <tr>
+        <th style="width:180px;">Deskripsi Proyek</th>
+        <td>' . nl2br(htmlspecialchars($projectDescription)) . '</td>
+    </tr>
+</table>' : '';
+
+        $values = [
+            'nomor_kontrak'         => htmlspecialchars($contractNumber),
+            'hari'                  => $this->getDayName($effectiveDate),
+            'tanggal'               => $this->formatDateIndonesia($effectiveDate),
+            'tanggal_berakhir'      => $this->formatDateIndonesia($expirationDate),
+            'durasi'                => (string) $durationMonths,
+            'hari_pengakhiran'      => htmlspecialchars((string) $terminationDays),
+            'nama_agensi'           => htmlspecialchars($agencyName),
+            'alamat_agensi'         => nl2br(htmlspecialchars($agencyAddress)),
+            'penanda_tangan_agensi' => htmlspecialchars($agencySignName),
+            'jabatan_agensi'        => htmlspecialchars($agencySignTitle),
+            'nama_klien'            => htmlspecialchars($clientName),
+            'alamat_klien'          => nl2br(htmlspecialchars($clientAddress)),
+            'penanda_tangan_klien'  => htmlspecialchars($clientSignName),
+            'jabatan_klien'         => htmlspecialchars($clientSignTitle),
+            'bank'                  => htmlspecialchars($agencyBankName),
+            'no_rekening'           => htmlspecialchars($agencyBankAccount),
+            'nama_rekening'         => htmlspecialchars($agencyBankAccountName),
+            'nilai_kontrak'         => $formattedTotal,
+            'dp'                    => $formattedDp,
+            'cicilan'               => $formattedMonthly,
+            'deskripsi_proyek'      => $projectTable,
+            'tabel_ruang_lingkup'   => $this->buildSowTable($contract),
+        ];
+
+        return strtr(Str::sanitizeHtml($html), array_combine(
+            array_map(fn (string $key) => '{' . $key . '}', array_keys($values)),
+            $values,
+        ));
+    }
+
+    /**
+     * Path file gambar (disk public) untuk dompdf. URL (pratinjau upload yang
+     * belum disimpan) dipakai apa adanya.
+     */
+    private function letterhead(?string ...$candidates): ?string
+    {
+        foreach ($candidates as $path) {
+            if (blank($path)) {
+                continue;
+            }
+
+            if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+                return $path;
+            }
+
+            // Disk bawaan lebih dulu: kop lama dibaca lewat Storage::path() (disk bawaan),
+            // upload Filament ada di disk Filament.
+            foreach (array_unique([config('filesystems.default'), config('filament.default_filesystem_disk', 'public'), 'public']) as $disk) {
+                if (Storage::disk($disk)->exists($path)) {
+                    return Storage::disk($disk)->path($path);
+                }
+            }
+        }
+
+        return null;
     }
 
     private function getLogoHtml(GeneralSettings $settings): string
@@ -197,14 +511,13 @@ class ContractTemplateService
     {
         extract($data);
 
-        $dayName = $this->getDayName($effectiveDate);
-        $formattedEffectiveDate = $this->formatDateIndonesia($effectiveDate);
-        $formattedExpirationDate = $this->formatDateIndonesia($expirationDate);
-
-        // Running counter for "Pasal N" numbers in the optional/dynamic
-        // clauses appended after Pasal 10, so numbering stays sequential
-        // even if one of the optional clauses (additional / penalty) is empty.
-        $nextArticleNumber = 11;
+        // Isi yang diedit di form (articles terisi) atau template bawaan untuk
+        // kontrak yang belum pernah diedit, supaya PDF lamanya tidak berubah.
+        $custom = is_array($contract->articles);
+        $body = $custom ? $this->customBody($data) : $this->legacyBody($data);
+        $closing = $custom
+            ? '<div class="rich" style="margin-top: 0.8cm;">' . $this->fillPlaceholders($contract->closing_text ?? '', $data) . '</div>'
+            : '<p style="margin-top: 0.8cm;">Perjanjian ini dibuat dalam rangkap 2 (dua) asli yang masing-masing dibubuhi materai secukupnya dan ditandatangani sebagaimana mestinya oleh Para Pihak, dan masing-masing mempunyai kekuatan hukum yang sama.</p>';
 
         $html = '<!DOCTYPE html>
 <html lang="id">
@@ -477,207 +790,36 @@ table th {
     text-align:center;
     font-weight:bold;
 }
+
+/* =========================
+   ISI YANG DIEDIT DI FORM (RichEditor)
+========================= */
+
+.rich > div { text-align: justify; margin: 0 0 0.15cm 0; line-height: 1.6; }
+.rich ol, .rich ul { margin: 0 0 0.15cm 0; padding-left: 0.8cm; }
+.rich li { margin-bottom: 0.18cm; text-align: justify; line-height: 1.6; padding-left: 0.2cm; }
+.rich h1, .rich h2, .rich h3 { font-size: 11pt; margin: 0.2cm 0 0.1cm 0; }
+.rich blockquote { margin: 0 0 0.15cm 0.8cm; }
   </style>
 </head>
 <body>
 
-<div class="header">
-    <img src="' . Storage::path('sites/header.png') . '" alt="Header">
-</div>
+' . ($headerSrc ? '<div class="header">
+    <img src="' . htmlspecialchars($headerSrc) . '" alt="Header">
+</div>' : '') . '
 
-<div class="footer">
-    <img src="' . Storage::path('sites/footer.png') . '" alt="Footer">
-</div>
+' . ($footerSrc ? '<div class="footer">
+    <img src="' . htmlspecialchars($footerSrc) . '" alt="Footer">
+</div>' : '') . '
 
 <!-- CONTENT -->
 <div class="content">
-  <div class="title">Perjanjian Kerja Sama</div>
-  <div class="contract-number">' . htmlspecialchars($contractNumber) . '</div>
-
-  <p>Perjanjian Kerja Sama ini (untuk selanjutnya disebut "Perjanjian") dibuat pada hari <strong>' . $dayName . '</strong>, tanggal <strong>' . $formattedEffectiveDate . '</strong>, oleh dan antara Para Pihak di bawah ini:</p>
-
-  <div class="party-title">1. PIHAK PERTAMA</div>
-  <div class="indent">
-    <strong>' . htmlspecialchars($agencyName) . '</strong>, suatu perseroan terbatas yang didirikan menurut dan berdasarkan hukum Indonesia, berkedudukan di ' . nl2br(htmlspecialchars($agencyAddress)) . ' yang dalam hal ini diwakili oleh <strong>' . htmlspecialchars($agencySignName) . '</strong> dalam kedudukannya selaku <strong>' . htmlspecialchars($agencySignTitle) . '</strong> dan oleh karena itu sah bertindak untuk dan atas nama <strong>' . htmlspecialchars($agencyName) . '</strong>. Untuk selanjutnya disebut "<strong>Pihak Pertama</strong>", dan
-  </div>
-
-  <div class="party-title" style="margin-top: 0.2cm;">2. PIHAK KEDUA</div>
-  <div class="indent">
-    <strong>' . htmlspecialchars($clientName) . '</strong>, berkedudukan di ' . nl2br(htmlspecialchars($clientAddress)) . '. Dalam hal ini diwakili oleh <strong>' . htmlspecialchars($clientSignName) . '</strong>, dalam kedudukannya selaku <strong>' . htmlspecialchars($clientSignTitle) . '</strong>, dan oleh karena itu sah bertindak untuk dan atas nama <strong>' . htmlspecialchars($clientName) . '</strong>. Untuk selanjutnya disebut "<strong>Pihak Kedua</strong>",
-  </div>
-
-  <p style="margin-top: 0.2cm;">Pihak Pertama dan Pihak Kedua untuk selanjutnya secara bersama-sama dalam Perjanjian ini disebut sebagai "<strong>Para Pihak</strong>" dan masing-masing disebut sebagai "<strong>Pihak</strong>".</p>
-
-  <!-- PASAL 1 -->
-  <div class="article">
-    <div class="article-title">Pasal 1 <br> Definisi</div>
-    <p>Istilah-istilah berikut yang digunakan dalam Perjanjian ini memiliki pengertian sebagai berikut:</p>
-    <ol class="article-list">
-      <li><strong>Jasa</strong> adalah seluruh lingkup pekerjaan yang dilakukan oleh Pihak Pertama kepada Pihak Kedua sesuai dengan Lampiran 1 Perjanjian ini.</li>
-      <li><strong>Biaya Jasa</strong> adalah besaran biaya yang harus dibayarkan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan Lampiran 2 Perjanjian ini.</li>
-      <li><strong>Pihak Ketiga</strong> adalah penyedia third-party yang dibutuhkan selama pekerjaan berjalan.</li>
-      <li><strong>Invoice</strong> adalah surat penagihan yang dikeluarkan oleh Pihak Pertama kepada Pihak Kedua.</li>
-      <li><strong>Hari Kerja</strong> adalah hari di luar hari Sabtu, Minggu dan hari libur nasional Indonesia.</li>
-      <li><strong>Hari Kalender</strong> adalah setiap hari di kalender Gregorius termasuk Sabtu, Minggu dan hari libur nasional Indonesia.</li>
-    </ol>
-  </div>
-
-  <!-- PASAL 2 -->
-  <div class="article">
-    <div class="article-title">Pasal 2 <br> Kewajiban Pihak Pertama</div>' .
-
-(!empty($projectDescription) ? '
-
-<table class="contract-table" style="margin-bottom:15px;">
-    <tr>
-        <th style="width:180px;">Deskripsi Proyek</th>
-        <td>' . nl2br(htmlspecialchars($projectDescription)) . '</td>
-    </tr>
-</table>
-
-' : '') . '
-    <ol class="article-list">
-      <li>Pihak Pertama akan memberikan Jasa untuk kepentingan Pihak Kedua sesuai dengan ruang lingkup pengerjaan yang tercantum dalam Lampiran 1 Perjanjian ini' . (!empty($scopeOfWork) ? ', yaitu: ' . nl2br(htmlspecialchars($scopeOfWork)) : '') . '.</li>
-      <li>Pihak Pertama akan memberikan Jasa kepada Pihak Kedua dengan didasarkan pada jangka waktu <strong>' . $durationMonths . ' bulan</strong> pengerjaan terhitung dari pembayaran diterima oleh Pihak Pertama.</li>
-      <li>Pekerjaan Jasa akan dimulai oleh Pihak Pertama dalam waktu 1 (satu) hari kerja setelah pembayaran pertama dibayarkan oleh Pihak Kedua.</li>
-      <li>Dengan ditandatanganinya Perjanjian ini, Pihak Kedua dianggap telah memesan Jasa kepada Pihak Kedua, yang mana pemesanan tersebut tidak dapat dibatalkan tanpa persetujuan tertulis dari Pihak Pertama.</li>
-      <li>Kegiatan kunjungan yang bersifat pengambilan konten yang berada di wilayah kerja di luar Jabodetabek, maka biaya operasional menjadi kewajiban Pihak Kedua.</li>
-    </ol>
-  </div>
-
-  <!-- SOW TABLE -->
-  ' . $this->buildSowTable($contract) . '
-
-  <!-- PASAL 3 -->
-  <div class="article">
-    <div class="article-title">Pasal 3 <br> Kewajiban Pihak Kedua</div>
-    <p>Untuk memastikan Pihak Pertama dapat memberikan Jasa kepada Pihak Kedua sesuai dengan kewajiban dan jangka waktu pengerjaan yang diatur di dalam Perjanjian ini maka Pihak Kedua wajib memenuhi kewajiban pembayaran biaya jasa sebagaimana diatur di dalam Lampiran 1.</p>
-  </div>
-
-  <!-- PASAL 4 -->
-  <div class="article">
-    <div class="article-title">Pasal 4 <br> Biaya Jasa dan Pembayaran</div>
-    <ol class="article-list">
-      <li>Para Pihak sepakat bahwa untuk Biaya Jasa adalah mengacu pada Lampiran 2 Tabel A dari Perjanjian ini.</li>
-      <li>Biaya Jasa tidak dapat diubah tanpa persetujuan tertulis terlebih dahulu dari Para Pihak.</li>
-      <li>Pembayaran wajib dilakukan oleh Pihak Kedua kepada Pihak Pertama sesuai dengan jangka waktu pembayaran yang diatur di dalam Lampiran 2 Tabel A dari Perjanjian ini.</li>
-      <li>Pembayaran wajib dilakukan oleh Pihak Kedua ke rekening Pihak Pertama sebagai berikut:<br>
-        <strong>Nama Bank</strong> : ' . htmlspecialchars($agencyBankName) . '<br>
-        <strong>No. Rek</strong> : ' . htmlspecialchars($agencyBankAccount) . '<br>
-        <strong>Nama Perusahaan</strong> : ' . htmlspecialchars($agencyBankAccountName) . '
-      </li>
-      <li>Pembayaran dari Pihak Kedua dianggap sah apabila dana telah diterima di rekening pihak pertama.</li>
-      <li>Segala pembayaran yang telah diterima oleh Pihak Pertama tidak dapat dikembalikan kepada Pihak Kedua dengan alasan apapun juga.</li>
-    </ol>
-  </div>
-
-  <!-- PASAL 5 -->
-  <div class="article">
-    <div class="article-title">Pasal 5 <br> Kerahasiaan</div>
-    <ol class="article-list">
-      <li>Para Pihak wajib untuk merahasiakan seluruh informasi, data dan fakta yang diperoleh selama berlangsungnya Perjanjian ini sehingga hanya dipergunakan untuk keperluan internal dalam pelaksanaan pekerjaan sejak tanggal Perjanjian ini sampai dengan selesai, kecuali dipersyaratkan atau diperintahkan oleh aparat berwenang termasuk pengadilan atau berdasarkan peraturan yang berlaku.</li>
-      <li>Para Pihak sepakat dan saling menjamin bahwa karyawannya, agennya, penasihatnya dan/atau pihak-pihak yang terkait lainnya tidak akan memberikan Informasi Rahasia kepada siapapun tanpa persetujuan tertulis dari Pihak lainnya, baik selama berlangsungnya Perjanjian sampai dengan 3 (tiga) tahun setelah Perjanjian ini berakhir atau diakhiri.</li>
-    </ol>
-  </div>
-
-  <!-- PASAL 6 -->
-  <div class="article">
-    <div class="article-title">Pasal 6 <br> Force Majeure</div>
-    <ol class="article-list">
-      <li>Tidak dilaksanakannya atau tertundanya pelaksanaan sebagian atau keseluruhan ketentuan Perjanjian ini oleh salah satu pihak tidak termasuk sebagai pelanggaran Perjanjian ini apabila hal tersebut disebabkan oleh adanya Force Majeure, maka Para Pihak sepakat untuk menyelesaikannya melalui musyawarah mufakat.</li>
-      <li>Yang termasuk sebagai peristiwa Force Majeure adalah sebagai berikut:<br>
-        a. Bencana alam / wabah penyakit / angin taufan / banjir / tanah longsor / gempa bumi<br>
-        b. Huru-hara / perang / pemberontakan<br>
-        c. Pemogokan umum / sabotase / kebakaran<br>
-        d. Perubahan peraturan perundang-undangan atau kebijaksanaan pemerintah yang mengakibatkan Perjanjian ini tidak dapat dilaksanakan<br>
-        e. Hal-hal lain di luar kontrol dari salah satu pihak
-      </li>
-      <li>Dalam hal terjadi peristiwa sebagaimana dimaksud dalam ayat 1 Pasal ini, Para Pihak secara bersama-sama maupun sendiri-sendiri dengan dilandasi iktikad baik akan melakukan upaya semaksimal mungkin agar akibat dari peristiwa tersebut dapat ditekan seminimal mungkin.</li>
-      <li>Semua kerugian dan biaya yang diderita oleh salah satu Pihak sebagai akibat terjadinya Force Majeure tidak menjadi tanggung jawab pihak lainnya.</li>
-      <li>Untuk menghindari keragu-raguan, kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama, termasuk pembayaran denda, tidak dapat ditunda, dikurangi dengan alasan Force Majeure.</li>' .
-      ($forceMajeureExtended ? '
-      <li>Termasuk pula sebagai peristiwa Force Majeure adalah gangguan yang bersifat sistemik di luar kendali Para Pihak, antara lain namun tidak terbatas pada gangguan siber berskala luas, gangguan infrastruktur telekomunikasi/internet nasional, kebijakan pembatasan wilayah (lockdown) oleh pemerintah, dan gangguan rantai pasok global, yang secara material menghalangi pelaksanaan kewajiban salah satu Pihak.</li>' : '') . '
-    </ol>
-  </div>
-
-  <!-- PASAL 7 -->
-  <div class="article">
-    <div class="article-title">Pasal 7 <br> Jangka Waktu dan Pengakhiran Perjanjian</div>
-    <ol class="article-list">
-      <li>Perjanjian ini mulai berlaku dari <strong>' . $dayName . ', ' . $formattedEffectiveDate . '</strong> sampai dengan seluruh kewajiban dari masing-masing Pihak sebagaimana diatur di dalam Perjanjian ini telah terpenuhi kecuali diakhiri menurut ketentuan ayat 2 di bawah ini.</li>
-      <li>Para Pihak memiliki hak untuk mengakhiri Perjanjian dengan pemberitahuan tertulis kepada pihak lain, <strong>' . $terminationDays . ' hari kalender</strong> sebelum tanggal efektif pengakhiran Perjanjian dengan alasan sebagai berikut:<br>
-        a. Salah satu pihak gagal untuk memperbaiki kesalahannya selama ' . $terminationDays . ' hari kalender sejak menerima surat peringatan dari pihak lain, atau<br>
-        b. Perjanjian diakhiri berdasarkan kesepakatan Para Pihak.
-      </li>
-      <li>Perjanjian layanan ini dapat diakhiri oleh Pihak Pertama secara sepihak dengan pemberitahuan tertulis apabila Pihak Kedua lalai membayar lebih dari 14 (empat belas) hari kalender setelah jatuh tempo, kecuali disepakati lain oleh Pihak Pertama.</li>
-      <li>Para Pihak sepakat untuk mengesampingkan ketentuan Pasal 1266 Kitab Undang-Undang Hukum Perdata Republik Indonesia untuk mengakhiri Perjanjian ini.</li>
-      <li>Dalam hal terjadi pengakhiran Perjanjian maka segala tagihan dari Pihak Pertama kepada Pihak Kedua menjadi jatuh tempo dan Pihak Kedua berkewajiban untuk melakukan pembayaran kepada Pihak Pertama dalam jangka waktu paling lambat 14 hari kalender sejak tanggal surat pemberitahuan dikirimkan.</li>
-      <li>Setelah pengakhiran, pembayaran apa pun yang telah dilakukan oleh Pihak Kedua kepada Pihak Pertama tidak dapat dikembalikan.</li>
-      <li>Kewajiban Pihak Kedua untuk melakukan pembayaran kepada Pihak Pertama tetap mengikat Pihak Kedua meski Perjanjian ini diakhiri.</li>
-    </ol>
-  </div>
-
-  <!-- PASAL 8 -->
-  <div class="article">
-    <div class="article-title">Pasal 8 <br> Pilihan Hukum dan Penyelesaian Perselisihan</div>
-    <ol class="article-list">
-      <li>Perjanjian ini wajib ditafsirkan dan dilaksanakan berdasarkan hukum Republik Indonesia.</li>
-      <li>Jika terjadi perselisihan atau sengketa di antara Para Pihak mengenai atau sehubungan dengan Perjanjian ini, para Pihak akan berusaha untuk menyelesaikan perselisihan atau sengketa tersebut secara musyawarah.</li>
-      <li>Apabila sengketa tidak dapat diselesaikan dalam jangka waktu 30 (tiga puluh) hari kalender sejak Para Pihak memulai negosiasi, maka salah satu Pihak atau Para Pihak secara bersama-sama dapat mengajukan perselisihan atau sengketa tersebut kepada arbitrase untuk penyelesaian secara eksklusif dan terakhir. Arbitrase dilaksanakan di Jakarta, Indonesia, sesuai dengan peraturan Badan Arbitrase Nasional Indonesia (BANI), dengan menggunakan Bahasa Indonesia di hadapan 3 (tiga) orang arbiter; masing-masing Pihak akan menunjuk 1 (satu) orang arbiter dan kedua orang arbiter tersebut yang nantinya akan menunjuk arbiter ketiga yang akan bertindak sebagai ketua arbitrase.</li>
-      <li>Ketentuan ayat (3) mengikat Para Pihak untuk menyerahkan semua Perselisihan yang tidak dapat diselesaikan secara musyawarah kepada keputusan Badan Arbitrase yang bersifat final dan mengikat sesuai dengan ketentuan Undang-Undang Arbitrase. Keputusan Badan Arbitrase bersifat final, mengikat dan tidak dapat dilakukan upaya banding, serta dapat digunakan sebagai dasar untuk pelaksanaan putusan di Indonesia dan dimanapun juga.</li>
-      <li>Selama jangka waktu pengajuan penyelesaian Perselisihan kepada Badan Arbitrase dan sampai dihasilkan keputusan Badan Arbitrase, Para Pihak akan melanjutkan pemenuhan kewajibannya berdasarkan Perjanjian, tanpa mengurangi keputusan final yang diputuskan oleh Badan Arbitrase tersebut.</li>
-    </ol>
-  </div>
-
-  <!-- PASAL 9 -->
-  <div class="article">
-    <div class="article-title">Pasal 9 <br> Pengalihan Perjanjian</div>
-    <p>Para Pihak sepakat untuk tidak mengalihkan sebagian atau keseluruhan dari isi Perjanjian ini kepada Pihak Lainnya kecuali atas kesepakatan tertulis Para Pihak.</p>
-  </div>
-
-  <!-- PASAL 10 -->
-  <div class="article">
-    <div class="article-title">Pasal 10 <br> Lain-Lain</div>
-    <ol class="article-list">
-      <li>Segala sesuatu yang belum diatur di dalam Perjanjian ini, atau adanya tambahan / perubahan-perubahan yang disepakati oleh Para Pihak, maka akan dibuatkan perjanjian tambahan / addendum / atau amandemen perjanjian secara tertulis yang disetujui dan ditandatangani oleh Para Pihak di atas serta merupakan bagian yang tak terpisahkan dari isi Perjanjian ini.</li>
-      <li>Apabila suatu ketentuan dari Perjanjian ini atau bagian darinya dinyatakan tidak sah, tidak berlaku, tidak dapat dilaksanakan, bertentangan dengan ketentuan hukum yang berlaku, maka ketidakabsahan, ketidakberlakuan, tidak dapat dilaksanakannya, pertentangan, atau ketidaksesuaian tersebut hanya berlaku terhadap ketentuan tersebut atau bagian dari ketentuan tersebut, sedangkan keabsahan, keberlakuan, dan pelaksanaan bagian lain dari ketentuan tersebut serta ketentuan-ketentuan lain dari Perjanjian ini tidak terpengaruh atau terganggu dan oleh karenanya tetap berlaku secara penuh dan sah.</li>
-      <li>Perjanjian ini akan mengikat atas dan timbul untuk kepentingan Para Pihak berikut pengganti dan penerus masing-masing Pihak. Hak-hak dan kewajiban-kewajiban Para Pihak yang timbul berdasarkan Perjanjian ini tidak dapat dipindahkan atau dengan cara apapun dialihkan kepada pihak ketiga lain manapun tanpa adanya persetujuan tertulis dari Pihak lainnya dalam Perjanjian ini.</li>
-      <li>Tiada satu pihak pun yang bertanggung jawab untuk semua kerugian baik langsung maupun tidak langsung yang diderita oleh pihak lain sehubungan dengan pelaksanaan Perjanjian ini.</li>
-      <li>Segala lampiran dari Perjanjian ini merupakan bagian yang tidak terpisahkan dari Perjanjian ini.</li>
-      <li>Sehubungan dengan Perjanjian ini dan akibat hukumnya, masing-masing pihak menyatakan dan menjamin hal-hal sebagai berikut:<br>
-        a. Masing-masing pihak adalah pihak-pihak yang berhak, berwenang, memiliki izin-izin yang diperlukan dan/atau mempunyai kemampuan untuk melaksanakan kegiatan usahanya dan/atau kewajibannya berdasarkan Perjanjian ini.<br>
-        b. Perwakilan masing-masing pihak yang menandatangani Perjanjian ini adalah pihak yang berwenang bertindak untuk dan atas nama masing-masing pihak dan telah memperoleh izin-izin yang diperlukan untuk mewakili masing-masing pihak termasuk untuk menandatangani dan melaksanakan Perjanjian ini.<br>
-        c. Penandatanganan dan pelaksanaan Perjanjian ini tidak melanggar Perjanjian-perjanjian lain yang mengikat Para Pihak.
-      </li>
-      <li>Apabila pernyataan-pernyataan pada ayat 6 di atas, ternyata di kemudian hari terbukti tidak benar dan/atau menyesatkan dan menimbulkan kerugian terhadap pihak lainnya, maka pihak yang mengakibatkan timbulnya kerugian tersebut wajib mengganti segala kerugian pihak lainnya sebagai akibat dari pernyataan yang tidak benar dan/atau menyesatkan tersebut.</li>
-    </ol>
-  </div>';
-
-        // Additional clauses (Pasal number assigned dynamically so it stays
-        // sequential even if the penalty clause below is the only one present)
-        if (!empty($additionalClauses)) {
-            $html .= '
-  <div class="article">
-    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Ketentuan Tambahan</div>
-    <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($additionalClauses)) . '</div>
-  </div>';
-            $nextArticleNumber++;
-        }
-
-        // Penalty clause
-        if (!empty($penaltyClause)) {
-            $html .= '
-  <div class="article">
-    <div class="article-title">Pasal ' . $nextArticleNumber . ' <br> Klausul Denda</div>
-    <div style="white-space: pre-wrap; text-align: justify;">' . nl2br(htmlspecialchars($penaltyClause)) . '</div>
-  </div>';
-            $nextArticleNumber++;
-        }
+' . $body;
 
         // SIGNATURE
         $html .= '
   <div class="signature-section">
-    <p style="margin-top: 0.8cm;">Perjanjian ini dibuat dalam rangkap 2 (dua) asli yang masing-masing dibubuhi materai secukupnya dan ditandatangani sebagaimana mestinya oleh Para Pihak, dan masing-masing mempunyai kekuatan hukum yang sama.</p>
+    ' . $closing . '
 
     <table style="width: 100%; border: none; margin-top: 0.8cm;">
       <tr>
