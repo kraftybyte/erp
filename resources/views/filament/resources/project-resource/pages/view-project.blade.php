@@ -8,7 +8,7 @@
     <style>
         .pv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; font-size: .875rem; color: rgb(var(--gray-500)); }
         .pv-meta strong { font-weight: 500; color: rgb(var(--gray-950)); }
-        .dark .pv-meta { color: rgb(var(--gray-400)); }
+        .dark .pv-meta { color: rgb(var(--gray-300)); }
         .dark .pv-meta strong { color: #fff; }
 
         .pv-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
@@ -27,7 +27,7 @@
         .pv-details { display: grid; gap: 1rem; font-size: .875rem; }
         .pv-details dt { color: rgb(var(--gray-500)); }
         .pv-details dd { margin: .125rem 0 0; font-weight: 500; color: rgb(var(--gray-950)); overflow-wrap: anywhere; white-space: pre-line; }
-        .dark .pv-details dt { color: rgb(var(--gray-400)); }
+        .dark .pv-details dt { color: rgb(var(--gray-300)); }
         .dark .pv-details dd { color: #fff; }
 
         .pv-task { display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid rgba(var(--gray-950), .06); }
@@ -37,7 +37,7 @@
         .pv-task .name { font-weight: 600; color: rgb(var(--gray-950)); }
         .pv-task .desc, .pv-task .info { margin-top: .25rem; font-size: .8125rem; color: rgb(var(--gray-500)); }
         .dark .pv-task .name { color: #fff; }
-        .dark .pv-task .desc, .dark .pv-task .info { color: rgb(var(--gray-400)); }
+        .dark .pv-task .desc, .dark .pv-task .info { color: rgb(var(--gray-300)); }
         .pv-people { display: flex; justify-content: flex-end; margin-top: .5rem; }
         .pv-people span { display: inline-flex; width: 1.75rem; height: 1.75rem; margin-left: -.375rem; align-items: center; justify-content: center; border-radius: 9999px;
                           font-size: .6875rem; font-weight: 600; color: rgb(var(--gray-700)); background: rgb(var(--gray-100)); box-shadow: 0 0 0 2px #fff; }
@@ -74,7 +74,7 @@
                         ]) !!}
                     </div>
                 @else
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Belum ada detail project.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-300">Belum ada detail project. Isi lewat tombol Edit di atas.</p>
                 @endif
             </x-filament::section>
 
@@ -140,7 +140,10 @@
                         </div>
                     </div>
                 @empty
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Belum ada task untuk project ini.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-300">
+                        Belum ada task untuk project ini. Tambahkan dari
+                        <x-filament::link :href="\App\Filament\Pages\TaskKanbanBoard::getUrl()">Task Kanban</x-filament::link>.
+                    </p>
                 @endforelse
             </x-filament::section>
         </div>

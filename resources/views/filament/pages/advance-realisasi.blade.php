@@ -85,7 +85,7 @@
                     <x-filament::icon icon="heroicon-o-receipt-percent" class="h-10 w-10 text-gray-400 dark:text-gray-500" />
                     <div>
                         <p class="text-base font-semibold text-gray-950 dark:text-white">Belum ada batch realisasi</p>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-300">
                             Satu batch berisi pengeluaran yang dibayar dari advance ini, lengkap dengan foto struk atau nota.
                         </p>
                     </div>
@@ -111,7 +111,7 @@
                     <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png,.webp" class="sr-only" id="file-upload" x-ref="files">
                     <x-filament::icon icon="heroicon-o-arrow-up-tray" class="mx-auto h-6 w-6 text-gray-400" />
                     <p class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-200">Pilih file atau tarik ke sini</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">JPG, PNG, WebP, atau PDF, maks. 5 MB per file</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-300">JPG, PNG, WebP, atau PDF, maks. 5 MB per file</p>
                 </label>
 
                 <div wire:loading.flex wire:target="uploadedFiles" class="mt-2 items-center gap-2 text-sm text-gray-500">
@@ -162,7 +162,7 @@
                             </div>
                         </div>
                         <div class="mt-2 flex items-center justify-between text-sm">
-                            <span class="text-gray-500 dark:text-gray-400">
+                            <span class="text-gray-500 dark:text-gray-300">
                                 Subtotal <strong class="text-gray-950 dark:text-white">{{ $rp(((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1))) }}</strong>
                             </span>
                             @if(count($batchItems) > 1)
@@ -212,7 +212,7 @@
                     <input type="file" wire:model="returnAttachment" accept=".pdf,.jpg,.jpeg,.png,.webp" class="sr-only" id="return-upload" x-ref="file">
                     <x-filament::icon icon="heroicon-o-arrow-up-tray" class="mx-auto h-6 w-6 text-gray-400" />
                     <p class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-200">Pilih file atau tarik ke sini</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">JPG, PNG, WebP, atau PDF, maks. 5 MB</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-300">JPG, PNG, WebP, atau PDF, maks. 5 MB</p>
                 </label>
 
                 <div wire:loading.flex wire:target="returnAttachment" class="mt-2 items-center gap-2 text-sm text-gray-500">

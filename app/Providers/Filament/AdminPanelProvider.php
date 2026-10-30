@@ -48,7 +48,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandName(fn (GeneralSettings $settings) => $settings->brand_name)
             ->brandLogo(fn (GeneralSettings $settings) => Storage::url($settings->brand_logo))
             ->brandLogoHeight(fn (GeneralSettings $settings) => $settings->brand_logoHeight)
-            ->colors(fn (GeneralSettings $settings) => $settings->site_theme)
+            ->colors(fn (GeneralSettings $settings) => \App\Helpers\ThemePalette::readable((array) $settings->site_theme))
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([

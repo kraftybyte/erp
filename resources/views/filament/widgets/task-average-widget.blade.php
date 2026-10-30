@@ -31,10 +31,10 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                     Belum ada task selesai yang ditugaskan ke kamu.
                 @else
                     {{ $average_days < 7
-                        ? 'Performa tim kamu stabil dan cepat 🚀'
+                        ? 'Performa tim kamu stabil dan cepat.'
                         : ($average_days <= 14
-                            ? 'Masih bisa lebih optimal ⚡'
-                            : 'Perlu evaluasi ritme kerja 📊') }}
+                            ? 'Masih bisa lebih optimal.'
+                            : 'Perlu evaluasi ritme kerja.') }}
                 @endif
             </p>
 

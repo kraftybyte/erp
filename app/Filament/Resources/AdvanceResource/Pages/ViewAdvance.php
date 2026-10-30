@@ -67,7 +67,7 @@ class ViewAdvance extends ViewRecord
             'emptyText' => match (true) {
                 $paid <= 0                                   => 'Realisasi bisa dicatat setelah advance dicairkan.',
                 $record->status === Advance::STATUS_SELESAI  => 'Advance ini diselesaikan tanpa batch realisasi.',
-                default                                      => 'Belum ada pengeluaran yang dicatat dari advance ini.',
+                default                                      => 'Belum ada pengeluaran yang dicatat. Catat lewat tombol Kelola Realisasi di atas.',
             },
         ];
     }

@@ -133,7 +133,7 @@
                     @include('filament.pages.partials.realisasi-items', ['batch' => $batch])
                 </div>
             @empty
-                <p class="text-sm text-gray-500 dark:text-gray-400">{{ $emptyText }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-300">{{ $emptyText }}</p>
             @endforelse
         </x-filament::section>
     </div>

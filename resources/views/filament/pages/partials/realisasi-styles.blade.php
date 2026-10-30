@@ -10,7 +10,7 @@
     .rl-figure dd.is-over { color: rgb(var(--warning-800)); }
     .dark .rl-figure dd { color: #fff; }
     .dark .rl-figure dd.is-over { color: rgb(var(--warning-300)); }
-    .dark .rl-figure dt, .dark .rl-figure p { color: rgb(var(--gray-400)); }
+    .dark .rl-figure dt, .dark .rl-figure p { color: rgb(var(--gray-300)); }
 
     .rl-progress { height: .5rem; border-radius: 9999px; background: rgb(var(--gray-200)); overflow: hidden; }
     .rl-progress > span { display: block; height: 100%; border-radius: inherit; background: rgb(var(--primary-600)); transition: width .3s ease; }
@@ -21,7 +21,7 @@
 
     .rl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; font-size: .875rem; color: rgb(var(--gray-500)); }
     .rl-meta strong { font-weight: 500; color: rgb(var(--gray-950)); }
-    .dark .rl-meta { color: rgb(var(--gray-400)); }
+    .dark .rl-meta { color: rgb(var(--gray-300)); }
     .dark .rl-meta strong { color: #fff; }
 
     .rl-note { border-radius: .75rem; padding: .875rem 1rem; font-size: .875rem; border: 1px solid; }
@@ -49,10 +49,10 @@
     .rl-item .desc { margin-top: .125rem; color: rgb(var(--gray-500)); }
     .rl-item .subtotal { font-weight: 600; color: rgb(var(--gray-950)); }
     .rl-item .qty-mobile { display: none; }
-    .dark .rl-items-head { border-color: rgba(255, 255, 255, .1); color: rgb(var(--gray-400)); }
+    .dark .rl-items-head { border-color: rgba(255, 255, 255, .1); color: rgb(var(--gray-300)); }
     .dark .rl-item { border-color: rgba(255, 255, 255, .06); }
     .dark .rl-item .name, .dark .rl-item .subtotal { color: #fff; }
-    .dark .rl-item .desc { color: rgb(var(--gray-400)); }
+    .dark .rl-item .desc { color: rgb(var(--gray-300)); }
 
     .rl-files { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
     .rl-file { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; padding: .125rem .5rem; border-radius: .375rem; font-size: .75rem; font-weight: 500;
@@ -68,7 +68,7 @@
     .dark .rl-form-item { background: rgba(255, 255, 255, .04); }
     .rl-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 9rem; gap: .5rem; align-items: end; }
     .rl-label { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 500; color: rgb(var(--gray-600)); }
-    .dark .rl-label { color: rgb(var(--gray-400)); }
+    .dark .rl-label { color: rgb(var(--gray-300)); }
     .rl-total { display: flex; justify-content: space-between; align-items: baseline; padding: .75rem 1rem; border-radius: .75rem; background: rgba(var(--primary-500), .07); font-variant-numeric: tabular-nums; }
     .rl-total strong { font-size: 1.125rem; color: rgb(var(--gray-950)); }
     .dark .rl-total strong { color: #fff; }
@@ -79,7 +79,7 @@
     .rl-details dd { margin: .125rem 0 0; font-weight: 500; color: rgb(var(--gray-950)); overflow-wrap: anywhere; }
     .rl-details .span-all { grid-column: 1 / -1; }
     .rl-details dd.is-plain { font-weight: 400; white-space: pre-line; }
-    .dark .rl-details dt { color: rgb(var(--gray-400)); }
+    .dark .rl-details dt { color: rgb(var(--gray-300)); }
     .dark .rl-details dd { color: #fff; }
 
     /* Beberapa batch dalam satu section (View Advance). */
@@ -90,7 +90,7 @@
     .rl-batch-head span { font-size: .8125rem; color: rgb(var(--gray-500)); }
     .rl-batch-head .total { font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(var(--gray-950)); white-space: nowrap; }
     .dark .rl-batch-head strong, .dark .rl-batch-head .total { color: #fff; }
-    .dark .rl-batch-head span { color: rgb(var(--gray-400)); }
+    .dark .rl-batch-head span { color: rgb(var(--gray-300)); }
 
     @media (max-width: 1024px) {
         .rl-figures.is-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
