@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\ExpenseResource\Pages\ListExpenses;
 use App\Filament\Resources\ExpenseResource\Pages\ViewExpense;
+use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\PaymentAccountResource\Pages\ListPaymentAccounts;
 use App\Filament\Resources\ProjectResource\Pages\ListProjects;
@@ -103,6 +104,20 @@ class UxPagesTest extends TestCase
             ->assertSee('u.p. Budi')
             ->assertSee('Rp 2.500.000')
             ->assertDontSee('2,500,000.00');
+    }
+
+    public function test_ikon_download_pdf_di_setiap_baris_invoice(): void
+    {
+        $invoice = Invoice::create([
+            'uuid' => 'TES/' . Str::upper(Str::random(8)), 'user_id' => $this->admin->id, 'type' => 'sale',
+            'nama_perusahaan' => 'PT Uji Unduh', 'nama_pic' => 'Budi', 'date' => now(), 'due_date' => now()->addWeek(),
+            'paid' => 0, 'grand_total' => 1_000_000,
+        ]);
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableActionVisible('download', $invoice)
+            ->assertTableActionHasUrl('download', route('invoices.download', $invoice), $invoice)
+            ->assertTableActionShouldOpenUrlInNewTab('download', $invoice);
     }
 
     public function test_menu_titik_tiga_menampilkan_label_aksi(): void

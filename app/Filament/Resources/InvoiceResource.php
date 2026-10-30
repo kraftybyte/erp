@@ -2649,6 +2649,25 @@ class InvoiceResource extends BaseInvoiceResource
                     ),
 
                 /*
+                |--------------------------------------------------------------------------
+                | DOWNLOAD
+                |--------------------------------------------------------------------------
+                |
+                | PDF yang sama dengan tombol Download di halaman View. Selalu tampil,
+                | tepat sebelum ⋮, jadi posisinya sama di setiap baris.
+                |--------------------------------------------------------------------------
+                */
+
+                Tables\Actions\Action::make('download')
+                    ->iconButton()
+                    ->color('gray')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->label('Download PDF')
+                    ->tooltip('Download PDF')
+                    ->url(fn (Invoice $record) => route('invoices.download', $record))
+                    ->openUrlInNewTab(),
+
+                /*
                 | Aksi lain di menu ⋮. Dulu tujuh ikon berjejer di depan setiap baris
                 | sehingga tabel 750px lebih lebar dari layar; Convert dan Bayar tetap
                 | tampil karena itu langkah kerja berikutnya.
