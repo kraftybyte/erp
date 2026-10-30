@@ -2,114 +2,99 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Task;
-use App\Models\Project;
-use App\Models\User;
 use App\Helpers\NotifHelper;
+use App\Models\Project;
+use App\Models\Task;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Ingatkan deadline task (ke assignee dan pembuatnya) dan project (ke Director,
+ * super_admin, dan assignee task-nya) yang jatuh dalam X hari, lewat lonceng
+ * ERP dan Telegram penerima yang sudah terhubung. Dijalankan setiap pagi.
+ */
 class DeadlineReminder extends Command
 {
     protected $signature = 'deadline:reminder {--days=3}';
     protected $description = 'Send reminders for tasks/projects due in X days';
 
+    /** Task yang tidak perlu diingatkan: selesai atau sengaja ditahan. */
+    private const TASK_CLOSED = ['done', 'hold'];
+
+    private const PROJECT_DONE = ['completed', 'selesai', 'done'];
+
     public function handle(): int
     {
-        $days = (int) $this->option('days');
-        $threshold = Carbon::now()->addDays($days)->endOfDay();
-        $startDate = Carbon::now()->startOfDay();
+        $days  = (int) $this->option('days');
+        $today = Carbon::today();
+        $until = $today->copy()->addDays($days)->endOfDay();
 
         $this->info("Checking deadlines for next {$days} days...");
 
-        $count = 0;
-
         // ===== TASKS =====
-        $tasks = Task::whereIn('status', ['log', 'process', 'review'])
-            ->whereBetween('selesai_task', [$startDate, $threshold])
+        $tasks = Task::whereNotIn('status', self::TASK_CLOSED)
+            ->whereBetween('selesai_task', [$today, $until])
             ->with(['users', 'project'])
             ->get();
 
         foreach ($tasks as $task) {
-            $daysLeft = Carbon::now()->diffInDays($task->selesai_task, false);
+            $deadline = Carbon::parse($task->selesai_task);
+            $body     = "Task \"{$task->nama_task}\" deadline " . $this->when($deadline, $today) . " ({$deadline->locale('id')->translatedFormat('j M Y')}).";
 
-            // Notify each assigned user
-            $assignees = $task->users;
+            $recipients = $task->users;
+            $creator    = $task->creator_id ? User::find($task->creator_id) : null;
 
-            foreach ($assignees as $user) {
-                NotifHelper::send(
-                    $user,
-                    'Task Deadline Reminder ⏰',
-                    "Task \"{$task->nama_task}\" deadline dalam {$daysLeft} hari ({$task->selesai_task->format('d M Y')}).",
-                    'heroicon-o-calendar',
-                    'warning',
-                    '/admin/tasks'
-                );
+            if ($creator && ! $recipients->contains('id', $creator->id)) {
+                $recipients = $recipients->push($creator);
             }
 
-            // Also notify creator if different from assignees
-            if ($task->creator_id) {
-                $creator = User::find($task->creator_id);
-                if ($creator && !$assignees->contains('id', $creator->id)) {
-                    NotifHelper::send(
-                        $creator,
-                        'Task Deadline Reminder (Creator) ⏰',
-                        "Task \"{$task->nama_task}\" deadline dalam {$daysLeft} hari ({$task->selesai_task->format('d M Y')}).",
-                        'heroicon-o-calendar',
-                        'warning',
-                        '/admin/tasks'
-                    );
-                }
-            }
-
-            $count++;
+            NotifHelper::send($recipients, 'Deadline task', $body, 'heroicon-o-calendar', 'warning', '/admin/tasks', telegram: true);
         }
 
-        $this->info("Sent {$count} task deadline reminders.");
+        $this->info("Sent {$tasks->count()} task deadline reminders.");
 
         // ===== PROJECTS =====
-        $projects = Project::whereBetween('timeline_selesai', [$startDate, $threshold])
-            ->with(['deal', 'tasks'])
+        $projects = Project::whereBetween('timeline_selesai', [$today, $until])
+            ->where(fn (Builder $query) => $query->whereNull('status')->orWhereNotIn('status', self::PROJECT_DONE))
+            ->with(['deal', 'tasks.users'])
             ->get();
 
-        $projectCount = 0;
+        $managers = User::where('is_active', true)
+            ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['Director', 'super_admin']))
+            ->get();
+
         foreach ($projects as $project) {
-            $daysLeft = Carbon::now()->diffInDays($project->timeline_selesai, false);
+            $recipients = $managers->merge($project->tasks->flatMap->users)->unique('id');
+            $clientName = $project->nama_perusahaan ?: ($project->deal?->nama_perusahaan ?: 'tanpa klien');
+            $body       = "Project \"{$project->nama_project}\" ({$clientName}) deadline " . $this->when($project->timeline_selesai, $today)
+                . " ({$project->timeline_selesai->locale('id')->translatedFormat('j M Y')}).";
 
-            // Notify project creator / assigned users
-            $notifyUsers = User::role(['Director', 'Project Manager', 'super_admin'])->get();
-
-            // Add task assignees
-            $taskAssignees = collect();
-            foreach ($project->tasks as $task) {
-                $taskAssignees = $taskAssignees->merge($task->users);
-            }
-            $notifyUsers = $notifyUsers->merge($taskAssignees)->unique();
-
-            $clientName = $project->deal ? $project->deal->nama_perusahaan : 'No Client';
-            foreach ($notifyUsers as $user) {
-                NotifHelper::send(
-                    $user,
-                    'Project Deadline Reminder',
-                    "Project \"{$project->nama_project}\" ({$clientName}) deadline dalam {$daysLeft} hari ({$project->timeline_selesai->format('d M Y')}).",
-                    'heroicon-o-building-office',
-                    'warning',
-                    '/admin/projects'
-                );
-            }
-
-            $projectCount++;
+            NotifHelper::send($recipients, 'Deadline project', $body, 'heroicon-o-building-office', 'warning', '/admin/projects/' . $project->id, telegram: true);
         }
 
-        $this->info("Sent {$projectCount} project deadline reminders.");
+        $this->info("Sent {$projects->count()} project deadline reminders.");
 
         Log::info('DeadlineReminder completed', [
-            'tasks_notified' => $count,
-            'projects_notified' => $projectCount,
-            'days_ahead' => $days,
+            'tasks_notified'    => $tasks->count(),
+            'projects_notified' => $projects->count(),
+            'days_ahead'        => $days,
         ]);
 
         return Command::SUCCESS;
+    }
+
+    /** "hari ini", "besok", "dalam 3 hari". */
+    private function when(Carbon $deadline, Carbon $today): string
+    {
+        $days = (int) $today->diffInDays($deadline->copy()->startOfDay(), false);
+
+        return match ($days) {
+            0       => 'hari ini',
+            1       => 'besok',
+            default => "dalam {$days} hari",
+        };
     }
 }

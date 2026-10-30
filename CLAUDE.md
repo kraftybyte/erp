@@ -93,6 +93,10 @@ php artisan view:clear
 
 # Generate keys
 php artisan key:generate
+
+# Scheduled reminders (app/Console/Kernel.php); the server needs a cron every minute
+bash scripts/schedule-run.sh          # = php artisan schedule:run
+php artisan ringkasan:pagi --dry-run  # preview the morning brief without sending
 ```
 
 ## Common Fixes

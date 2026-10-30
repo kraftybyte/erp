@@ -56,3 +56,7 @@ app/Services/InstagramService.php
 app/Services/InstagramSyncService.php
 app/Services/MetaAdsService.php
 resources/views/filament/resources/social-account/view-social-account.blade.php
+
+# 2026-10-30 Pengingat invoice & kontrak yang tidak pernah jalan, diganti ringkasan:pagi
+app/Console/Commands/CheckOverdueInvoices.php
+app/Console/Commands/CheckContractExpiration.php
