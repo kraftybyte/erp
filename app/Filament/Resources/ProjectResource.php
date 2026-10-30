@@ -198,8 +198,9 @@ class ProjectResource extends Resource
 
             Tables\Columns\TextColumn::make('deal.nama_perusahaan')
                 ->searchable()
-                ->limit(30)
-                ->label('Nama Klien'),
+                ->label('Klien')
+                ->state(fn (Project $record) => \App\Helpers\ClientLabel::projectParts($record)[0] ?? '-')
+                ->wrap(),
 
             Tables\Columns\TextColumn::make('deal.status')
                 ->searchable()
@@ -207,30 +208,42 @@ class ProjectResource extends Resource
                 ->badge()
                 ->color(fn ($record) => ColorHelper::dealStatus($record->deal?->status ?? '')),
             Tables\Columns\TextColumn::make('timeline_mulai')
-                ->label('Mulai Project')
-                ->dateTime('d/m/Y'),
+                ->label('Mulai')
+                ->date(),
 
-            Tables\Columns\TextColumn::make('timeline_selesai')
-                ->label('Selesai Project')
-                ->dateTime('d/m/Y'),
+            // Nama kolom sendiri: dulu dua kolom bernama timeline_selesai sehingga
+            // "Selesai Project" tidak pernah tampil, dan project yang sudah selesai
+            // tetap disebut "... hari terlambat".
+            Tables\Columns\TextColumn::make('deadline')
+                ->label('Deadline')
+                ->getStateUsing(function (Project $record): string {
+                    $done = in_array(strtolower((string) $record->status), ['completed', 'selesai', 'done'], true)
+                        || $record->deal?->status === 'Selesai';
 
-            Tables\Columns\TextColumn::make('timeline_selesai')
-            ->label('Deadline')
-            ->getStateUsing(function ($record) {
-                $now = Carbon::now();
-                $deadline = Carbon::parse($record->timeline_selesai);
+                    if ($done) {
+                        return 'Selesai';
+                    }
 
-                $diffInDays = $now->diffInDays($deadline, false);
-                $diffInDays = round($diffInDays);
-                // Jika sudah lewat deadline
-                if ($diffInDays < 0) {
-                    return abs($diffInDays) . ' hari terlambat';
-                }
+                    if (! $record->timeline_selesai) {
+                        return '-';
+                    }
 
-                return $diffInDays . ' hari lagi';
-            })
-            ->sortable()
-            ->toggleable(isToggledHiddenByDefault: false),
+                    $days = (int) round(now()->startOfDay()->diffInDays(Carbon::parse($record->timeline_selesai)->startOfDay(), false));
+
+                    return match (true) {
+                        $days < 0   => abs($days) . ' hari terlambat',
+                        $days === 0 => 'Hari ini',
+                        default     => $days . ' hari lagi',
+                    };
+                })
+                ->description(fn (Project $record) => $record->timeline_selesai ? Carbon::parse($record->timeline_selesai)->locale('id')->translatedFormat('j M Y') : null)
+                ->color(fn (string $state) => match (true) {
+                    str_ends_with($state, 'terlambat') => 'danger',
+                    $state === 'Hari ini'              => 'warning',
+                    $state === 'Selesai'               => 'success',
+                    default                            => null,
+                })
+                ->sortable(query: fn (Builder $query, string $direction) => $query->orderBy('timeline_selesai', $direction)),
 
              ])
              ->defaultSort('created_at', 'desc')
@@ -249,8 +262,9 @@ class ProjectResource extends Resource
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
                 Tables\Actions\Action::make('packingSlip')
                     ->label('Packing Slip')
+                    ->hiddenLabel()
                     ->icon('heroicon-o-document-arrow-down')
-                    ->color('warning')
+                    ->color('gray')
                     ->tooltip('Packing Slip')
                     ->url(fn (Project $record) => PackingSlip::getUrl([$record->id])),
                 Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),

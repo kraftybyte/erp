@@ -83,10 +83,10 @@ class ViewHrReport extends Page
         $this->stats = compact('total','done','process','review','hold','late','avgDays','doneRate');
 
         $this->taskSummary = [
-            ['label'=>'Done',      'count'=>$done,    'color'=>'#07a0cf'],
+            ['label'=>'Done',      'count'=>$done,    'color'=>'#0284c7'],
             ['label'=>'Process',   'count'=>$process, 'color'=>'#ff5915'],
-            ['label'=>'Review',    'count'=>$review,  'color'=>'#f59e0b'],
-            ['label'=>'Hold',      'count'=>$hold,    'color'=>'#94a3b8'],
+            ['label'=>'Review',    'count'=>$review,  'color'=>'#d97706'],
+            ['label'=>'Hold',      'count'=>$hold,    'color'=>'#64748b'],
             ['label'=>'Terlambat', 'count'=>$late,    'color'=>'#ef4444'],
         ];
 
@@ -184,7 +184,7 @@ class ViewHrReport extends Page
 
     private function calcKpi(float $avg, float $rate, int $late, int $total): array
     {
-        if ($total === 0) return ['label'=>'No Data','color'=>'#94a3b8','bg'=>'#f1f5f9','score'=>'-'];
+        if ($total === 0) return ['label'=>'No Data','color'=>'#64748b','bg'=>'#f1f5f9','score'=>'-'];
 
         $taskScore  = min(100, $rate);
         $speedScore = match(true) { $avg<=3=>100, $avg<=7=>80, $avg<=14=>60, $avg<=30=>40, default=>20 };
@@ -192,9 +192,9 @@ class ViewHrReport extends Page
         $score      = round(($taskScore * 0.5) + ($speedScore * 0.3) + ($lateScore * 0.2));
 
         return match(true) {
-            $score >= 90 => ['label'=>'Outstanding',  'color'=>'#07a0cf','bg'=>'#e0f5fc','score'=>$score],
-            $score >= 75 => ['label'=>'Good',          'color'=>'#3bbeff','bg'=>'#eaf9ff','score'=>$score],
-            $score >= 60 => ['label'=>'Average',       'color'=>'#f59e0b','bg'=>'#fff8e6','score'=>$score],
+            $score >= 90 => ['label'=>'Outstanding',  'color'=>'#0284c7','bg'=>'#e0f5fc','score'=>$score],
+            $score >= 75 => ['label'=>'Good',          'color'=>'#0284c7','bg'=>'#eaf9ff','score'=>$score],
+            $score >= 60 => ['label'=>'Average',       'color'=>'#d97706','bg'=>'#fff8e6','score'=>$score],
             $score >= 40 => ['label'=>'Needs Review',  'color'=>'#ff5915','bg'=>'#fff1eb','score'=>$score],
             default      => ['label'=>'Below Average', 'color'=>'#ef4444','bg'=>'#fef2f2','score'=>$score],
         };

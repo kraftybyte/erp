@@ -183,7 +183,7 @@ class QuotationsRelationManager extends RelationManager
                         ->color(fn ($record) => ColorHelper::quotationStatus($record->status)),
                     Tables\Columns\TextColumn::make('grand_total')
                         ->label('Total Quotation')
-                        ->money('IDR'),
+                        ->rupiah(),
             ])
             ->filters([])
             ->headerActions([

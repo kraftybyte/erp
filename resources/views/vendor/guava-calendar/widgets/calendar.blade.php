@@ -49,7 +49,17 @@
             transform: translateY(-1px);
             transition: 0.15s ease;
         }
-        .dark .ec .ec-toolbar .ec-button { background-color: rgba(255,255,255,0.05); }
+        /* Mode gelap: tombol di atas memakai !important, jadi aturan gelapnya juga
+           perlu !important; dulu tombolnya tetap putih dan panahnya tidak terlihat. */
+        .dark .ec { --ec-border-color: rgba(255,255,255,0.1); }
+        .dark .ec .ec-toolbar .ec-button.ec-today,
+        .dark .ec .ec-toolbar .ec-button.ec-prev,
+        .dark .ec .ec-toolbar .ec-button.ec-next {
+            background: rgba(255,255,255,0.05) !important;
+            border-color: rgba(255,255,255,0.15) !important;
+            color: rgb(var(--gray-200)) !important;
+        }
+        .dark .ec .ec-day.ec-today { background-color: rgba(var(--primary-500), 0.15); }
     </style>
 
     <x-filament::section

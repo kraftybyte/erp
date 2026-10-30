@@ -32,8 +32,16 @@ class BladeViewsCompileTest extends TestCase
                 continue;
             }
 
+            $php = Blade::compileString($file->getContents());
+
+            // Isi <x-filament-panels::page> dikompilasi di dalam blok if, tempat
+            // `use ...;` di @php tidak sah; dibungkus if supaya itu ikut ketahuan.
+            if (str_contains($file->getContents(), '<x-filament-panels::page')) {
+                $php = '<?php if (true): ?>' . $php . '<?php endif; ?>';
+            }
+
             try {
-                token_get_all(Blade::compileString($file->getContents()), TOKEN_PARSE);
+                token_get_all($php, TOKEN_PARSE);
             } catch (ParseError $e) {
                 $broken[] = $file->getRelativePathname() . ' (baris hasil kompilasi ' . $e->getLine() . '): ' . $e->getMessage();
             }

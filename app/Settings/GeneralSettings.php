@@ -100,9 +100,6 @@ class GeneralSettings extends Settings
     public mixed $nav_employee = 'Employee';
     public mixed $nav_absence = 'Absence';
     public mixed $nav_event = 'Event';
-    public mixed $nav_social_account = 'Social Account';
-    public mixed $nav_connected_account = 'Connected Account';
-    public mixed $nav_meta_ad = 'Meta Ad Account';
     public mixed $nav_user_management = 'User Management';
     public mixed $nav_general_settings = 'General Settings';
     public mixed $nav_mail_settings = 'Mail Settings';
@@ -212,9 +209,6 @@ class GeneralSettings extends Settings
             'nav_employee' => 'Employee',
             'nav_absence' => 'Absence',
             'nav_event' => 'Event',
-            'nav_social_account' => 'Social Account',
-            'nav_connected_account' => 'Connected Account',
-            'nav_meta_ad' => 'Meta Ad Account',
             'nav_user_management' => 'User Management',
             'nav_general_settings' => 'General Settings',
             'nav_mail_settings' => 'Mail Settings',
@@ -349,9 +343,6 @@ class GeneralSettings extends Settings
             'employee' => 'Employee',
             'absence' => 'Absence',
             'event' => 'Event',
-            'social_account' => 'Social Account',
-            'connected_account' => 'Connected Account',
-            'meta_ad' => 'Meta Ad Account',
             'user_management' => 'User Management',
             'general_settings' => 'General Settings',
             'mail_settings' => 'Mail Settings',
@@ -386,9 +377,6 @@ class GeneralSettings extends Settings
             'employee' => $settings->nav_employee,
             'absence' => $settings->nav_absence,
             'event' => $settings->nav_event,
-            'social_account' => $settings->nav_social_account,
-            'connected_account' => $settings->nav_connected_account,
-            'meta_ad' => $settings->nav_meta_ad,
             'user_management' => $settings->nav_user_management,
             'general_settings' => $settings->nav_general_settings,
             'mail_settings' => $settings->nav_mail_settings,

@@ -48,7 +48,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandName(fn (GeneralSettings $settings) => $settings->brand_name)
             ->brandLogo(fn (GeneralSettings $settings) => Storage::url($settings->brand_logo))
             ->brandLogoHeight(fn (GeneralSettings $settings) => $settings->brand_logoHeight)
-            ->colors(fn (GeneralSettings $settings) => $settings->site_theme)
+            ->colors(fn (GeneralSettings $settings) => \App\Helpers\ThemePalette::readable((array) $settings->site_theme))
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
@@ -77,8 +77,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->resources([
                 config('filament-logger.activity_resource'),
-                \App\Filament\Resources\ConnectedAccountResource\ConnectedAccountResource::class,
-                \App\Filament\Resources\ConnectedAccountMetricResource\ConnectedAccountMetricResource::class,
             ])
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

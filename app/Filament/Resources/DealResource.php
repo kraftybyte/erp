@@ -184,24 +184,13 @@ class DealResource extends Resource
                     ->weight('bold'),
 
                     
+                // "PIC - Perusahaan" utuh; dulu dipotong 25 huruf padahal kolomnya lega.
                 Tables\Columns\TextColumn::make('nama_perusahaan')
+                    ->label('Klien')
                     ->searchable(['nama_perusahaan', 'nama_pic'])
                     ->weight('medium')
-                    ->limit(25)
-                    ->formatStateUsing(function ($state, $record) {
-                        $namaPic = ($record->nama_pic === '-' || blank($record->nama_pic))
-                            ? '(Pribadi)'
-                            : $record->nama_pic;
-
-                        return $namaPic . ' - ' . $record->nama_perusahaan;
-                    })
-                    ->tooltip(function ($record) {
-                        $namaPic = ($record->nama_pic === '-' || blank($record->nama_pic))
-                            ? '(Pribadi)'
-                            : $record->nama_pic;
-
-                        return $namaPic . ' - ' . $record->nama_perusahaan;
-                    }),
+                    ->formatStateUsing(fn ($state, $record) => \App\Helpers\ClientLabel::of($record->nama_pic, $state))
+                    ->wrap(),
                     
                 Tables\Columns\TextColumn::make('product.nama_layanan')
                     ->badge()
@@ -213,7 +202,7 @@ class DealResource extends Resource
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Tanggal Deal')
-                    ->dateTime('d/m/Y')
+                    ->date()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('updated_at')

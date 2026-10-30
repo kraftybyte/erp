@@ -1,19 +1,16 @@
 <x-filament-panels::page>
 
-<div>
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-
-        <div id="historyBadge" class="tl-history">
-            <span class="tl-history-dot"></span>
-            <span id="historyText">{{ $lastHistoryText ?? 'Belum ada perubahan' }}</span>
-        </div>
-
-        <div wire:ignore>
-            <div id="calendar"></div>
-        </div>
-
+{{-- Section Filament supaya kartunya ikut mode gelap (dulu bg-white tetap). --}}
+<x-filament::section>
+    <div id="historyBadge" class="tl-history">
+        <span class="tl-history-dot"></span>
+        <span id="historyText">{{ $lastHistoryText ?? 'Belum ada perubahan' }}</span>
     </div>
-</div>
+
+    <div wire:ignore>
+        <div id="calendar"></div>
+    </div>
+</x-filament::section>
 
 </x-filament-panels::page>
 
@@ -137,6 +134,30 @@
     .stage-review { background: rgba(147, 51, 234, 0.2); color: #7c3aed; }
     .stage-done { background: rgba(22, 163, 74, 0.2); color: #15803d; }
     .stage-hold { background: rgba(239, 68, 68, 0.2); color: #dc2626; }
+
+    /* Mode gelap: toolbar dan grid FullCalendar memakai warna terang dengan
+       !important, jadi aturan gelapnya juga perlu !important. */
+    .dark .fc { --fc-border-color: rgba(255, 255, 255, .1); --fc-page-bg-color: transparent; --fc-neutral-bg-color: rgba(255, 255, 255, .04);
+                --fc-today-bg-color: rgba(var(--primary-500), .15); color: rgb(var(--gray-200)); }
+    .dark .fc-toolbar-title { color: #fff !important; }
+    .dark .fc .fc-button,
+    .dark .fc .fc-button-primary { background: rgba(255, 255, 255, .05) !important; border-color: rgba(255, 255, 255, .15) !important; color: rgb(var(--gray-200)) !important; }
+    .dark .fc .fc-button:hover,
+    .dark .fc .fc-button-primary:hover { background: rgba(255, 255, 255, .1) !important; color: #fff !important; }
+    .dark .fc .fc-button-primary:not(:disabled).fc-button-active { background: #fff !important; color: rgb(var(--gray-950)) !important; border-color: #fff !important; }
+    .dark .fc .fc-prev-button .fc-icon,
+    .dark .fc .fc-next-button .fc-icon { color: #fff !important; }
+    .dark .fc .fc-datagrid-cell,
+    .dark .fc .fc-timeline-slot,
+    .dark .fc .fc-scrollgrid { background-color: transparent; }
+    .dark .tl-history { color: rgb(var(--gray-300)); }
+
+    .tl-weekend-lane { background-color: #fff1f1; }
+    .tl-weekend-label { color: #dc2626; font-weight: 600; }
+    .tl-project-row { font-weight: 600; background-color: #f9fafb; }
+    .dark .tl-weekend-lane { background-color: rgba(var(--danger-500), .08); }
+    .dark .tl-weekend-label { color: rgb(var(--danger-400)); }
+    .dark .tl-project-row { background-color: rgba(255, 255, 255, .04); }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -244,17 +265,17 @@
             datesSet: function () { requestAnimationFrame(fixToolbar); },
             slotLaneDidMount: function (info) {
                 const d = info.date.getDay();
-                if (d === 0 || d === 6) info.el.style.backgroundColor = '#fff1f1';
+                // Kelas, bukan style inline, supaya warnanya bisa diganti di mode gelap.
+                if (d === 0 || d === 6) info.el.classList.add('tl-weekend-lane');
             },
             slotLabelDidMount: function (info) {
                 const d = info.date.getDay();
-                if (d === 0 || d === 6) { info.el.style.color = '#dc2626'; info.el.style.fontWeight = '600'; }
+                if (d === 0 || d === 6) info.el.classList.add('tl-weekend-label');
             },
             resourceLabelDidMount: function (info) {
                 const rid = info.resource.id;
                 if (rid.startsWith('project-')) {
-                    info.el.style.fontWeight = '600';
-                    info.el.style.backgroundColor = '#f9fafb';
+                    info.el.classList.add('tl-project-row');
                     return;
                 }
                 info.el.style.cursor = 'pointer';

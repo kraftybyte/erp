@@ -32,15 +32,15 @@ class TaskWidget extends Widget
             ->first(); // Ambil rata-rata dalam hari
 
         // Mengembalikan data rata-rata pengerjaan dalam angka bulat
+        // has_data: tanpa task selesai, rata-ratanya kosong, bukan "0 hari, Sangat Baik".
         return [
-            'average_days' => round($averageDays->avg_days ?? 0), // Jika tidak ada data, set ke 0 dan bulatkan
+            'average_days' => round($averageDays->avg_days ?? 0),
+            'has_data'     => $averageDays->avg_days !== null,
         ];
     }
 
     public function render(): \Illuminate\View\View
     {
-        return view('filament.widgets.task-average-widget', [
-            'average_days' => $this->getData()['average_days'],
-        ]);
+        return view('filament.widgets.task-average-widget', $this->getData());
     }
 }

@@ -406,22 +406,12 @@ class QuotationResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('uuid')->label('ID')->searchable(),
 
+                // "PIC - Perusahaan" seperti di bot dan daftar lain; dulu dipotong
+                // 20 huruf ("Siti Rahayu - CV Ber...") padahal kolomnya masih lega.
                 Tables\Columns\TextColumn::make('nama_perusahaan')
-                ->formatStateUsing(function ($state, $record) {
-                    $namaPic = $record->nama_pic === '-' || empty($record->nama_pic)
-                        ? '(Pribadi)'
-                        : $record->nama_pic;
-
-                    return $namaPic . ' - ' . $state;
-                })
-                ->limit(20)
-                ->tooltip(function ($record) {
-                    $namaPic = $record->nama_pic === '-' || empty($record->nama_pic)
-                        ? '(Pribadi)'
-                        : $record->nama_pic;
-
-                    return $namaPic . ' - ' . $record->nama_perusahaan;
-                })
+                ->label('Klien')
+                ->formatStateUsing(fn ($state, $record) => \App\Helpers\ClientLabel::of($record->nama_pic, $state))
+                ->wrap()
                 ->searchable(
                     query: fn (Builder $query, string $search) => $query
                         ->where('nama_perusahaan', 'like', "%{$search}%")
@@ -436,7 +426,7 @@ class QuotationResource extends Resource
 
                 Tables\Columns\TextColumn::make('grand_total')
                     ->label('Total Quotation')
-                    ->money('IDR')
+                    ->formatStateUsing(fn ($state) => \App\Helpers\Money::rupiah($state))
                     ->searchable(
                         query: fn (Builder $query, string $search) => AmountSearch::apply($query, $search, 'grand_total')
                     ),

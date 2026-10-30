@@ -16,6 +16,13 @@ class ListInvoices extends BaseListInvoices
         FilamentInvoices::loadTypes();
     }
 
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\InvoiceResource\Widgets\InvoiceStatsWidget::class,
+        ];
+    }
+
     public function getTabs(): array
     {
         $tabs = [

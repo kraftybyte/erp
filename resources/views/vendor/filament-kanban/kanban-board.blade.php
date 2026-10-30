@@ -1,4 +1,4 @@
-<x-filament-panels::page class="bg-gray-50 p-6">
+<x-filament-panels::page class="kanban-page p-6">
 
     {{-- ─── KANBAN STYLES ─────────────────────────────── --}}
     <style>
@@ -38,6 +38,33 @@
         .kanban-wrapper::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
+
+        /* Tombol Board/List/Timeline: sky-600 di putih 4,1:1 dan slate-500 di
+           abu 3,2:1; dipertegas supaya minimal 4,5:1. */
+        .kanban-page .text-sky-600 { color: #0369a1; }
+        .kanban-page .text-slate-500 { color: #475569; }
+        .dark .kanban-page .text-sky-600 { color: rgb(var(--primary-400)); }
+
+        /* Mode gelap: kartu, kolom, dan tombol tampilan memakai kelas warna
+           terang tanpa varian dark: (Tailwind tidak dikompilasi ulang), jadi
+           ditimpa di sini. Dulu papan tetap putih di mode gelap. */
+        .dark .kanban-page .kanban-body { background: rgba(255, 255, 255, .03); }
+        .dark .kanban-page .bg-white { background-color: rgb(var(--gray-900)); }
+        .dark .kanban-page .bg-gray-50,
+        .dark .kanban-page .bg-gray-100 { background-color: rgba(255, 255, 255, .06); }
+        .dark .kanban-page .bg-gray-200 { background-color: rgba(255, 255, 255, .08); }
+        .dark .kanban-page .border-gray-200 { border-color: rgba(255, 255, 255, .1); }
+        .dark .kanban-page .border-white { border-color: rgb(var(--gray-900)); }
+        .dark .kanban-page .text-gray-900 { color: #fff; }
+        .dark .kanban-page .text-gray-600,
+        .dark .kanban-page .text-gray-500,
+        .dark .kanban-page .text-gray-400,
+        .dark .kanban-page .text-slate-500 { color: rgb(var(--gray-300)); }
+        .dark .kanban-page .hover\:bg-gray-200:hover,
+        .dark .kanban-page .hover\:bg-slate-100:hover { background-color: rgba(255, 255, 255, .1); }
+        .dark .kanban-page .hover\:text-slate-700:hover { color: #fff; }
+        .dark .kanban-wrapper::-webkit-scrollbar-track { background: rgba(255, 255, 255, .05); }
+        .dark .kanban-wrapper::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .2); }
     </style>
 
     {{-- ─── VIEW TOGGLE ─────────────────────────────────── --}}

@@ -22,7 +22,7 @@
 - Project Management: Deal → Project → Task (Kanban)
 - Finance: Expense, Advance, Budget tracking
 - HR: Employee, Absence management
-- Social Media: Instagram/Facebook account sync, Meta Ads
+- Social Media / Meta Ads: removed 2026-10-30 (tables stay in the DB, code is gone)
 
 ### Important Patterns
 
@@ -64,7 +64,6 @@ ColorHelper::absenceCategory($cat) // absence category
 ### Critical Services
 - `ContractTemplateService` - Generates contract HTML
 - `MetricsEngine` - Financial metrics calculation
-- `InstagramService` / `FacebookPageService` - Social sync
 
 ## File Locations
 
@@ -94,10 +93,6 @@ php artisan view:clear
 
 # Generate keys
 php artisan key:generate
-
-# Sync social accounts
-php artisan sync:instagram
-php artisan sync:meta-ads
 ```
 
 ## Common Fixes

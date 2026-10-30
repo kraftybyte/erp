@@ -4,7 +4,14 @@ $settings = app(\App\Settings\GeneralSettings::class);
 $primary = $settings->site_theme['primary'] ?? '#6366f1';
 @endphp
 
-<x-filament::section class="h-full">
+{{-- Warna netral lewat variabel supaya widget ikut mode gelap (dulu teks
+     tugas #1f2937 di kartu gelap dan tab abu muda 2,3:1). --}}
+<style>
+    .tt { --tt-text: #111827; --tt-body: #374151; --tt-muted: #4b5563; --tt-card: #fff; --tt-soft: #f3f4f6; --tt-line: #e5e7eb; --tt-line-strong: #d1d5db; }
+    .dark .tt { --tt-text: #fff; --tt-body: rgb(var(--gray-200)); --tt-muted: rgb(var(--gray-300)); --tt-card: rgb(var(--gray-800)); --tt-soft: rgba(255, 255, 255, .06); --tt-line: rgba(255, 255, 255, .1); --tt-line-strong: rgba(255, 255, 255, .25); }
+</style>
+
+<x-filament::section class="h-full tt">
 
 {{-- Header --}}
 <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
@@ -18,7 +25,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
     </h2>
 
     {{-- Filter Tabs --}}
-    <div style="display:flex;gap:4px;background:#f3f4f6;border-radius:12px;padding:4px;">
+    <div style="display:flex;gap:4px;background:var(--tt-soft);border-radius:12px;padding:4px;">
         @foreach([
             ['all',     'All',     null],
             ['pending', 'Pending', $this->countPending()],
@@ -28,8 +35,8 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                 style="
                     font-size:11px;font-weight:600;padding:4px 12px;border-radius:8px;border:none;cursor:pointer;white-space:nowrap;transition:all 0.15s;
                     {{ $filter === $val
-                        ? 'background:white;color:#000000;box-shadow:0 1px 3px rgba(0,0,0,0.1);'
-                        : 'background:transparent;color:#9ca3af;' }}
+                        ? 'background:var(--tt-card);color:var(--tt-text);box-shadow:0 1px 3px rgba(0,0,0,0.1);'
+                        : 'background:transparent;color:var(--tt-muted);' }}
                 ">
                 {{ $lbl }}@if($count !== null) ({{ $count }})@endif
             </button>
@@ -49,7 +56,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
             @php $isDone = $task->status === 'done'; @endphp
 
             <div wire:key="task-{{ $task->id }}"
-                style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f3f4f6;{{ $isDone ? 'opacity:0.5;' : '' }}">
+                style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--tt-line);{{ $isDone ? 'opacity:0.5;' : '' }}">
 
                 {{-- Checkbox --}}
                 <div x-data="{ checked: {{ $isDone ? 'true' : 'false' }} }">
@@ -57,7 +64,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                         @click="checked = !checked; $wire.openDoneModal({{ $task->id }})"
                         :style="checked
                             ? 'width:18px;height:18px;min-width:18px;border-radius:4px;border:2px solid {{ $primary }};background:{{ $primary }};display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:all 0.15s;'
-                            : 'width:18px;height:18px;min-width:18px;border-radius:4px;border:2px solid #d1d5db;background:white;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:all 0.15s;'">
+                            : 'width:18px;height:18px;min-width:18px;border-radius:4px;border:2px solid var(--tt-line-strong);background:var(--tt-card);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:all 0.15s;'">
                         <svg x-show="checked" width="10" height="8" viewBox="0 0 10 8" fill="none"
                             stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="1,4 3.5,6.5 9,1"/>
@@ -68,7 +75,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                 {{-- Task Name + Client --}}
                 <span style="flex:1;min-width:0;font-size:14px;line-height:1.4;text-decoration:{{ $isDone ? 'line-through' : 'none' }};color:{{ $isDone ? '#9ca3af' : '#1f2937' }};">
                     {{ $task->nama_task }}
-                    <span style="display:block;font-size:11px;color:#9ca3af;font-weight:400;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">
+                    <span style="display:block;font-size:11px;color:var(--tt-muted);font-weight:400;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">
                         {{ \Illuminate\Support\Str::limit($task->project?->nama_perusahaan ?? '', 25) }}
                     </span>
                 </span>
@@ -82,13 +89,13 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                             $diff = (int) round(now()->diffInDays(\Carbon\Carbon::parse($task->selesai_task), false));
                             if ($diff < 0) {
                                 $deadlineText  = abs($diff) . ' hari terlambat';
-                                $deadlineBadge = 'background:#fff1eb;color:#ff5915;';
+                                $deadlineBadge = 'background:#fff1eb;color:#c2410c;';
                             } elseif ($diff === 0) {
                                 $deadlineText  = 'Hari ini';
-                                $deadlineBadge = 'background:#fff8e6;color:#f59e0b;';
+                                $deadlineBadge = 'background:#fff8e6;color:#b45309;';
                             } else {
                                 $deadlineText  = $diff . ' hari lagi';
-                                $deadlineBadge = 'background:#f1f5f9;color:#94a3b8;';
+                                $deadlineBadge = 'background:#f1f5f9;color:#64748b;';
                             }
                         @endphp
                         <span style="font-size:10px;font-weight:600;padding:5px 8px;border-radius:20px;white-space:nowrap;{{ $deadlineBadge }}">
@@ -100,10 +107,10 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                     @php
                         $badgeStyle = match($task->status) {
                             'done'    => 'background:'.$primary.'20;color:'.$primary.';',
-                            'process' => 'background:#fff4ed;color:#ff5915;',
-                            'review'  => 'background:#fff8e6;color:#f59e0b;',
-                            'hold'    => 'background:#fff0eb;color:#ff5915;',
-                            default   => 'background:#f3f4f6;color:#6b7280;',
+                            'process' => 'background:#fff4ed;color:#c2410c;',
+                            'review'  => 'background:#fff8e6;color:#b45309;',
+                            'hold'    => 'background:#fff0eb;color:#c2410c;',
+                            default   => 'background:var(--tt-soft);color:var(--tt-muted);',
                         };
                     @endphp
                     <span style="font-size:10px;font-weight:600;padding:5px 8px;border-radius:20px;white-space:nowrap;{{ $badgeStyle }}">
@@ -114,7 +121,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
 
         @empty
             <div style="text-align:center;padding:24px 0;">
-                <p style="font-size:12px;color:#9ca3af;">
+                <p style="font-size:12px;color:var(--tt-muted);">
                     {{ $filter === 'done' ? 'Belum ada task selesai' : 'Tidak ada task hari ini' }}
                 </p>
             </div>
@@ -124,8 +131,8 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
 
 {{-- Footer --}}
 @if($this->countAll() > 0)
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:11px;color:#9ca3af;">
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--tt-line);display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:11px;color:var(--tt-muted);">
             {{ $this->countDone() }} / {{ $this->countAll() }} selesai hari ini
         </span>
         <a href="/admin/task-kanban-board"
@@ -146,7 +153,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
             style="position:absolute;inset:0;background:rgba(0,0,0,0.45);"></div>
 
         {{-- Modal Box --}}
-        <div style="position:relative;background:white;border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 24px 60px rgba(0,0,0,0.18);">
+        <div style="position:relative;background:var(--tt-card);border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 24px 60px rgba(0,0,0,0.18);">
 
             {{-- Header --}}
             <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
@@ -158,14 +165,14 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                         </svg>
                     </div>
                     <div>
-                        <p style="font-size:14px;font-weight:700;color:#111827;margin:0;">Tandai Selesai</p>
-                        <p style="font-size:11px;color:#6b7280;margin:2px 0 0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        <p style="font-size:14px;font-weight:700;color:var(--tt-text);margin:0;">Tandai Selesai</p>
+                        <p style="font-size:11px;color:var(--tt-muted);margin:2px 0 0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                             {{ $modalTaskName }}
                         </p>
                     </div>
                 </div>
                 <button wire:click="closeModal" type="button"
-                    style="background:none;border:none;cursor:pointer;color:#9ca3af;padding:2px;flex-shrink:0;">
+                    style="background:none;border:none;cursor:pointer;color:var(--tt-muted);padding:2px;flex-shrink:0;">
                     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" viewBox="0 0 24 24">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -175,14 +182,14 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
 
             {{-- Textarea — defer supaya tidak sync tiap keystroke --}}
             <div style="margin-bottom:20px;">
-                <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">
-                    Catatan <span style="color:#9ca3af;font-weight:400;">(opsional)</span>
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--tt-body);margin-bottom:6px;">
+                    Catatan <span style="color:var(--tt-muted);font-weight:400;">(opsional)</span>
                 </label>
                 <textarea
                     wire:model.defer="doneNote"
                     placeholder="Tambahkan catatan penyelesaian task..."
                     rows="3"
-                    style="width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:13px;color:#111827;resize:none;outline:none;font-family:inherit;box-sizing:border-box;"
+                    style="width:100%;border:1.5px solid var(--tt-line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--tt-text);resize:none;outline:none;font-family:inherit;box-sizing:border-box;"
                     onfocus="this.style.borderColor='{{ $primary }}'"
                     onblur="this.style.borderColor='#e5e7eb'"></textarea>
             </div>
@@ -192,7 +199,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
                 <button wire:click="closeModal" type="button"
                     wire:loading.attr="disabled"
                     wire:target="closeModal"
-                    style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;border:1.5px solid #e5e7eb;background:white;color:#374151;cursor:pointer;">
+                    style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;border:1.5px solid var(--tt-line);background:var(--tt-card);color:var(--tt-body);cursor:pointer;">
                     Batal
                 </button>
                 <button wire:click="confirmDone" type="button"

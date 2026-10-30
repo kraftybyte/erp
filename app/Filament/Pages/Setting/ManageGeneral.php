@@ -474,21 +474,6 @@ class ManageGeneral extends SettingsPage
                                                 ->placeholder('Event'),
                                         ]),
                                     ]),
-                                Forms\Components\Section::make('Tools Navigation')
-                                    ->description('Custom label untuk menu Tools')
-                                    ->schema([
-                                        Forms\Components\Grid::make(3)->schema([
-                                            Forms\Components\TextInput::make('nav_social_account')
-                                                ->label('Social Account')
-                                                ->placeholder('Social Account'),
-                                            Forms\Components\TextInput::make('nav_connected_account')
-                                                ->label('Connected Account')
-                                                ->placeholder('Connected Account'),
-                                            Forms\Components\TextInput::make('nav_meta_ad')
-                                                ->label('Meta Ad Account')
-                                                ->placeholder('Meta Ad Account'),
-                                        ]),
-                                    ]),
                                 Forms\Components\Section::make('Access & Settings Navigation')
                                     ->description('Custom label untuk menu Access dan Settings')
                                     ->schema([

@@ -567,6 +567,42 @@ class RealisasiService
     }
 
     /**
+     * Batch, item, dan file dalam bentuk array untuk halaman Realisasi dan View
+     * Advance (properti Livewire tidak bisa menyimpan model beserta relasinya).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function batchesForDisplay(Advance $advance): array
+    {
+        return $this->getBatchesWithDetails($advance)
+            ->map(fn (Realisasi $b) => [
+                'id' => $b->id,
+                'batch_number' => $b->batch_number,
+                'notes' => $b->notes,
+                'created_at' => $b->created_at->toIso8601String(),
+                'uploaded_by_name' => $b->uploadedBy->fullName ?? 'Unknown',
+                'total_amount' => $b->getTotalAmount(),
+                'items' => $b->items->map(fn (RealisasiItem $i) => [
+                    'id' => $i->id,
+                    'name' => $i->name,
+                    'description' => $i->description,
+                    'quantity' => $i->quantity,
+                    'price' => $i->price,
+                    'subtotal' => $i->subtotal,
+                    'files' => $i->files->map(fn (RealisasiFile $f) => [
+                        'id' => $f->id,
+                        'original_name' => $f->original_name,
+                        'filepath' => $f->filepath,
+                        'filesize' => $f->filesize,
+                        'mime_type' => $f->mime_type,
+                        'is_image' => $f->isImage(),
+                        'is_pdf' => $f->isPdf(),
+                    ])->all(),
+                ])->all(),
+            ])->all();
+    }
+
+    /**
      * Update item
      *
      * @param RealisasiItem $item

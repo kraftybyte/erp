@@ -1044,6 +1044,40 @@ $rgba = function ($hex, $opacity) {
         .dark .analytics-page .account-row {
             background: #27272a;
         }
+
+        /* =========================================================
+           KONTRAS & MODE GELAP (lanjutan)
+           Angka berwarna memakai shade 600 tema (minimal 4,5:1; dulu hijau
+           2,5:1 dan oranye 2,1:1), shade 400 di mode gelap. Warna netral
+           inline memakai --an-* supaya ikut mode gelap.
+        ========================================================= */
+
+        .analytics-page { --an-muted: rgb(var(--gray-500)); --an-strong: rgb(var(--gray-950)); --an-soft: rgb(var(--gray-600)); --an-surface: rgba(var(--gray-950), .03); }
+        .dark .analytics-page { --an-muted: rgb(var(--gray-300)); --an-strong: #fff; --an-soft: rgb(var(--gray-300)); --an-surface: rgba(255, 255, 255, .05); }
+
+        .analytics-page .text-success { color: rgb(var(--success-600)); }
+        .analytics-page .text-danger  { color: rgb(var(--danger-600)); }
+        .analytics-page .text-warning { color: rgb(var(--warning-600)); }
+        .analytics-page .text-info    { color: rgb(var(--info-600)); }
+        .dark .analytics-page .text-success { color: rgb(var(--success-400)); }
+        .dark .analytics-page .text-danger  { color: rgb(var(--danger-400)); }
+        .dark .analytics-page .text-warning { color: rgb(var(--warning-400)); }
+        .dark .analytics-page .text-info    { color: rgb(var(--info-400)); }
+
+        .dark .analytics-page .card-body-title,
+        .dark .analytics-page .account-balance,
+        .dark .analytics-page .account-row strong { color: #fff; }
+        .dark .analytics-page .account-row small,
+        .dark .analytics-page .text-gray-500,
+        .dark .analytics-page .empty-state-text,
+        .dark .analytics-page .badge-count { color: rgb(var(--gray-300)); }
+        .dark .analytics-page .badge-count { background: rgba(255, 255, 255, .08); }
+        .dark .analytics-page .data-table tbody tr:hover td { background: rgba(255, 255, 255, .03); }
+        .dark .analytics-page .quick-btn:hover,
+        .dark .analytics-page .tab-btn:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+        .dark .analytics-page .section-title::after { background: rgba(255, 255, 255, .1); }
+        .analytics-page .badge-count { color: rgb(var(--gray-600)); }
+        .analytics-page .empty-state-text { color: var(--an-muted); }
     </style>
 
 
@@ -1376,7 +1410,7 @@ $rgba = function ($hex, $opacity) {
 
                                 <div
                                     class="mini-stat"
-                                    style="background:#f9fafb;padding:.625rem;border-radius:6px;margin-top:.25rem;"
+                                    style="background:var(--an-surface);padding:.625rem;border-radius:6px;margin-top:.25rem;"
                                 >
 
                                     <span
@@ -1424,7 +1458,7 @@ $rgba = function ($hex, $opacity) {
 
                                         {{ $data['expenses']['pending_count'] }}
 
-                                        <small style="color:#9ca3af;">
+                                        <small style="color:var(--an-muted);">
                                             (Rp {{ number_format($data['expenses']['pending'], 0, ',', '.') }})
                                         </small>
 
@@ -1443,7 +1477,7 @@ $rgba = function ($hex, $opacity) {
 
                                         {{ $data['advances']['pending_count'] }}
 
-                                        <small style="color:#9ca3af;">
+                                        <small style="color:var(--an-muted);">
                                             (Rp {{ number_format($data['advances']['pending'], 0, ',', '.') }})
                                         </small>
 
@@ -1494,7 +1528,7 @@ $rgba = function ($hex, $opacity) {
 
                                         {{ $data['leads']['converted'] }}
 
-                                        <small style="color:#9ca3af;">
+                                        <small style="color:var(--an-muted);">
                                             ({{ $data['leads']['conversion_rate'] }}%)
                                         </small>
 
@@ -1547,13 +1581,13 @@ $rgba = function ($hex, $opacity) {
 
                                         <div>
 
-                                            <div style="font-weight:600;color:#1f2937;">
+                                            <div style="font-weight:600;color:var(--an-strong);">
                                                 {{ $account->name }}
                                             </div>
 
                                             @if($account->bank_name)
 
-                                                <small style="color:#6b7280;">
+                                                <small style="color:var(--an-soft);">
                                                     {{ $account->bank_name }}
                                                     -
                                                     {{ $account->account_number }}
@@ -1776,7 +1810,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['stats']->pending_count ?? 0 }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 (Rp {{ number_format($data['stats']->pending_total ?? 0, 0, ',', '.') }})
                             </small>
 
@@ -1800,7 +1834,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['stats']->overdue_count ?? 0 }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 (Rp {{ number_format($data['stats']->overdue_total ?? 0, 0, ',', '.') }})
                             </small>
 
@@ -1837,7 +1871,7 @@ $rgba = function ($hex, $opacity) {
 
                                     {{ $data['distribution']->paid_count }}
 
-                                    <small style="color:#9ca3af;">
+                                    <small style="color:var(--an-muted);">
                                         (Rp {{ number_format($data['distribution']->paid, 0, ',', '.') }})
                                     </small>
 
@@ -1857,7 +1891,7 @@ $rgba = function ($hex, $opacity) {
 
                                     {{ $data['distribution']->pending_count }}
 
-                                    <small style="color:#9ca3af;">
+                                    <small style="color:var(--an-muted);">
                                         (Rp {{ number_format($data['distribution']->pending, 0, ',', '.') }})
                                     </small>
 
@@ -1877,7 +1911,7 @@ $rgba = function ($hex, $opacity) {
 
                                     {{ $data['distribution']->cancelled_count }}
 
-                                    <small style="color:#9ca3af;">
+                                    <small style="color:var(--an-muted);">
                                         (Rp {{ number_format($data['distribution']->cancelled, 0, ',', '.') }})
                                     </small>
 
@@ -1897,7 +1931,7 @@ $rgba = function ($hex, $opacity) {
 
                                     {{ $data['distribution']->draft_count }}
 
-                                    <small style="color:#9ca3af;">
+                                    <small style="color:var(--an-muted);">
                                         (Rp {{ number_format($data['distribution']->draft, 0, ',', '.') }})
                                     </small>
 
@@ -2388,7 +2422,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['total_pending_count'] }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 (Rp {{ number_format($data['total_pending'], 0, ',', '.') }})
                             </small>
 
@@ -2848,13 +2882,13 @@ $rgba = function ($hex, $opacity) {
 
                                     <div>
 
-                                        <div style="font-weight:600;color:#1f2937;">
+                                        <div style="font-weight:600;color:var(--an-strong);">
                                             {{ $account->name }}
                                         </div>
 
                                         @if($account->bank_name)
 
-                                            <small style="color:#6b7280;">
+                                            <small style="color:var(--an-soft);">
                                                 {{ $account->bank_name }}
                                                 -
                                                 {{ $account->account_number }}
@@ -3030,7 +3064,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['stages']['Negosiasi']['count'] }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 ({{ number_format($data['stages']['Negosiasi']['value'], 0, ',', '.') }})
                             </small>
 
@@ -3054,7 +3088,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['stages']['Menunggu Pembayaran']['count'] }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 ({{ number_format($data['stages']['Menunggu Pembayaran']['value'], 0, ',', '.') }})
                             </small>
 
@@ -3078,7 +3112,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['stages']['Dalam Tahap Project']['count'] }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 ({{ number_format($data['stages']['Dalam Tahap Project']['value'], 0, ',', '.') }})
                             </small>
 
@@ -3153,7 +3187,7 @@ $rgba = function ($hex, $opacity) {
 
                                     {{ $data['pending_quotations'] + $data['approved_quotations'] }}
 
-                                    <small style="color:#9ca3af;">
+                                    <small style="color:var(--an-muted);">
                                         ({{ $data['pending_quotations'] }} pending)
                                     </small>
 
@@ -3984,7 +4018,7 @@ $rgba = function ($hex, $opacity) {
 
                             {{ $data['summary']['pending_count'] }}
 
-                            <small style="color:#9ca3af;">
+                            <small style="color:var(--an-muted);">
                                 ({{ number_format($data['summary']['pending_amount'], 0, ',', '.') }})
                             </small>
 

@@ -1,0 +1,58 @@
+# File yang sudah dihapus dari repo dan harus ikut hilang dari server saat
+# deploy. Sinkron biasa tidak pernah menghapus file di server, jadi file yang
+# hanya dihapus dari repo tetap terbaca di produksi (resource Filament di
+# folder ini tetap muncul di menu). deploy-hostinger.sh mem-backup file di
+# daftar ini sebelum menghapusnya; rollback mengembalikannya.
+#
+# Hanya path relatif di app/, config/, resources/, routes/. Path yang masih ada
+# di repo dilewati. Daftar ini kumulatif: path yang sudah hilang tidak berbuat
+# apa-apa.
+
+# 2026-10-30 Fitur Social Media dan Meta Ads dihapus (menu Tools dan Social Media)
+app/Console/Commands/ImportMetaBusinessAccounts.php
+app/Console/Commands/RefreshExpiredTokens.php
+app/Console/Commands/RefreshInstagramTokens.php
+app/Console/Commands/ResetAllTokens.php
+app/Console/Commands/SyncConnectedAccounts.php
+app/Console/Commands/SyncInstagramMetrics.php
+app/Console/Commands/SyncMetaAds.php
+app/Console/Commands/TestSocial.php
+app/Filament/Resources/ConnectedAccountMetricResource/ConnectedAccountMetricResource.php
+app/Filament/Resources/ConnectedAccountMetricResource/Pages/ListConnectedAccountMetrics.php
+app/Filament/Resources/ConnectedAccountMetricResource/Pages/ViewConnectedAccountMetric.php
+app/Filament/Resources/ConnectedAccountResource/ConnectedAccountResource.php
+app/Filament/Resources/ConnectedAccountResource/Pages/ListConnectedAccounts.php
+app/Filament/Resources/ConnectedAccountResource/Pages/ViewConnectedAccount.php
+app/Filament/Resources/MetaAdAccountResource.php
+app/Filament/Resources/MetaAdAccountResource/Pages/CreateMetaAdAccount.php
+app/Filament/Resources/MetaAdAccountResource/Pages/EditMetaAdAccount.php
+app/Filament/Resources/MetaAdAccountResource/Pages/ListMetaAdAccounts.php
+app/Filament/Resources/SocialAccountResource.php
+app/Filament/Resources/SocialAccountResource/Pages/CreateSocialAccount.php
+app/Filament/Resources/SocialAccountResource/Pages/EditSocialAccount.php
+app/Filament/Resources/SocialAccountResource/Pages/ListSocialAccounts.php
+app/Filament/Resources/SocialAccountResource/Pages/ViewSocialAccount.php
+app/Filament/Widgets/SocialROIDashboard.php
+app/Http/Controllers/Auth/InstagramConnectController.php
+app/Jobs/ImportAndSyncMetaJob.php
+app/Jobs/SyncMetaAdsJob.php
+app/Jobs/SyncSocialAccountJob.php
+app/Models/ConnectedAccount.php
+app/Models/ConnectedAccountMetric.php
+app/Models/MetaAdAccount.php
+app/Models/MetaCampaignMetric.php
+app/Models/SocialAccount.php
+app/Models/SocialAccountInsight.php
+app/Models/SocialPost.php
+app/Models/SocialPostMetric.php
+app/Models/SocialSyncLog.php
+app/Observers/SocialAccountObserver.php
+app/Policies/ConnectedAccountMetricPolicy.php
+app/Policies/ConnectedAccountPolicy.php
+app/Policies/MetaAdAccountPolicy.php
+app/Policies/SocialAccountPolicy.php
+app/Services/FacebookPageService.php
+app/Services/InstagramService.php
+app/Services/InstagramSyncService.php
+app/Services/MetaAdsService.php
+resources/views/filament/resources/social-account/view-social-account.blade.php

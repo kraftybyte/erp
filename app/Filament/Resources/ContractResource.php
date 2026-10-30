@@ -543,13 +543,17 @@ class ContractResource extends Resource
             ->actions([
                 Tables\Actions\Action::make('preview')
                     ->label('Preview')
-                    ->icon('heroicon-o-eye')
+                    ->hiddenLabel()
+                    ->tooltip('Preview kontrak (tab baru)')
+                    ->icon('heroicon-o-document-magnifying-glass')
                     ->color('gray')
                     ->url(fn (Contract $record) => route('filament.admin.resources.contracts.preview', $record))
                     ->openUrlInNewTab(),
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                // Ikon dengan tooltip, seperti tabel lain; dulu label teks membuat
+                // kolom aksi mendorong tabel keluar layar.
+                Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
+                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Hapus'),
             ])
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make(),
