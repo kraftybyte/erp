@@ -2664,16 +2664,12 @@ class InvoiceResource extends BaseInvoiceResource
                     Tables\Actions\Action::make(
                         'duplicate'
                     )
-                        ->iconButton()
-                        ->color('warning')
+                        ->color('gray')
                         ->icon(
-                            'heroicon-s-document-duplicate'
+                            'heroicon-m-document-duplicate'
                         )
                         ->label(
-                            'Duplicate'
-                        )
-                        ->tooltip(
-                            'Duplicate Invoice'
+                            'Duplikat'
                         )
                         ->action(
                             function (Invoice $record) {
@@ -2762,12 +2758,7 @@ class InvoiceResource extends BaseInvoiceResource
                     */
 
                     Tables\Actions\ViewAction::make()
-                        ->iconButton()
-                        ->tooltip(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.view_invoice'
-                            )
-                        ),
+                        ->label('Detail'),
 
                     /*
                     |--------------------------------------------------------------------------
@@ -2775,13 +2766,7 @@ class InvoiceResource extends BaseInvoiceResource
                     |--------------------------------------------------------------------------
                     */
 
-                    Tables\Actions\EditAction::make()
-                        ->iconButton()
-                        ->tooltip(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.edit_invoice'
-                            )
-                        ),
+                    Tables\Actions\EditAction::make(),
 
                     /*
                     |--------------------------------------------------------------------------
@@ -2790,21 +2775,11 @@ class InvoiceResource extends BaseInvoiceResource
                     */
 
                     Tables\Actions\DeleteAction::make()
-                        ->iconButton()
                         ->icon(
-                            'heroicon-s-archive-box'
+                            'heroicon-m-archive-box'
                         )
-                        ->label(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.archive_invoice'
-                            )
-                        )
+                        ->label('Arsipkan')
                         ->modalHeading(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.archive_invoice'
-                            )
-                        )
-                        ->tooltip(
                             trans(
                                 'filament-invoices::messages.invoices.actions.archive_invoice'
                             )
@@ -2817,12 +2792,7 @@ class InvoiceResource extends BaseInvoiceResource
                     */
 
                     Tables\Actions\ForceDeleteAction::make()
-                        ->iconButton()
-                        ->tooltip(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.delete_invoice_forever'
-                            )
-                        ),
+                        ->label('Hapus permanen'),
 
                     /*
                     |--------------------------------------------------------------------------
@@ -2831,12 +2801,7 @@ class InvoiceResource extends BaseInvoiceResource
                     */
 
                     Tables\Actions\RestoreAction::make()
-                        ->iconButton()
-                        ->tooltip(
-                            trans(
-                                'filament-invoices::messages.invoices.actions.restore_invoice'
-                            )
-                        ),
+                        ->label('Pulihkan'),
                 ]),
             ])
 
