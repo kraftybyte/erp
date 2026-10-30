@@ -1,873 +1,362 @@
 <x-filament-panels::page>
     @php
-        $themeColor = '#90c646';
-        $themeColorDark = '#6fa335';
+        $rp = fn ($amount) => 'Rp ' . number_format(abs((float) $amount), 0, ',', '.');
+        // 2.00 → 2, 1.50 → 1,5
+        $qty = fn ($value) => rtrim(rtrim(number_format((float) $value, 2, ',', '.'), '0'), ',');
+        // Nama file dipendekkan tanpa membuang ekstensinya.
+        $fileLabel = function (string $name): string {
+            if (mb_strlen($name) <= 26) {
+                return $name;
+            }
+            $ext = pathinfo($name, PATHINFO_EXTENSION);
+
+            return \Illuminate\Support\Str::limit(pathinfo($name, PATHINFO_FILENAME), 18, '…') . ($ext ? ".{$ext}" : '');
+        };
+
+        $over        = $remaining < 0;
+        $progress    = max(0, (float) $progressPercentage);
+        $batchCount  = count($batches);
     @endphp
 
+    {{-- Hanya tata letak; warna dari variabel tema Filament supaya ikut terang/gelap. --}}
     <style>
-        .realisasi-page {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f7fa;
-            min-height: 100vh;
-        }
+        .rl-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; }
+        .rl-figure dt { font-size: .8125rem; color: rgb(var(--gray-500)); }
+        .rl-figure dd { margin: .25rem 0 0; font-size: 1.5rem; line-height: 2rem; font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(var(--gray-950)); }
+        .rl-figure p { margin-top: .125rem; font-size: .8125rem; color: rgb(var(--gray-500)); }
+        .rl-figure dd.is-over { color: rgb(var(--warning-800)); }
+        .dark .rl-figure dd { color: #fff; }
+        .dark .rl-figure dd.is-over { color: rgb(var(--warning-300)); }
+        .dark .rl-figure dt, .dark .rl-figure p { color: rgb(var(--gray-400)); }
 
-        /* ── Progress ── */
-        .progress-bar {
-            height: 10px;
-            border-radius: 999px;
-            background: #e9ecef;
-            overflow: hidden;
-        }
-        .progress-bar-fill {
-            height: 100%;
-            border-radius: 999px;
-            transition: width 0.4s ease;
-        }
+        .rl-progress { height: .5rem; border-radius: 9999px; background: rgb(var(--gray-200)); overflow: hidden; }
+        .rl-progress > span { display: block; height: 100%; border-radius: inherit; background: rgb(var(--primary-600)); transition: width .3s ease; }
+        .rl-progress.is-over > span { background: rgb(var(--warning-600)); }
+        .dark .rl-progress { background: rgba(255, 255, 255, .1); }
+        .dark .rl-progress > span { background: rgb(var(--primary-500)); }
+        .dark .rl-progress.is-over > span { background: rgb(var(--warning-500)); }
 
-        /* ── Cards ── */
-        .card {
-            background: #ffffff;
-            border: 1px solid #e8eaed;
-            border-radius: 14px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-        }
-        .card-header {
-            padding: 18px 22px;
-            border-bottom: 1px solid #f0f2f5;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+        .rl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; font-size: .875rem; color: rgb(var(--gray-500)); }
+        .rl-meta strong { font-weight: 500; color: rgb(var(--gray-950)); }
+        .dark .rl-meta { color: rgb(var(--gray-400)); }
+        .dark .rl-meta strong { color: #fff; }
 
-        /* ── Stat blocks ── */
-        .stat-block {
-            background: #ffffff;
-            border-radius: 12px;
-            padding: 18px 20px;
-            border: 1px solid #e8eaed;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .stat-block .stat-label {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            color: #9aa0ab;
-            margin-bottom: 6px;
-        }
-        .stat-block .stat-value {
-            font-size: 22px;
-            font-weight: 700;
-            color: #1a1d23;
-            line-height: 1.2;
-        }
+        .rl-note { border-radius: .75rem; padding: .875rem 1rem; font-size: .875rem; border: 1px solid; }
+        .rl-note strong { display: block; font-weight: 600; }
+        .rl-note p { margin-top: .125rem; }
+        .rl-note[data-color="info"]    { background: rgba(var(--info-500), .07);    border-color: rgba(var(--info-500), .25);    color: rgb(var(--info-700)); }
+        .rl-note[data-color="success"] { background: rgba(var(--success-500), .07); border-color: rgba(var(--success-500), .25); color: rgb(var(--success-700)); }
+        .rl-note[data-color="warning"] { background: rgba(var(--warning-500), .14); border-color: rgba(var(--warning-600), .45); color: rgb(var(--warning-900)); }
+        .rl-note[data-color="gray"]    { background: rgba(var(--gray-500), .06);    border-color: rgba(var(--gray-500), .2);     color: rgb(var(--gray-700)); }
+        .dark .rl-note[data-color="info"]    { color: rgb(var(--info-300)); }
+        .dark .rl-note[data-color="success"] { color: rgb(var(--success-300)); }
+        .dark .rl-note[data-color="warning"] { color: rgb(var(--warning-300)); }
+        .dark .rl-note[data-color="gray"]    { color: rgb(var(--gray-300)); }
 
-        /* ── Batch card ── */
-        .batch-card {
-            background: #ffffff;
-            border: 1px solid #e8eaed;
-            border-radius: 14px;
-            overflow: hidden;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-            transition: box-shadow 0.2s;
-        }
-        .batch-card:hover {
-            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-        }
-        .batch-header {
-            background: #fafbfc;
-            padding: 14px 20px;
-            border-bottom: 1px solid #f0f2f5;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+        /* Item batch: tabel di layar lebar, bertumpuk di HP. */
+        .rl-items { font-size: .875rem; }
+        .rl-item, .rl-items-head { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem 8.5rem 9rem; gap: .75rem; align-items: start; }
+        .rl-items-head { padding-bottom: .5rem; border-bottom: 1px solid rgba(var(--gray-950), .06); font-size: .75rem; font-weight: 500; color: rgb(var(--gray-500)); }
+        .rl-item { padding: .875rem 0; border-bottom: 1px solid rgba(var(--gray-950), .05); }
+        .rl-item:last-child { border-bottom: 0; padding-bottom: 0; }
+        .rl-item .num, .rl-items-head .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .rl-item .name { font-weight: 500; color: rgb(var(--gray-950)); }
+        .rl-item .desc { margin-top: .125rem; color: rgb(var(--gray-500)); }
+        .rl-item .subtotal { font-weight: 600; color: rgb(var(--gray-950)); }
+        .rl-item .qty-mobile { display: none; }
+        .dark .rl-items-head { border-color: rgba(255, 255, 255, .1); color: rgb(var(--gray-400)); }
+        .dark .rl-item { border-color: rgba(255, 255, 255, .06); }
+        .dark .rl-item .name, .dark .rl-item .subtotal { color: #fff; }
+        .dark .rl-item .desc { color: rgb(var(--gray-400)); }
 
-        /* ── Item rows ── */
-        .item-header-row {
-            display: grid;
-            grid-template-columns: 1fr 70px 130px 150px 60px;
-            gap: 12px;
-            padding: 10px 20px;
-            background: #f8f9fb;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: .05em;
-            text-transform: uppercase;
-            color: #9aa0ab;
-            border-bottom: 1px solid #f0f2f5;
-        }
-        .item-row {
-            display: grid;
-            grid-template-columns: 1fr 70px 130px 150px 60px;
-            gap: 12px;
-            padding: 14px 20px;
-            border-bottom: 1px solid #f5f6f8;
-            align-items: center;
-            transition: background 0.15s;
-        }
-        .item-row:last-child { border-bottom: none; }
-        .item-row:hover { background: #fafbfc; }
+        .rl-files { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
+        .rl-file { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; padding: .125rem .5rem; border-radius: .375rem; font-size: .75rem; font-weight: 500;
+                   color: rgb(var(--primary-700)); background: rgba(var(--primary-500), .08); border: 1px solid rgba(var(--primary-500), .2); text-decoration: none; }
+        .rl-file:hover { background: rgba(var(--primary-500), .14); }
+        .dark .rl-file { color: rgb(var(--primary-300)); background: rgba(var(--primary-400), .1); border-color: rgba(var(--primary-400), .25); }
 
-        /* ── Buttons ── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 9px 18px;
-            border-radius: 9px;
-            font-size: 14px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            transition: all 0.18s;
-            white-space: nowrap;
-        }
-        .btn-primary {
-            background: {{ $themeColor }};
-            color: #ffffff;
-        }
-        .btn-primary:hover {
-            background: {{ $themeColorDark }};
-            box-shadow: 0 4px 12px rgba(144,198,70,0.35);
-        }
-        .btn-warning {
-            background: #fff3cd;
-            color: #b45309;
-            border: 1px solid #fde68a;
-        }
-        .btn-warning:hover {
-            background: #fde68a;
-        }
-        .btn-danger {
-            background: #fff1f1;
-            color: #dc2626;
-            border: 1px solid #fecaca;
-        }
-        .btn-danger:hover { background: #fee2e2; }
-        .btn-ghost {
-            background: transparent;
-            color: #6b7280;
-            border: 1px solid #e5e7eb;
-        }
-        .btn-ghost:hover { background: #f3f4f6; }
-        .btn-icon {
-            padding: 7px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border: none;
-            cursor: pointer;
-            transition: all 0.15s;
-            background: transparent;
-            color: #9ca3af;
-        }
-        .btn-icon:hover {
-            background: #fff1f1;
-            color: #dc2626;
-        }
+        .rl-drop { display: block; border: 2px dashed rgba(var(--gray-950), .12); border-radius: .75rem; padding: 1.25rem; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+        .rl-drop:hover, .rl-drop.is-dragging { border-color: rgb(var(--primary-500)); background: rgba(var(--primary-500), .05); }
+        .dark .rl-drop { border-color: rgba(255, 255, 255, .15); }
 
-        /* ── Badges ── */
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 5px 12px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: .02em;
-        }
-        .badge::before {
-            content: '';
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-        }
-        .badge-success  { background: #e8faf0; color: #15803d; }
-        .badge-success::before { background: #22c55e; }
-        .badge-warning  { background: #fef9ec; color: #b45309; }
-        .badge-warning::before { background: #f59e0b; }
-        .badge-danger   { background: #fff1f1; color: #dc2626; }
-        .badge-danger::before { background: #ef4444; }
-        .badge-info     { background: #eff6ff; color: #1d4ed8; }
-        .badge-info::before { background: #3b82f6; }
-        .badge-done     { background: #e8faf0; color: #15803d; }
-        .badge-done::before { background: #22c55e; }
-        .badge-locked   { background: #f3f4f6; color: #6b7280; }
-        .badge-locked::before { background: #9ca3af; }
+        .rl-form-item { border-radius: .75rem; padding: .875rem; background: rgba(var(--gray-950), .03); }
+        .dark .rl-form-item { background: rgba(255, 255, 255, .04); }
+        .rl-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 9rem; gap: .5rem; align-items: end; }
+        .rl-label { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 500; color: rgb(var(--gray-600)); }
+        .dark .rl-label { color: rgb(var(--gray-400)); }
+        .rl-total { display: flex; justify-content: space-between; align-items: baseline; padding: .75rem 1rem; border-radius: .75rem; background: rgba(var(--primary-500), .07); font-variant-numeric: tabular-nums; }
+        .rl-total strong { font-size: 1.125rem; color: rgb(var(--gray-950)); }
+        .dark .rl-total strong { color: #fff; }
 
-        /* ── File badge ── */
-        .file-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 9px;
-            background: #eff6ff;
-            color: #2563eb;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
-            text-decoration: none;
-            border: 1px solid #bfdbfe;
-            transition: background .15s;
-        }
-        .file-badge:hover { background: #dbeafe; }
-
-        /* ── Status bar ── */
-        .status-bar {
-            background: #ffffff;
-            border-top: 1px solid #f0f2f5;
-            padding: 16px 22px;
-        }
-
-        /* ── Dropzone ── */
-        .dropzone {
-            border: 2px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 32px;
-            text-align: center;
-            transition: all 0.2s;
-            cursor: pointer;
-            background: #fafbfc;
-        }
-        .dropzone:hover, .dropzone.dragover {
-            border-color: {{ $themeColor }};
-            background: rgba(144, 198, 70, 0.04);
-        }
-
-        /* ── Modal ── */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(15,23,42,0.55);
-            backdrop-filter: blur(4px);
-            z-index: 50;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
-        .modal-content {
-            background: #ffffff;
-            border-radius: 18px;
-            width: 100%;
-            max-height: 92vh;
-            overflow-y: auto;
-            box-shadow: 0 32px 64px rgba(0,0,0,0.22);
-        }
-        .modal-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid #f0f2f5;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            background: #ffffff;
-            z-index: 10;
-        }
-
-        /* ── Empty state ── */
-        .empty-state {
-            background: #ffffff;
-            border: 1px solid #e8eaed;
-            border-radius: 14px;
-            padding: 56px 24px;
-            text-align: center;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-        }
-
-        /* ── Item input card ── */
-        .item-input-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 16px;
-            transition: border-color 0.15s, box-shadow 0.15s;
-        }
-        .item-input-card:hover {
-            border-color: #d1d5db;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        .form-input {
-            width: 100%;
-            padding: 9px 13px;
-            font-size: 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 9px;
-            outline: none;
-            transition: border-color 0.15s, box-shadow 0.15s;
-            background: #ffffff;
-            color: #1a1d23;
-        }
-        .form-input:focus {
-            border-color: {{ $themeColor }};
-            box-shadow: 0 0 0 3px rgba(144,198,70,0.14);
-        }
-        .form-label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: #6b7280;
-            margin-bottom: 5px;
-        }
-        .form-textarea {
-            width: 100%;
-            padding: 9px 13px;
-            font-size: 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 9px;
-            outline: none;
-            resize: vertical;
-            transition: border-color 0.15s, box-shadow 0.15s;
-            background: #ffffff;
-            color: #1a1d23;
-        }
-        .form-textarea:focus {
-            border-color: {{ $themeColor }};
-            box-shadow: 0 0 0 3px rgba(144,198,70,0.14);
-        }
-
-        /* ── Custom Scrollbar untuk Item List ── */
-        .items-scroll-container {
-            max-height: 460px;
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding-right: 4px;
-        }
-        
-        .items-scroll-container::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .items-scroll-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        
-        .items-scroll-container::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 10px;
-        }
-        
-        .items-scroll-container::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
-        }
-        
-        /* Fixed bottom total */
-        .total-sticky {
-            position: sticky;
-            bottom: 0;
-            z-index: 2;
+        @media (max-width: 640px) {
+            .rl-figures { grid-template-columns: 1fr; gap: 1rem; }
+            .rl-items-head { display: none; }
+            .rl-item { grid-template-columns: minmax(0, 1fr) auto; }
+            .rl-item .qty, .rl-item .price { display: none; }
+            .rl-item .qty-mobile { display: block; margin-top: .125rem; color: rgb(var(--gray-500)); }
+            .rl-form-grid { grid-template-columns: 1fr 1fr; }
+            .rl-form-grid .span-all { grid-column: 1 / -1; }
         }
     </style>
 
-    <div class="realisasi-page max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <div class="flex flex-col gap-6">
+        {{-- Ringkasan: berapa dicairkan, berapa terealisasi, berapa sisanya, dan apa langkah berikutnya. --}}
+        <x-filament::section>
+            <div class="flex flex-col gap-5">
+                <dl class="rl-figures">
+                    <div class="rl-figure">
+                        <dt>Dicairkan</dt>
+                        <dd>{{ $rp($record->paid) }}</dd>
+                        <p>{{ $paidAt ? \Carbon\Carbon::parse($paidAt)->locale('id')->translatedFormat('j M Y') : '—' }}</p>
+                    </div>
+                    <div class="rl-figure">
+                        <dt>Terealisasi</dt>
+                        <dd>{{ $rp($totalRealisasi) }}</dd>
+                        <p>{{ rtrim(rtrim(number_format($progress, 1, ',', '.'), '0'), ',') }}% · {{ $batchCount }} batch</p>
+                    </div>
+                    <div class="rl-figure">
+                        <dt>{{ $over ? 'Kelebihan' : 'Sisa' }}</dt>
+                        <dd @class(['is-over' => $over])>{{ $rp($remaining) }}</dd>
+                        <p>{{ $over ? 'melebihi advance' : 'belum direalisasi' }}</p>
+                    </div>
+                </dl>
 
-        {{-- ── Header ── --}}
-        <div class="flex items-center justify-between">
-            <div>
-                <a href="{{ url()->previous() }}" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-3 transition-colors">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                    Kembali
-                </a>
-                <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Realisasi Advance</h1>
+                <div @class(['rl-progress', 'is-over' => $over]) role="progressbar" aria-label="Progres realisasi"
+                     aria-valuenow="{{ round($progress) }}" aria-valuemin="0" aria-valuemax="100">
+                    <span style="width: {{ min($progress, 100) }}%"></span>
+                </div>
+
+                <div class="rl-meta">
+                    <span>Pemohon <strong>{{ $requester }}</strong></span>
+                    <span class="flex items-center gap-2">Status
+                        <x-filament::badge :color="$record->getStatusBadgeClass()" size="sm">{{ $record->getStatusLabel() }}</x-filament::badge>
+                    </span>
+                </div>
+
+                @if($statusNote)
+                    <div class="rl-note" data-color="{{ $statusNote['color'] }}" role="status">
+                        <strong>{{ $statusNote['title'] }}</strong>
+                        <p>{{ $statusNote['body'] }}</p>
+                    </div>
+                @endif
             </div>
+        </x-filament::section>
 
-            @if($record->status === 'Selesai')
-                <span class="badge badge-done text-sm px-4 py-2">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    Realisasi Selesai
-                </span>
-            @elseif($progressPercentage >= 100 && !$record->overrun_approved_by)
-                <span class="badge badge-locked text-sm px-4 py-2">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                    </svg>
-                    Tidak Dapat Diedit
-                </span>
-            @elseif($status === 'over_run' && !$record->overrun_approved_by)
-                <span class="badge badge-warning text-sm px-4 py-2">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                    Menunggu Persetujuan Overrun
-                </span>
-            @else
-                <button wire:click="openBatchModal" class="btn btn-primary">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    Tambah Batch
-                </button>
-            @endif
-        </div>
-
-        {{-- ── Info Card ── --}}
-        <div class="card">
-            <div class="card-header">
-                <div>
-                    <h2 class="text-base font-bold text-gray-900">{{ $record->keterangan_advance }}</h2>
-                    @if($record->project)
-                        <p class="text-sm text-gray-400 mt-0.5">{{ $record->project->name }}</p>
+        {{-- Batch realisasi --}}
+        @forelse($batches as $batch)
+            <x-filament::section wire:key="batch-{{ $batch['id'] }}">
+                <x-slot name="heading">Batch #{{ $batch['batch_number'] }}</x-slot>
+                <x-slot name="description">
+                    {{ $batch['uploaded_by_name'] }} · {{ \Carbon\Carbon::parse($batch['created_at'])->locale('id')->translatedFormat('j M Y, H.i') }}
+                    @if(filled($batch['notes']))
+                        <br>{{ $batch['notes'] }}
                     @endif
-                </div>
-                <div class="text-right">
-                    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Total Advance</p>
-                    <p class="text-2xl font-bold" style="color: {{ $themeColor }};">
-                        Rp {{ number_format($record->paid, 0, ',', '.') }}
-                    </p>
-                </div>
-            </div>
-
-            <div class="px-6 py-5 border-b border-gray-100">
-                {{-- Progress --}}
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-semibold text-gray-700">Progress Realisasi</span>
-                    <span class="text-sm font-bold" style="color: {{ $themeColor }};">{{ $progressPercentage }}%</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-bar-fill
-                        @if($progressPercentage >= 100) bg-green-500
-                        @elseif($progressPercentage >= 80) bg-amber-400
-                        @else bg-blue-500 @endif"
-                        style="width: {{ min($progressPercentage, 100) }}%"></div>
-                </div>
-            </div>
-
-            {{-- Stats Grid --}}
-            <div class="grid grid-cols-3 gap-4 p-5">
-                <div class="stat-block">
-                    <div class="stat-label">Total Realisasi</div>
-                    <div class="stat-value">Rp {{ number_format($totalRealisasi, 0, ',', '.') }}</div>
-                </div>
-                <div class="stat-block @if($remaining < 0) border-red-200 @endif" style="@if($remaining < 0) background: #fff8f8; @endif">
-                    <div class="stat-label">Sisa</div>
-                    <div class="stat-value @if($remaining < 0) text-red-600 @endif">
-                        Rp {{ number_format(abs($remaining), 0, ',', '.') }}
-                    </div>
-                    @if($remaining < 0)
-                        <span class="badge badge-danger mt-2" style="font-size:11px;">Overrun</span>
-                    @endif
-                </div>
-                <div class="stat-block">
-                    <div class="stat-label">Total Batch</div>
-                    <div class="stat-value">{{ count($batches) }}</div>
-                </div>
-            </div>
-
-            {{-- Status Bar --}}
-            <div class="status-bar">
-                <div class="flex items-center justify-between flex-wrap gap-3">
-                    {{-- Status info --}}
-                    <div class="flex items-center gap-4">
-                        @switch($status)
-                            @case('exact_match')
-                                <span class="badge badge-success">Exact Match</span>
-                                <span class="text-sm text-gray-500">{{ $statusMessage }}</span>
-                                @break
-                            @case('under_run')
-                                <span class="badge badge-danger">Menunggu Return</span>
-                                <div>
-                                    <div class="text-xs text-gray-400">Sisa yang harus dikembalikan</div>
-                                    <div class="text-lg font-bold text-red-600">Rp {{ number_format(abs($remaining), 0, ',', '.') }}</div>
-                                </div>
-                                @break
-                            @case('over_run')
-                                <span class="badge badge-warning">Overrun</span>
-                                <div>
-                                    <div class="text-xs text-gray-400">Realisasi melebihi advance</div>
-                                    <div class="text-lg font-bold text-amber-600">Rp {{ number_format(abs($remaining), 0, ',', '.') }}</div>
-                                </div>
-                                @break
-                        @endswitch
-                    </div>
-
-                    {{-- Action buttons --}}
-                    <div class="flex gap-2">
-                        @if($status === 'under_run' && auth()->user()->hasRole(['Finance', 'Director', 'super_admin']))
-                            <button wire:click="openReturnModal" class="btn btn-primary">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Konfirmasi Return
-                            </button>
-                        @endif
-
-                        @if($status === 'over_run' && auth()->user()->hasRole(['Finance', 'Director', 'super_admin']))
-                            <button wire:click="approveOverrun" class="btn btn-warning">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Setujui Overrun
-                            </button>
-                        @endif
-
-                        @if((in_array($status, ['exact_match']) || $record->overrun_approved_by) && auth()->user()->hasRole(['Finance', 'Director', 'super_admin']))
-                            <button wire:click="finishAdvance" class="btn btn-primary">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Selesaikan
-                            </button>
+                </x-slot>
+                <x-slot name="headerEnd">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base font-semibold text-gray-950 dark:text-white" style="font-variant-numeric: tabular-nums;">{{ $rp($batch['total_amount']) }}</span>
+                        @if($canDelete)
+                            <x-filament::icon-button
+                                icon="heroicon-m-trash"
+                                color="danger"
+                                label="Hapus batch #{{ $batch['batch_number'] }}"
+                                wire:click="deleteBatch({{ $batch['id'] }})"
+                                wire:confirm="Hapus batch #{{ $batch['batch_number'] }} beserta item dan buktinya?"
+                            />
                         @endif
                     </div>
-                </div>
-            </div>
-        </div>
+                </x-slot>
 
-        {{-- ── Batch List ── --}}
-        <div class="space-y-4">
-            @forelse($batches as $batch)
-                <div class="batch-card">
-                    <div class="batch-header">
-                        <div class="flex items-center gap-3">
-                            <span class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                                  style="background: {{ $themeColor }};">
-                                {{ $batch['batch_number'] }}
-                            </span>
-                            <div>
-                                <p class="font-bold text-gray-900 text-sm">Batch #{{ $batch['batch_number'] }}</p>
-                                <p class="text-xs text-gray-400 mt-0.5">
-                                    {{ $batch['uploaded_by_name'] }} &bull;
-                                    {{ \Carbon\Carbon::parse($batch['created_at'])->format('d M Y H:i') }}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-base font-bold" style="color: {{ $themeColor }};">
-                                Rp {{ number_format($batch['total_amount'], 0, ',', '.') }}
-                            </span>
-                            @if(($record->isEditable() && $record->canRealisasi()) || auth()->user()->hasRole(['super_admin', 'Finance', 'Director']))
-                                <button wire:click="deleteBatch({{ $batch['id'] }})"
-                                        wire:confirm="Yakin hapus batch ini?"
-                                        class="btn-icon">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                    </svg>
-                                </button>
-                            @endif
-                        </div>
-                    </div>
-
-                    {{-- Table --}}
-                    <div class="item-header-row">
-                        <div>Item</div>
-                        <div class="text-center">Qty</div>
-                        <div class="text-right">Harga</div>
-                        <div class="text-right">Subtotal</div>
-                        <div class="text-center">File</div>
+                <div class="rl-items" role="table" aria-label="Item batch #{{ $batch['batch_number'] }}">
+                    <div class="rl-items-head" role="row">
+                        <span role="columnheader">Item</span>
+                        <span role="columnheader" class="num">Qty</span>
+                        <span role="columnheader" class="num">Harga</span>
+                        <span role="columnheader" class="num">Subtotal</span>
                     </div>
 
                     @foreach($batch['items'] as $item)
-                        <div class="item-row">
-                            <div>
-                                <p class="font-semibold text-gray-900 text-sm">{{ $item['name'] }}</p>
-                                @if(!empty($item['description']))
-                                    <p class="text-xs text-gray-400 mt-0.5">{{ $item['description'] }}</p>
+                        <div class="rl-item" role="row" wire:key="item-{{ $item['id'] }}">
+                            <div role="cell">
+                                <div class="name">{{ $item['name'] }}</div>
+                                @if(filled($item['description']))
+                                    <div class="desc">{{ $item['description'] }}</div>
                                 @endif
-                                @if(count($item['files']) > 0)
-                                    <div class="flex flex-wrap gap-1.5 mt-2">
-                                        @foreach(array_slice($item['files'], 0, 5) as $file)
-                                            <a href="{{ url('storage/' . $file['filepath']) }}"
-                                               target="_blank"
-                                               class="file-badge">
-                                                @if($file['is_image'])
-                                                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                                    </svg>
-                                                @else
-                                                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                                                    </svg>
-                                                @endif
-                                                {{ Str::limit($file['original_name'], 14) }}
+                                <div class="qty-mobile">{{ $qty($item['quantity']) }} × {{ $rp($item['price']) }}</div>
+                                @if(count($item['files']))
+                                    <div class="rl-files">
+                                        @foreach($item['files'] as $file)
+                                            <a href="{{ url('storage/' . $file['filepath']) }}" target="_blank" rel="noopener" class="rl-file" title="{{ $file['original_name'] }}">
+                                                <x-filament::icon :icon="$file['is_image'] ? 'heroicon-m-photo' : 'heroicon-m-document-text'" class="h-3.5 w-3.5" />
+                                                {{ $fileLabel($file['original_name']) }}
                                             </a>
                                         @endforeach
-                                        @if(count($item['files']) > 5)
-                                            <span class="badge badge-info" style="font-size:11px;">+{{ count($item['files']) - 5 }} more</span>
-                                        @endif
                                     </div>
                                 @endif
                             </div>
-                            <div class="text-center text-sm text-gray-700">{{ $item['quantity'] }}</div>
-                            <div class="text-right text-sm text-gray-700">Rp {{ number_format((float) $item['price'], 0, ',', '.') }}</div>
-                            <div class="text-right text-sm font-bold text-gray-900">Rp {{ number_format((float) $item['subtotal'], 0, ',', '.') }}</div>
-                            <div class="text-center">
-                                <span class="text-xs font-semibold text-gray-400">{{ count($item['files']) }}</span>
-                            </div>
+                            <div role="cell" class="num qty">{{ $qty($item['quantity']) }}</div>
+                            <div role="cell" class="num price">{{ $rp($item['price']) }}</div>
+                            <div role="cell" class="num subtotal">{{ $rp($item['subtotal']) }}</div>
                         </div>
                     @endforeach
                 </div>
-            @empty
-                <div class="empty-state">
-                    <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-gray-100">
-                        <svg class="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
+            </x-filament::section>
+        @empty
+            <x-filament::section>
+                <div class="flex flex-col items-center gap-3 py-6 text-center">
+                    <x-filament::icon icon="heroicon-o-receipt-percent" class="h-10 w-10 text-gray-400 dark:text-gray-500" />
+                    <div>
+                        <p class="text-base font-semibold text-gray-950 dark:text-white">Belum ada batch realisasi</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            Satu batch berisi pengeluaran yang dibayar dari advance ini, lengkap dengan foto struk atau nota.
+                        </p>
                     </div>
-                    <h3 class="text-base font-bold text-gray-900 mb-1">Belum ada batch</h3>
-                    <p class="text-sm text-gray-400 mb-5">Mulai upload invoice dan bukti pembayaran</p>
-                    @if($record->isEditable() && $record->canRealisasi())
-                        <button wire:click="openBatchModal" class="btn btn-primary mx-auto">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-                            </svg>
-                            Tambah Batch Pertama
-                        </button>
+                    @if($canAdd)
+                        <x-filament::button icon="heroicon-m-plus" wire:click="openBatchModal">Tambah batch pertama</x-filament::button>
                     @endif
                 </div>
-            @endforelse
-        </div>
+            </x-filament::section>
+        @endforelse
     </div>
 
-    {{-- MODAL: Add Batch --}}
-    @if($showBatchModal)
-        <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" wire:click.self="closeBatchModal">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" wire:click.stop>
+    {{-- Tambah batch --}}
+    <x-filament::modal id="realisasi-batch" width="2xl" :close-by-clicking-away="false"
+                       heading="Tambah batch realisasi" description="Catat pengeluaran dari advance ini beserta bukti pembayarannya.">
+        <form wire:submit="saveBatch" id="batchForm" class="flex flex-col gap-5">
+            {{-- Bukti --}}
+            <div x-data="{ dragging: false }">
+                <span class="rl-label">Bukti pengeluaran (struk, nota, invoice)</span>
+                <label for="file-upload" @class(['rl-drop']) :class="{ 'is-dragging': dragging }"
+                       x-on:dragover.prevent="dragging = true"
+                       x-on:dragleave.prevent="dragging = false"
+                       x-on:drop.prevent="dragging = false; $refs.files.files = $event.dataTransfer.files; $refs.files.dispatchEvent(new Event('change', { bubbles: true }))">
+                    <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png,.webp" class="sr-only" id="file-upload" x-ref="files">
+                    <x-filament::icon icon="heroicon-o-arrow-up-tray" class="mx-auto h-6 w-6 text-gray-400" />
+                    <p class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-200">Pilih file atau tarik ke sini</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">JPG, PNG, WebP, atau PDF, maks. 5 MB per file</p>
+                </label>
 
-                {{-- Header --}}
-                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Tambah Batch Baru</h2>
-                        <p class="text-sm text-gray-500 mt-0.5">Catat pengeluaran dan upload bukti</p>
-                    </div>
-                    <button wire:click="closeBatchModal" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
+                <div wire:loading.flex wire:target="uploadedFiles" class="mt-2 items-center gap-2 text-sm text-gray-500">
+                    <x-filament::loading-indicator class="h-4 w-4" /> Mengunggah…
                 </div>
 
-                {{-- Scrollable Content --}}
-                <div class="flex-1 overflow-y-auto p-6">
-                    <form wire:submit="saveBatch" class="space-y-5" id="batchForm">
+                @if(count($uploadedFiles))
+                    <ul class="mt-2 flex flex-col gap-1">
+                        @foreach($uploadedFiles as $index => $file)
+                            <li class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200" wire:key="upload-{{ $index }}">
+                                <x-filament::icon icon="heroicon-m-paper-clip" class="h-4 w-4 text-gray-400" />
+                                <span class="min-w-0 flex-1 truncate">{{ $file->getClientOriginalName() }}</span>
+                                <span class="text-xs text-gray-500">{{ number_format($file->getSize() / 1024, 0, ',', '.') }} KB</span>
+                                <x-filament::icon-button icon="heroicon-m-x-mark" color="gray" size="sm" label="Hapus file" wire:click="removeUploadedFile({{ $index }})" />
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </div>
 
-                        {{-- Upload File --}}
-                        <div x-data="{ isDragging: false }">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Pengeluaran</label>
-                            <div class="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-gray-300 transition-colors cursor-pointer"
-                                 x-on:dragover.prevent="isDragging = true"
-                                 x-on:dragleave="isDragging = false"
-                                 x-on:drop.prevent="isDragging = false"
-                                 :class="isDragging ? 'border-green-400 bg-green-50/50' : ''">
-                                <input type="file" multiple wire:model="uploadedFiles" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="file-upload">
-                                <label for="file-upload" class="cursor-pointer">
-                                    <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                        </svg>
-                                    </div>
-                                    <p class="text-sm font-medium text-gray-600">Klik untuk upload file</p>
-                                    <p class="text-xs text-gray-400 mt-0.5">atau drag & drop file ke sini</p>
-                                </label>
+            {{-- Item --}}
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-semibold text-gray-950 dark:text-white">Pengeluaran</span>
+                    <x-filament::link tag="button" type="button" icon="heroicon-m-plus" wire:click="addBatchItem">Tambah item</x-filament::link>
+                </div>
+
+                @foreach($batchItems as $index => $item)
+                    <div class="rl-form-item" wire:key="batch-item-{{ $index }}">
+                        <div class="rl-form-grid">
+                            <div class="span-all">
+                                <label class="rl-label" for="item-name-{{ $index }}">Nama pengeluaran</label>
+                                <x-filament::input.wrapper>
+                                    <x-filament::input id="item-name-{{ $index }}" type="text" wire:model="batchItems.{{ $index }}.name" placeholder="mis. Sewa lighting 2 set" />
+                                </x-filament::input.wrapper>
                             </div>
-
-                            @if(count($uploadedFiles) > 0)
-                                <div class="mt-2 space-y-2 max-h-32 overflow-y-auto">
-                                    @foreach($uploadedFiles as $index => $file)
-                                        <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg text-sm">
-                                            <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                            </svg>
-                                            <span class="flex-1 truncate">{{ $file->getClientOriginalName() }}</span>
-                                            <span class="text-xs text-gray-400">{{ number_format($file->getSize() / 1024, 0) }} KB</span>
-                                            <button type="button" wire:click="removeUploadedFile({{ $index }})" class="text-red-400 hover:text-red-600">
-                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    @endforeach
-                                </div>
+                            <div>
+                                <label class="rl-label" for="item-qty-{{ $index }}">Qty</label>
+                                <x-filament::input.wrapper>
+                                    <x-filament::input id="item-qty-{{ $index }}" type="number" min="1" inputmode="numeric" wire:model.live.debounce.400ms="batchItems.{{ $index }}.quantity" />
+                                </x-filament::input.wrapper>
+                            </div>
+                            <div>
+                                <label class="rl-label" for="item-price-{{ $index }}">Harga satuan (Rp)</label>
+                                <x-filament::input.wrapper>
+                                    <x-filament::input id="item-price-{{ $index }}" type="number" min="0" inputmode="numeric" wire:model.live.debounce.400ms="batchItems.{{ $index }}.price" />
+                                </x-filament::input.wrapper>
+                            </div>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">
+                                Subtotal <strong class="text-gray-950 dark:text-white">{{ $rp(((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1))) }}</strong>
+                            </span>
+                            @if(count($batchItems) > 1)
+                                <x-filament::link tag="button" type="button" color="danger" size="sm" wire:click="removeBatchItem({{ $index }})">Hapus item</x-filament::link>
                             @endif
                         </div>
+                    </div>
+                @endforeach
 
-                        {{-- Items with Scroll Container --}}
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="text-sm font-semibold text-gray-900">Daftar Pengeluaran</h3>
-                                <button type="button" wire:click="addBatchItem" class="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: {{ $themeColor }}; color: white;">
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                    </svg>
-                                    Tambah
-                                </button>
-                            </div>
+                @php $batchTotal = collect($batchItems)->sum(fn ($item) => ((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1))); @endphp
+                <div class="rl-total">
+                    <span class="text-sm text-gray-600 dark:text-gray-300">Total batch</span>
+                    <strong>{{ $rp($batchTotal) }}</strong>
+                </div>
+            </div>
 
-                            {{-- Scrollable items container --}}
-                            <div class="pr-1 overflow-y-auto" style="max-height: 224px;">
-                                @foreach($batchItems as $index => $item)
-                                    <div wire:key="batch-item-{{ $index }}" class="bg-gray-50 rounded-xl p-3 mb-2">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <span class="text-xs font-medium text-gray-500">Item {{ $index + 1 }}</span>
-                                            @if(count($batchItems) > 1)
-                                                <button type="button" wire:click="removeBatchItem({{ $index }})" class="p-1 hover:bg-red-50 rounded">
-                                                    <svg class="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                    </svg>
-                                                </button>
-                                            @endif
-                                        </div>
+            <div>
+                <label class="rl-label" for="batch-notes">Catatan (opsional)</label>
+                <x-filament::input.wrapper>
+                    <textarea id="batch-notes" wire:model="batchNotes" rows="2" class="block w-full border-none bg-transparent px-3 py-1.5 text-sm text-gray-950 outline-none focus:ring-0 dark:text-white"
+                              placeholder="mis. Shooting hari pertama"></textarea>
+                </x-filament::input.wrapper>
+            </div>
+        </form>
 
-                                        <div class="space-y-2">
-                                            <input type="text" wire:model="batchItems.{{ $index }}.name" placeholder="Nama pengeluaran"
-                                                   class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+        <x-slot name="footerActions">
+            <x-filament::button type="submit" form="batchForm" wire:target="saveBatch">Simpan batch</x-filament::button>
+            <x-filament::button color="gray" wire:click="closeBatchModal">Batal</x-filament::button>
+        </x-slot>
+    </x-filament::modal>
 
-                                            <div class="grid grid-cols-2 gap-2">
-                                                <input type="number" wire:model="batchItems.{{ $index }}.quantity" min="1" placeholder="Qty"
-                                                       class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
-                                                <input type="number" wire:model="batchItems.{{ $index }}.price" min="0" placeholder="Harga"
-                                                       class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 text-right">
-                                            </div>
+    {{-- Catat pengembalian sisa (Finance) --}}
+    <x-filament::modal id="realisasi-return" width="md" heading="Catat pengembalian sisa"
+                       description="Sisa advance yang dikembalikan pemohon ke rekening perusahaan.">
+        <form wire:submit="processReturn" id="returnForm" class="flex flex-col gap-4">
+            <div class="rl-total">
+                <span class="text-sm text-gray-600 dark:text-gray-300">Jumlah dikembalikan</span>
+                <strong>{{ $rp($remaining) }}</strong>
+            </div>
 
-                                            @php $subtotal = ($item['price'] ?? 0) * ($item['quantity'] ?? 1); @endphp
-                                            @if($subtotal > 0)
-                                                <div class="text-right">
-                                                    <span class="text-xs font-semibold" style="color: {{ $themeColor }};">Rp {{ number_format($subtotal, 0, ',', '.') }}</span>
-                                                </div>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
+            <div x-data="{ dragging: false }">
+                <span class="rl-label">Bukti transfer</span>
+                <label for="return-upload" class="rl-drop" :class="{ 'is-dragging': dragging }"
+                       x-on:dragover.prevent="dragging = true"
+                       x-on:dragleave.prevent="dragging = false"
+                       x-on:drop.prevent="dragging = false; $refs.file.files = $event.dataTransfer.files; $refs.file.dispatchEvent(new Event('change', { bubbles: true }))">
+                    <input type="file" wire:model="returnAttachment" accept=".pdf,.jpg,.jpeg,.png,.webp" class="sr-only" id="return-upload" x-ref="file">
+                    <x-filament::icon icon="heroicon-o-arrow-up-tray" class="mx-auto h-6 w-6 text-gray-400" />
+                    <p class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-200">Pilih file atau tarik ke sini</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">JPG, PNG, WebP, atau PDF, maks. 5 MB</p>
+                </label>
 
-                        {{-- Total --}}
-                        @php $total = collect($batchItems)->sum(fn($item) => ($item['price'] ?? 0) * ($item['quantity'] ?? 1)); @endphp
-                        <div class="flex items-center justify-between py-3 px-4 rounded-xl {{ $total > 0 ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200' }}">
-                            <span class="text-sm font-medium text-gray-600">Total</span>
-                            <span class="text-lg font-bold" style="color: {{ $themeColor }};">Rp {{ number_format($total, 0, ',', '.') }}</span>
-                        </div>
-
-                        {{-- Notes --}}
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Catatan</label>
-                            <textarea wire:model="batchNotes" rows="2" placeholder="Opsional"
-                                      class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 resize-none"></textarea>
-                        </div>
-                    </form>
+                <div wire:loading.flex wire:target="returnAttachment" class="mt-2 items-center gap-2 text-sm text-gray-500">
+                    <x-filament::loading-indicator class="h-4 w-4" /> Mengunggah…
                 </div>
 
-                {{-- Footer (Fixed) --}}
-               <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
-    <button
-        wire:click="closeBatchModal"
-        type="button"
-        class="h-10 px-4 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-    >
-        Batal
-    </button>
+                @if($returnAttachment)
+                    <p class="mt-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                        <x-filament::icon icon="heroicon-m-paper-clip" class="h-4 w-4 text-gray-400" />
+                        <span class="min-w-0 flex-1 truncate">{{ $returnAttachment->getClientOriginalName() }}</span>
+                    </p>
+                @endif
 
-    <button
-        type="submit"
-        form="batchForm"
-        class="h-10 px-4 text-sm font-medium text-white rounded-lg shadow-sm hover:opacity-90 transition-all"
-        style="background-color: {{ $themeColor }};"
-    >
-        Simpan
-    </button>
-</div>
+                @error('returnAttachment')
+                    <p class="mt-2 text-sm text-danger-600 dark:text-danger-400">{{ $message }}</p>
+                @enderror
             </div>
-        </div>
-    @endif
+        </form>
 
-    {{-- MODAL: Return --}}
-    @if($showReturnModal)
-        <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" wire:click.self="closeReturnModal">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" wire:click.stop>
-
-                {{-- Header --}}
-                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-amber-50/50">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Proses Return</h2>
-                        <p class="text-sm text-gray-500 mt-0.5">Upload bukti transfer pengembalian</p>
-                    </div>
-                    <button wire:click="closeReturnModal" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-
-                <form wire:submit="processReturn" class="p-6 space-y-5">
-                    {{-- Amount info --}}
-                    <div class="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-200">
-                        <span class="text-sm font-medium text-gray-700">Jumlah dikembalikan</span>
-                        <span class="text-xl font-bold text-amber-600">Rp {{ number_format($remaining, 0, ',', '.') }}</span>
-                    </div>
-
-                    {{-- File upload --}}
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Bukti Transfer</label>
-                        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors cursor-pointer"
-                             x-data="{ isDragging: false }"
-                             x-on:dragover.prevent="isDragging = true"
-                             x-on:dragleave="isDragging = false"
-                             x-on:drop.prevent="isDragging = false"
-                             :class="isDragging ? 'border-amber-400 bg-amber-50/50' : ''">
-                            <input type="file" wire:model="returnAttachment" accept=".pdf,.jpg,.jpeg,.png" class="hidden" id="return-upload">
-                            <label for="return-upload" class="cursor-pointer">
-                                <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <svg class="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                    </svg>
-                                </div>
-                                <p class="text-sm font-medium text-gray-600">Klik untuk upload</p>
-                                <p class="text-xs text-gray-400 mt-1">PDF, JPG, PNG</p>
-                            </label>
-                        </div>
-
-                        @if($returnAttachment)
-                            <div class="mt-3 flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
-                                <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                                    <svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-medium text-gray-700 truncate">{{ $returnAttachment->getClientOriginalName() }}</p>
-                                    <p class="text-xs text-gray-400">{{ number_format($returnAttachment->getSize() / 1024, 0) }} KB</p>
-                                </div>
-                            </div>
-                        @endif
-                        
-                        @error('returnAttachment') 
-                            <p class="text-xs text-red-500 mt-2">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Footer --}}
-                    <div class="flex justify-end gap-3 pt-2">
-                        <button type="button" wire:click="closeReturnModal" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
-                            Batal
-                        </button>
-                        <button type="submit" 
-                                wire:loading.attr="disabled"
-                                class="px-5 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <svg wire:loading wire:target="processReturn" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span wire:loading.remove wire:target="processReturn">Konfirmasi Return</span>
-                            <span wire:loading wire:target="processReturn">Memproses...</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    @endif
-
-    @livewireStyles
-    @livewireScripts
+        <x-slot name="footerActions">
+            <x-filament::button type="submit" form="returnForm" wire:target="processReturn">Simpan pengembalian</x-filament::button>
+            <x-filament::button color="gray" wire:click="closeReturnModal">Batal</x-filament::button>
+        </x-slot>
+    </x-filament::modal>
 </x-filament-panels::page>

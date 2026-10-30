@@ -3,11 +3,13 @@
 namespace App\Filament\Resources\AdvanceResource\Pages;
 
 use App\Filament\Resources\AdvanceResource;
+use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Realisasi;
 use App\Models\RealisasiItem;
 use App\Models\RealisasiFile;
 use App\Services\RealisasiService;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
 use Filament\Notifications\Notification;
 use Illuminate\Http\UploadedFile;
@@ -59,6 +61,19 @@ class RealisasiAdvance extends Page
         $this->refreshStats();
     }
 
+    /** Advance sudah dicairkan dan belum ditutup: realisasinya masih berjalan. */
+    private const OPEN_STATUSES = [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER, Advance::STATUS_READY_TO_CLOSE];
+
+    private function isOpen(): bool
+    {
+        return in_array($this->record->refresh()->status, self::OPEN_STATUSES, true);
+    }
+
+    private function isFinance(): bool
+    {
+        return (bool) auth()->user()?->hasRole(['Finance', 'Director', 'super_admin']);
+    }
+
     /**
      * Boleh menambah atau mengubah realisasi advance ini: pemiliknya atau
      * Finance/Director/super_admin, hanya setelah dicairkan dan sebelum
@@ -66,24 +81,149 @@ class RealisasiAdvance extends Page
      */
     private function canChangeRealisasi(): bool
     {
-        $user   = auth()->user();
-        $status = $this->record->refresh()->status;
-
-        if (! in_array($status, [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER, Advance::STATUS_READY_TO_CLOSE], true)) {
+        if (! $this->isOpen()) {
             return false;
         }
 
-        if ($user?->hasRole(['Finance', 'Director', 'super_admin'])) {
+        if ($this->isFinance()) {
             return true;
         }
 
-        return $user?->id === $this->record->user_id && $status !== Advance::STATUS_READY_TO_CLOSE;
+        return auth()->id() === $this->record->user_id && $this->record->status !== Advance::STATUS_READY_TO_CLOSE;
+    }
+
+    /**
+     * Tindakan Finance (pengembalian, persetujuan kelebihan, penyelesaian) hanya
+     * untuk advance yang sudah dicairkan dan belum ditutup. Dulu tombolnya tetap
+     * bekerja pada advance yang belum dibayar atau sudah Selesai.
+     */
+    private function refuseClosed(): bool
+    {
+        if ($this->isOpen()) {
+            return false;
+        }
+
+        Notification::make()
+            ->title('Advance ini tidak sedang direalisasi')
+            ->body('Tindakan ini hanya untuk advance yang sudah dicairkan dan belum diselesaikan.')
+            ->warning()
+            ->send();
+
+        return true;
+    }
+
+    public function getSubheading(): ?string
+    {
+        return collect([$this->record->keterangan_advance, $this->record->project ? ClientLabel::project($this->record->project) : null])
+            ->filter()
+            ->implode(' · ');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        $over      = fn () => $this->status === 'over_run';
+        $approved  = fn () => (bool) $this->record->overrun_approved_by;
+        $financeOk = fn () => $this->isFinance() && in_array($this->record->status, self::OPEN_STATUSES, true);
+
+        return [
+            Action::make('view')
+                ->label('Lihat Advance')
+                ->color('gray')
+                ->url(fn () => AdvanceResource::getUrl('view', ['record' => $this->record])),
+
+            Action::make('approveOverrun')
+                ->label('Setujui Kelebihan')
+                ->color('primary')
+                ->icon('heroicon-o-check-badge')
+                ->visible(fn () => $financeOk() && $over() && ! $approved())
+                ->requiresConfirmation()
+                ->modalHeading('Setujui kelebihan realisasi?')
+                ->modalDescription(fn () => 'Realisasi melebihi advance Rp ' . number_format(abs($this->remaining), 0, ',', '.') . '. Setelah disetujui, advance bisa diselesaikan.')
+                ->modalSubmitActionLabel('Setujui')
+                ->action(fn () => $this->approveOverrun()),
+
+            Action::make('return')
+                ->label('Catat Pengembalian Sisa')
+                ->color('gray')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->visible(fn () => $financeOk() && $this->status === 'under_run')
+                ->action(fn () => $this->openReturnModal()),
+
+            Action::make('finish')
+                ->label('Selesaikan Advance')
+                ->color('success')
+                ->icon('heroicon-o-check-circle')
+                ->visible(fn () => $financeOk() && ($this->status === 'exact_match' || ($over() && $approved())))
+                ->requiresConfirmation()
+                ->modalHeading('Selesaikan advance ini?')
+                ->modalDescription('Status menjadi Selesai dan realisasinya tidak bisa diubah lagi.')
+                ->modalSubmitActionLabel('Selesaikan')
+                ->action(fn () => $this->finishAdvance()),
+
+            Action::make('addBatch')
+                ->label('Tambah Batch')
+                ->icon('heroicon-o-plus')
+                ->visible(fn () => $this->canChangeRealisasi() && $this->record->canRealisasi())
+                ->action(fn () => $this->openBatchModal()),
+        ];
+    }
+
+    protected function getViewData(): array
+    {
+        $record = $this->record;
+
+        return [
+            'requester'  => $record->user?->fullName ?? $record->user?->name ?? '-',
+            'paidAt'     => $record->paid_at ?? $record->updated_at,
+            'canAdd'     => $this->canChangeRealisasi() && $record->canRealisasi(),
+            'canDelete'  => $this->isFinance() && in_array($record->status, self::OPEN_STATUSES, true),
+            'statusNote' => $this->statusNote(),
+        ];
+    }
+
+    /**
+     * Keadaan realisasi dan langkah berikutnya, dalam kalimat biasa. Null bila
+     * belum ada batch: bagian kosong di bawahnya sudah menjelaskannya.
+     *
+     * @return array{color: string, title: string, body: string}|null
+     */
+    private function statusNote(): ?array
+    {
+        $rupiah = fn (float $amount) => 'Rp ' . number_format(abs($amount), 0, ',', '.');
+
+        return match (true) {
+            $this->record->status === Advance::STATUS_SELESAI => [
+                'color' => 'success', 'title' => 'Advance selesai',
+                'body'  => 'Realisasi sudah ditutup Finance dan tidak bisa diubah lagi.',
+            ],
+            ! in_array($this->record->status, self::OPEN_STATUSES, true) => [
+                'color' => 'gray', 'title' => 'Advance belum dicairkan',
+                'body'  => 'Realisasi bisa diisi setelah advance berstatus Dibayarkan.',
+            ],
+            $this->batches === [] => null,
+            $this->status === 'exact_match' => [
+                'color' => 'success', 'title' => 'Realisasi pas dengan advance',
+                'body'  => 'Tidak ada sisa maupun kelebihan. Finance tinggal menyelesaikan advance ini.',
+            ],
+            $this->status === 'over_run' && $this->record->overrun_approved_by => [
+                'color' => 'success', 'title' => 'Kelebihan ' . $rupiah($this->remaining) . ' sudah disetujui',
+                'body'  => 'Finance tinggal menyelesaikan advance ini.',
+            ],
+            $this->status === 'over_run' => [
+                'color' => 'warning', 'title' => 'Realisasi melebihi advance ' . $rupiah($this->remaining),
+                'body'  => 'Menunggu persetujuan Finance. Batch baru ditahan sampai kelebihannya disetujui.',
+            ],
+            default => [
+                'color' => 'info', 'title' => 'Sisa ' . $rupiah($this->remaining) . ' belum direalisasi',
+                'body'  => 'Tambahkan batch untuk pengeluaran berikutnya, atau kembalikan sisanya ke Finance.',
+            ],
+        };
     }
 
     private function refuseChange(): void
     {
         Notification::make()
-            ->title('⚠️ Tidak bisa diubah')
+            ->title('Tidak bisa diubah')
             ->body('Realisasi advance ini hanya bisa diubah pemiliknya atau Finance, setelah dicairkan dan sebelum diselesaikan.')
             ->danger()
             ->icon('heroicon-o-shield-exclamation')
@@ -153,12 +293,14 @@ class RealisasiAdvance extends Page
             ['name' => '', 'description' => '', 'quantity' => 1, 'price' => 0]
         ];
         $this->showBatchModal = true;
+        $this->dispatch('open-modal', id: 'realisasi-batch');
     }
 
     public function closeBatchModal(): void
     {
         $this->showBatchModal = false;
         $this->reset(['batchNotes', 'uploadedFiles', 'batchItems']);
+        $this->dispatch('close-modal', id: 'realisasi-batch');
     }
 
     public function removeUploadedFile(int $index): void
@@ -171,12 +313,14 @@ class RealisasiAdvance extends Page
     {
         $this->returnAttachment = null;
         $this->showReturnModal = true;
+        $this->dispatch('open-modal', id: 'realisasi-return');
     }
 
     public function closeReturnModal(): void
     {
         $this->showReturnModal = false;
         $this->returnAttachment = null;
+        $this->dispatch('close-modal', id: 'realisasi-return');
     }
 
     public function addBatchItem(): void
@@ -204,7 +348,7 @@ class RealisasiAdvance extends Page
 
         if (empty($validItems)) {
             Notification::make()
-                ->title('⚠️ Item Kosong')
+                ->title('Belum ada item')
                 ->body('Minimal harus ada 1 item dengan nama dan harga yang valid.')
                 ->warning()
                 ->icon('heroicon-o-exclamation-circle')
@@ -254,8 +398,8 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('✅ Batch Berhasil Ditambahkan')
-                ->body('Batch realization baru telah ditambahkan.')
+                ->title('Batch tersimpan')
+                ->body('Total realisasi dan sisa advance sudah diperbarui.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
                 ->send();
@@ -263,7 +407,7 @@ class RealisasiAdvance extends Page
             Storage::disk('public')->delete($stored);
 
             Notification::make()
-                ->title('❌ Gagal Menyimpan Batch')
+                ->title('Batch gagal disimpan')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
@@ -273,11 +417,10 @@ class RealisasiAdvance extends Page
 
     public function deleteBatch(int $batchId): void
     {
-        // Check permission - only Finance, Director, Super Admin can delete
-        $user = auth()->user();
-        if (!$user->hasRole(['super_admin', 'Finance', 'Director'])) {
+        // Hanya Finance/Director/super_admin, dan hanya selama advance belum ditutup.
+        if (! $this->isFinance() || $this->refuseClosed()) {
             Notification::make()
-                ->title('⚠️ Tidak Memiliki Izin')
+                ->title('Tidak punya izin')
                 ->body('Hanya Finance, Director, atau Super Admin yang dapat menghapus batch.')
                 ->danger()
                 ->icon('heroicon-o-shield-exclamation')
@@ -292,14 +435,14 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('✅ Batch Berhasil Dihapus')
-                ->body('Batch realization berhasil dihapus dan data sudah diperbarui.')
+                ->title('Batch dihapus')
+                ->body('Total realisasi dan sisa advance sudah diperbarui.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('❌ Gagal Menghapus Batch')
+                ->title('Batch gagal dihapus')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
@@ -314,7 +457,7 @@ class RealisasiAdvance extends Page
         // Hak akses dicek sebelum file apa pun disimpan.
         if (! $service->canUserProcessReturn()) {
             Notification::make()
-                ->title('⚠️ Tidak Memiliki Izin')
+                ->title('Tidak punya izin')
                 ->body('Hanya Finance, Director, atau Super Admin yang dapat memproses return.')
                 ->danger()
                 ->icon('heroicon-o-shield-exclamation')
@@ -322,10 +465,14 @@ class RealisasiAdvance extends Page
             return;
         }
 
+        if ($this->refuseClosed()) {
+            return;
+        }
+
         if (!$this->returnAttachment) {
             Notification::make()
                 ->title('Gagal')
-                ->body('⚠️ Bukti return harus diunggah terlebih dahulu.')
+                ->body('Unggah bukti transfer pengembaliannya dulu.')
                 ->warning()
                 ->icon('heroicon-o-exclamation-circle')
                 ->send();
@@ -343,7 +490,7 @@ class RealisasiAdvance extends Page
             $service->processReturn($this->record, $attachmentPath);
 
             Notification::make()
-                ->title('✅ Return Berhasil Dicatat')
+                ->title('Pengembalian tercatat')
                 ->body('Rp ' . number_format($this->remaining, 0, ',', '.') . ' telah dicatat sebagai return dan saldo sudah dikembalikan.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
@@ -357,7 +504,7 @@ class RealisasiAdvance extends Page
             }
 
             Notification::make()
-                ->title('❌ Gagal Memproses Return')
+                ->title('Pengembalian gagal dicatat')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
@@ -367,6 +514,17 @@ class RealisasiAdvance extends Page
 
     public function approveOverrun(): void
     {
+        if ($this->refuseClosed()) {
+            return;
+        }
+
+        // Disetujui dua kali dulu mengembalikan status ke "Sedang di-Realisasi User".
+        if ($this->record->overrun_approved_by) {
+            Notification::make()->title('Kelebihan ini sudah disetujui')->warning()->send();
+
+            return;
+        }
+
         try {
             $service = new RealisasiService();
             $service->approveOverrun($this->record);
@@ -374,14 +532,14 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('✅ Overrun Disetujui')
-                ->body('Kelebihan amount sudah disetujui. User dapat menambah batch lagi.')
+                ->title('Kelebihan disetujui')
+                ->body('Advance ini sekarang bisa diselesaikan.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('❌ Gagal Menyetujui Overrun')
+                ->title('Kelebihan gagal disetujui')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
@@ -391,6 +549,10 @@ class RealisasiAdvance extends Page
 
     public function finishAdvance(): void
     {
+        if ($this->refuseClosed()) {
+            return;
+        }
+
         try {
             $service = new RealisasiService();
             $service->finishAdvance($this->record);
@@ -398,8 +560,8 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('✅ Advance Diselesaikan')
-                ->body('Advance berhasil diselesaikan. Status berubah menjadi Selesai.')
+                ->title('Advance diselesaikan')
+                ->body('Status berubah menjadi Selesai.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
                 ->send();
@@ -407,7 +569,7 @@ class RealisasiAdvance extends Page
             $this->redirect('/admin/advances', navigate: true);
         } catch (\Exception $e) {
             Notification::make()
-                ->title('❌ Gagal Menyelesaikan Advance')
+                ->title('Advance gagal diselesaikan')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
@@ -464,14 +626,14 @@ class RealisasiAdvance extends Page
             $this->refreshStats();
 
             Notification::make()
-                ->title('✅ Item Berhasil Diupdate')
+                ->title('Item diperbarui')
                 ->body('Item realization telah diperbarui.')
                 ->success()
                 ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
-                ->title('❌ Gagal Mengupdate Item')
+                ->title('Item gagal diperbarui')
                 ->body($e->getMessage())
                 ->danger()
                 ->icon('heroicon-o-x-circle')
