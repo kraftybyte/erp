@@ -5,6 +5,7 @@ namespace App\Services;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
 
@@ -42,19 +43,19 @@ class QuotationItemImport
 
     /**
      * @return array{
-     *     items: array<int, array{name: string, section: ?string, subsection: ?string, details: array<int, string>, note: ?string, quantity: ?string, qty: float, price: float, total: float}>,
+     *     items: array<int, array{name: string, section: ?string, subsection: ?string, details: array<int, string>, note: ?string, quantity: ?string, qty: float, price: float, total: float, issues: array<int, string>}>,
      *     warnings: array<int, string>,
+     *     notes: array<int, string>,
      *     total: float,
      *     expected_total: ?float
      * }
      */
-    public function parse(string $path): array
+    public function parse(string $path, ?string $sheet = null): array
     {
-        $book  = IOFactory::load($path);
-        $sheet = $book->getActiveSheet();
+        $book = IOFactory::load($path);
 
         try {
-            $rows = $this->readRows($sheet);
+            $rows = $this->readRows(...$this->sheets($book, $sheet));
         } finally {
             // Spreadsheet saling mereferensi; tanpa ini memorinya tidak dibebaskan.
             $book->disconnectWorksheets();
@@ -64,11 +65,53 @@ class QuotationItemImport
     }
 
     /**
+     * Nama sheet di file, untuk dipilih sebelum import; kosong untuk CSV.
+     *
+     * @return array<int, string>
+     */
+    public function sheetNames(string $path): array
+    {
+        $reader = IOFactory::createReaderForFile($path);
+
+        return method_exists($reader, 'listWorksheetNames') ? $reader->listWorksheetNames($path) : [];
+    }
+
+    /**
+     * Sheet yang dipilih; tanpa pilihan, sheet aktif lalu sheet lain sampai
+     * ditemukan tabel item (file budget sering dibuka di sheet ringkasan).
+     *
+     * @return array<int, Worksheet>
+     */
+    private function sheets(Spreadsheet $book, ?string $name): array
+    {
+        if ($name !== null) {
+            return [$book->getSheetByName($name) ?? throw new RuntimeException("Sheet \"{$name}\" tidak ada di file ini.")];
+        }
+
+        $active = $book->getActiveSheet();
+
+        return [$active, ...array_filter($book->getAllSheets(), fn (Worksheet $sheet) => $sheet !== $active)];
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
-    private function readRows(Worksheet $sheet): array
+    private function readRows(Worksheet ...$candidates): array
     {
-        [$headerRow, $columns, $units] = $this->findHeader($sheet);
+        foreach ($candidates as $index => $sheet) {
+            try {
+                [$headerRow, $columns, $units] = $this->findHeader($sheet);
+
+                break;
+            } catch (RuntimeException $e) {
+                // Pesan dari sheet pertama (yang dibuka/dipilih) yang ditampilkan.
+                $error ??= $e;
+
+                if ($index === array_key_last($candidates)) {
+                    throw $error;
+                }
+            }
+        }
 
         $rows = [];
         for ($r = $headerRow + 1, $last = $sheet->getHighestDataRow(); $r <= $last; $r++) {
@@ -179,6 +222,7 @@ class QuotationItemImport
                     // di atasnya), harga 0, dan pengguna diberi tahu.
                     $items[]    = $this->item($row, $section, $subsection, $warnings);
                     $warnings[] = "\"{$text}\" tidak punya harga di file; diimpor dengan harga Rp 0. Isi harganya atau hapus barisnya.";
+                    $items[array_key_last($items)]['issues'][] = 'Tidak ada harga di file.';
                     $previous   = 'item';
                 } elseif ($row['no'] !== '') {
                     // Baris bernomor tanpa harga (mis. "1  Main Flagship Store"): judul dokumen.
@@ -227,7 +271,15 @@ class QuotationItemImport
             $warnings[] = 'Tidak diimpor (tanpa harga, di luar tabel item): "' . implode('", "', $skipped) . '".';
         }
 
-        return ['items' => $items, 'warnings' => $warnings, 'total' => $total, 'expected_total' => $expected];
+        return [
+            'items'          => $items,
+            'warnings'       => $warnings,
+            // Peringatan per baris diawali nama barisnya ("Logo KT&G" …) dan sudah ada di
+            // issues item itu; sisanya menyangkut bagian atau file, mis. sub total.
+            'notes'          => array_values(array_filter($warnings, fn (string $warning) => ! str_starts_with($warning, '"'))),
+            'total'          => $total,
+            'expected_total' => $expected,
+        ];
     }
 
     /**
@@ -256,6 +308,7 @@ class QuotationItemImport
                 'qty'               => $item['qty'],
                 'price'             => $item['price'],
                 'total'             => $item['total'],
+                'issues'            => $item['issues'] ?? [],
             ];
         }, $items);
     }
@@ -280,7 +333,7 @@ class QuotationItemImport
             }
 
             $key = 'section:' . $item['section'];
-            $groups[$key] ??= ['item' => $item['section'], 'lines' => [], 'html' => [], 'subsection' => null, 'total' => 0.0];
+            $groups[$key] ??= ['item' => $item['section'], 'lines' => [], 'html' => [], 'subsection' => null, 'total' => 0.0, 'issues' => []];
 
             if ($item['subsection'] !== null && $item['subsection'] !== $groups[$key]['subsection']) {
                 $groups[$key]['subsection'] = $item['subsection'];
@@ -296,6 +349,10 @@ class QuotationItemImport
             $groups[$key]['lines'][] = $line;
             $groups[$key]['html'][]  = e($line);
             $groups[$key]['total']  += $item['total'];
+
+            foreach ($item['issues'] ?? [] as $issue) {
+                $groups[$key]['issues'][] = "{$item['name']}: {$issue}";
+            }
         }
 
         return array_values(array_map(fn (array $group) => isset($group['html']) ? [
@@ -305,6 +362,7 @@ class QuotationItemImport
             'qty'               => 1.0,
             'price'             => round($group['total'], 2),
             'total'             => round($group['total'], 2),
+            'issues'            => $group['issues'],
         ] : $group, $groups));
     }
 
@@ -318,6 +376,7 @@ class QuotationItemImport
         $amount   = fn (float $n, string $unit) => trim($this->format($n) . ' ' . $unit);
         $note     = $dur > 1 ? $amount($qty, $row['unit']) . ' × ' . $amount($dur, $row['dunit']) : null;
         $quantity = $note ?? ($qty > 1 ? $amount($qty, $row['unit']) : null);
+        $issues   = [];
 
         if ($price <= 0) {
             $price = round($total / $count, 2);
@@ -325,6 +384,8 @@ class QuotationItemImport
             // Total di file yang dipakai (itu yang masuk sub total); dijadikan satu paket.
             $warnings[] = "\"{$row['text']}\": " . $this->rupiah($price) . ' × ' . $this->format($count)
                 . ' = ' . $this->rupiah($price * $count) . ', tapi total di file ' . $this->rupiah($total) . '. Dipakai ' . $this->rupiah($total) . ' (qty 1).';
+            $issues[]   = 'Harga ' . $this->rupiah($price) . ' × ' . $this->format($count) . ' = ' . $this->rupiah($price * $count)
+                . ', tapi total di file ' . $this->rupiah($total) . '. Dipakai totalnya.';
 
             [$price, $count] = [$total, 1.0];
             $note ??= $qty > 1 ? $quantity : null;
@@ -352,6 +413,8 @@ class QuotationItemImport
             'qty'        => $count,
             'price'      => round($price, 2),
             'total'      => round($total, 2),
+            // Yang perlu dicek pengguna di baris ini sebelum diimpor.
+            'issues'     => $issues,
         ];
     }
 

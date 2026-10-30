@@ -363,6 +363,91 @@ class QuotationItemImportTest extends TestCase
         $this->assertEquals(45_000_000, $items[1]['total']);
     }
 
+    public function test_hasil_import_diperiksa_dan_dibetulkan_sebelum_masuk_form(): void
+    {
+        $this->actingAs($this->importer());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::test(CreateQuotation::class)
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->set('mountedFormComponentActionsData.0.file', UploadedFile::fake()->createWithContent('harga-jual.xlsx', file_get_contents($this->hargaJual())))
+            ->call('dispatchFormEvent', 'wizard::nextStep', 'mountedFormComponentActionsData.0', 0)
+            ->assertHasNoFormComponentActionErrors()
+            ->assertSee('7 item · Rp 167.157.000')
+            ->assertSee('sama dengan total di file')
+            ->assertSee('2 baris ditandai')
+            ->assertSee('Tidak ada harga di file.')
+            ->assertSee('Dipakai totalnya.')
+            // Judul di atas tabel tetap dilaporkan; peringatan per baris tidak diulang di atas.
+            ->assertSee('Tidak diimpor (tanpa harga, di luar tabel item)')
+            ->assertDontSee('diimpor dengan harga Rp 0');
+
+        $rows = $component->get('mountedFormComponentActionsData.0.rows');
+        $keys = array_keys($rows);
+        $this->assertSame("Logo KT&G", $rows[$keys[4]]['description']);
+        $this->assertSame(['Tidak ada harga di file.'], $rows[$keys[4]]['issues']);
+
+        // Typo dibetulkan, harga Logo KT&G diisi, lalu baris "By Owner" dihapus (seperti tombol hapus repeater).
+        $component
+            ->set("mountedFormComponentActionsData.0.rows.{$keys[2]}.description", "Facade Logo Flex\nHollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver")
+            ->set("mountedFormComponentActionsData.0.rows.{$keys[4]}.price", 7_500_000);
+
+        $rows = $component->get('mountedFormComponentActionsData.0.rows');
+        unset($rows[$keys[1]]);
+
+        $component->set('mountedFormComponentActionsData.0.rows', $rows)
+            ->assertSee('6 item · Rp 174.657.000')
+            ->assertSee('Total di file Rp 167.157.000, selisih Rp 7.500.000.')
+            ->call('callMountedFormComponentAction')
+            ->assertHasNoFormComponentActionErrors()
+            ->assertFormSet(['subtotal' => 174_657_000]);
+
+        $items = array_values($component->get('data.items'));
+        $this->assertCount(6, $items);
+        $this->assertSame('Facade Logo Flex<br>Hollow 4x4 t=1,2 Fin. ACP Seven Outdoor Silver', $items[1]['description']);
+        $this->assertEquals([1, 7_500_000], [$items[3]['qty'], $items[3]['price']]);
+        // Deskripsi yang tidak diubah tetap HTML aslinya.
+        $this->assertSame('Mobilisasi dan akomodasi', $items[0]['description']);
+    }
+
+    public function test_sheet_berisi_tabel_dicari_otomatis_atau_dipilih(): void
+    {
+        $book = new Spreadsheet();
+        $book->getActiveSheet()->setTitle('Ringkasan')->fromArray([['Budget Q4'], ['Disiapkan oleh tim']]);
+        $table = $book->createSheet()->setTitle('Harga Jual');
+        $table->fromArray([['Item', 'Qty', 'Harga', 'Total'], ['Booth 3x3', 2, 5_000_000, 10_000_000]]);
+        $book->setActiveSheetIndex(0);
+        $path = tempnam(sys_get_temp_dir(), 'quo-') . '.xlsx';
+        $this->paths[] = $path;
+        (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
+
+        $import = app(QuotationItemImport::class);
+
+        $this->assertSame(['Ringkasan', 'Harga Jual'], $import->sheetNames($path));
+        $this->assertEquals(10_000_000, $import->parse($path)['total'], 'Sheet yang terbuka tanpa tabel: sheet berikutnya dicoba.');
+        $this->assertEquals(10_000_000, $import->parse($path, 'Harga Jual')['total']);
+
+        try {
+            $import->parse($path, 'Ringkasan');
+            $this->fail('Sheet tanpa tabel item harus ditolak.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Judul kolom tidak ditemukan', $e->getMessage());
+        }
+
+        $this->actingAs($this->importer());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::test(CreateQuotation::class)
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->set('mountedFormComponentActionsData.0.file', UploadedFile::fake()->createWithContent('dua-sheet.xlsx', file_get_contents($path)))
+            ->assertSee('Otomatis: sheet yang berisi tabel item')
+            ->set('mountedFormComponentActionsData.0.sheet', 'Ringkasan')
+            ->call('dispatchFormEvent', 'wizard::nextStep', 'mountedFormComponentActionsData.0', 0)
+            ->assertNotified('File tidak bisa dibaca')
+            ->assertSet('mountedFormComponentActionsData.0.rows', []);
+    }
+
     public function test_tombol_import_juga_ada_di_form_invoice(): void
     {
         $user = User::forceCreate([
