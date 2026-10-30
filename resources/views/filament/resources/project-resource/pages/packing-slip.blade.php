@@ -50,12 +50,12 @@
                     <div class="text-center">
                         <x-heroicon-o-printer class="w-8 h-8 text-success-500 mx-auto mb-1" />
                         <p class="text-xs text-gray-500">Print Thermal</p>
-                        <p class="text-xs text-gray-400">58/80/100mm</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-300">58/80/100mm</p>
                     </div>
                     <div class="text-center">
                         <x-heroicon-o-document-arrow-down class="w-8 h-8 text-primary-500 mx-auto mb-1" />
                         <p class="text-xs text-gray-500">Download PDF</p>
-                        <p class="text-xs text-gray-400">Simpan file</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-300">Simpan file</p>
                     </div>
                 </div>
             </div>

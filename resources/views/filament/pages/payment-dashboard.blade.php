@@ -186,8 +186,9 @@
             background: #f8fafc;
         }
 
+        /* Padding sempit supaya kolom Jumlah tidak terpotong di kartu 2/3 lebar. */
         .data-table thead th {
-            padding: 14px 18px;
+            padding: 12px 12px;
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
@@ -210,7 +211,7 @@
         }
 
         .data-table tbody td {
-            padding: 16px 20px;
+            padding: 14px 12px;
             font-size: 12px;
             color: #334155;
             vertical-align: middle;
@@ -616,7 +617,53 @@
             --color-danger-rgba: {{ $rgba($dangerColor, 0.1) }};
             --color-info-rgba: {{ $rgba($infoColor, 0.1) }};
         }
+
+        /* =========================================================
+           KONTRAS & MODE GELAP
+           Teks berwarna dan tombol berteks putih memakai shade 600 tema
+           (sudah digelapkan ThemePalette sampai 4,5:1); warna dasar tetap
+           untuk ikon dan isian tipis. Dulu nominal hijau 2:1 dan tombol
+           "Tambah Advance" putih di atas kuning pucat 1,3:1.
+        ========================================================= */
+
+        .pd .text-success { color: rgb(var(--success-600)); }
+        .pd .text-warning { color: rgb(var(--warning-600)); }
+        .pd .text-danger  { color: rgb(var(--danger-600)); }
+        .pd .text-info    { color: rgb(var(--info-600)); }
+        .pd .quick-action.bg-danger  { background-color: rgb(var(--danger-600)); }
+        .pd .quick-action.bg-warning { background-color: rgb(var(--warning-600)); }
+
+        .dark .pd .text-success { color: rgb(var(--success-400)); }
+        .dark .pd .text-warning { color: rgb(var(--warning-400)); }
+        .dark .pd .text-danger  { color: rgb(var(--danger-400)); }
+        .dark .pd .text-info    { color: rgb(var(--info-400)); }
+
+        .dark .pd .fi-section-inner-ctn,
+        .dark .pd .stat-card { background: rgb(var(--gray-900)); border-color: rgba(255, 255, 255, .1); }
+        .dark .pd .stat-card:hover { border-color: rgba(255, 255, 255, .2); }
+        .dark .pd .card-header { border-color: rgba(255, 255, 255, .08); }
+        .dark .pd .card-header-title { color: #fff; }
+        .dark .pd .data-table thead tr { background: rgba(255, 255, 255, .03); }
+        .dark .pd .data-table thead th { color: rgb(var(--gray-300)); border-color: rgba(255, 255, 255, .1); }
+        .dark .pd .data-table tbody tr { border-color: rgba(255, 255, 255, .06); }
+        .dark .pd .data-table tbody tr:hover { background: rgba(255, 255, 255, .03); }
+        .dark .pd .data-table tbody td { color: rgb(var(--gray-200)); }
+        .dark .pd .transaction-filter { background: rgba(255, 255, 255, .02); border-color: rgba(255, 255, 255, .08); }
+        .dark .pd .filter-label { color: rgb(var(--gray-300)); }
+        .dark .pd .filter-select,
+        .dark .pd .filter-select:hover { background-color: rgb(var(--gray-800)) !important; border-color: rgba(255, 255, 255, .12) !important; color: rgb(var(--gray-100)) !important; }
+        .dark .pd .filter-button-clear { background: rgba(var(--danger-500), .12); border-color: rgba(var(--danger-500), .3); color: rgb(var(--danger-300)); }
+
+        /* Utilitas Tailwind tanpa varian dark: di markup halaman ini. */
+        .dark .pd .bg-white:not([class*="bg-white/"]) { background-color: rgb(var(--gray-900)); }
+        .dark .pd .bg-gray-50, .dark .pd .bg-gray-100 { background-color: rgba(255, 255, 255, .04); }
+        .dark .pd .hover\:bg-white:hover { background-color: rgba(255, 255, 255, .07); }
+        .dark .pd .border-gray-100, .dark .pd .border-gray-200 { border-color: rgba(255, 255, 255, .1); }
+        .dark .pd .text-gray-900, .dark .pd .text-gray-800, .dark .pd .text-gray-700 { color: #fff; }
+        .dark .pd .text-gray-600, .dark .pd .text-gray-500, .dark .pd .text-gray-400 { color: rgb(var(--gray-300)); }
     </style>
+
+    <div class="pd">
 
 
     {{-- =========================================================
@@ -812,7 +859,7 @@
                                      stroke="currentColor">
                                     <path stroke-linecap="round"
                                           stroke-linejoin="round"
-                                          d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125 1.125V21M3 3h12m-.75 4.5H21"/>
+                                          d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21"/>
                                 </svg>
 
                             </div>
@@ -1784,5 +1831,5 @@
         </a>
 
     </div>
-
+    </div>
 </x-filament-panels::page>

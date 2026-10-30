@@ -12,7 +12,7 @@
     };
 @endphp
 
-<div class="rl-items" role="table" aria-label="Item batch #{{ $batch['batch_number'] }}">
+<div class="rl-items" role="table" aria-label="{{ $label ?? 'Item batch #' . $batch['batch_number'] }}">
     <div class="rl-items-head" role="row">
         <span role="columnheader">Item</span>
         <span role="columnheader" class="num">Qty</span>

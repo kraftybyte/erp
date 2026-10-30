@@ -1,32 +1,27 @@
-<footer class="flex items-center justify-between w-full px-4 py-6 font-medium">
-    {{-- Left side --}}
-    <div class="flex items-center gap-4 text-sm text-gray-400 dark:text-gray-300">
-        @php
-            $settings = app(\App\Settings\GeneralSettings::class);
-            $brandName = config('app.name');
-            $version = env('APP_VERSION');
-        @endphp
+@php
+    $settings = app(\App\Settings\GeneralSettings::class);
+    $version  = config('app.version');
+@endphp
 
+{{-- Abu gray-500 (7,8:1), bukan gray-400 dengan opacity 60% (1,9–3,4:1). Nama
+     merek bukan link: dulu <a href="#"> yang tidak menuju ke mana pun. --}}
+<footer class="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm font-medium text-gray-500 dark:text-gray-300">
+    <div class="flex items-center gap-4">
         @if($settings->footer_show_brand)
-            <a href="#" class="hover:underline">
-                {{ $settings->footer_brand_text ?: $brandName }}
-            </a>
+            <span>{{ $settings->footer_brand_text ?: config('app.name') }}</span>
         @endif
 
         @if($settings->footer_show_version && $version)
-            <span class="opacity-60">v{{ $version }}</span>
+            <span>v{{ $version }}</span>
         @endif
 
         @if($settings->footer_custom_text)
-            <span class="opacity-60">|</span>
+            <span aria-hidden="true">|</span>
             <span>{{ $settings->footer_custom_text }}</span>
         @endif
     </div>
 
-    {{-- Right side --}}
     @if($settings->footer_show_copyright)
-        <span class="text-sm text-center text-gray-400 dark:text-gray-300">
-            ©{{ date('Y') }} {{ $settings->footer_copyright_text ?: 'All Rights Reserved.' }}
-        </span>
+        <span>©{{ date('Y') }} {{ $settings->footer_copyright_text ?: 'All Rights Reserved.' }}</span>
     @endif
 </footer>

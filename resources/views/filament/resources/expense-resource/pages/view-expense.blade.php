@@ -1,193 +1,101 @@
-<x-filament::page>
-    <div class="space-y-8">
+<x-filament-panels::page>
+    @php
+        $date  = fn ($value) => $value ? \Carbon\Carbon::parse($value)->locale('id')->translatedFormat('j M Y') : '—';
+        $items = $record->itemExpenses;
+    @endphp
 
-        {{-- =======================
-             HEADER SUMMARY
-        ======================== --}}
-        <div class="bg-white rounded-2xl shadow-sm border p-8">
+    {{-- Gaya bersama halaman advance: ikut mode terang/gelap dan bertumpuk di HP. --}}
+    @include('filament.pages.partials.realisasi-styles')
 
-            <div class="flex items-start justify-between">
-
-                <div>
-                    <div class="text-sm text-gray-500 mb-1">
-                        Expense ID #{{ $record->id }}
+    <div class="flex flex-col gap-6">
+        <x-filament::section>
+            <div class="flex flex-col gap-5">
+                <dl class="rl-figures">
+                    <div class="rl-figure">
+                        <dt>Diajukan</dt>
+                        <dd>{{ \App\Helpers\Money::rupiah($record->amount) }}</dd>
+                        <p>{{ $date($record->submission_date) }}</p>
                     </div>
-
-                    <div class="text-4xl font-bold tracking-tight text-gray-900">
-                        Rp {{ number_format($record->amount, 0, ',', '.') }}
+                    <div class="rl-figure">
+                        <dt>Dibayarkan</dt>
+                        <dd>{{ (float) $record->paid > 0 ? \App\Helpers\Money::rupiah($record->paid) : '—' }}</dd>
+                        <p>{{ $record->paidBy ? 'oleh ' . $record->paidBy->fullName : 'Belum dibayar' }}</p>
                     </div>
+                </dl>
 
-                    <div class="mt-2 text-sm text-gray-500">
-                        {{ \Carbon\Carbon::parse($record->submission_date)->format('d M Y') }}
-                    </div>
-                </div>
-
-                <div>
-                    <span class="
-                        inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold
-                        @if($record->status === 'Pending') bg-yellow-100 text-yellow-800
-                        @elseif($record->status === 'Disetujui') bg-blue-100 text-blue-800
-                        @elseif($record->status === 'Ditolak') bg-red-100 text-red-800
-                        @elseif($record->status === 'Dibayarkan') bg-gray-200 text-gray-800
-                        @elseif($record->status === 'Selesai') bg-green-100 text-green-800
-                        @endif
-                    ">
-                        {{ $record->status }}
+                <div class="rl-meta">
+                    <span>Pemohon <strong>{{ $record->user?->fullName ?? '-' }}</strong></span>
+                    <span class="flex items-center gap-2">Status
+                        <x-filament::badge :color="\App\Helpers\ColorHelper::status((string) $record->status)" size="sm">{{ $record->status }}</x-filament::badge>
                     </span>
+                    @if($record->approvedBy)
+                        <span>Disetujui <strong>{{ $record->approvedBy->fullName }}</strong></span>
+                    @endif
                 </div>
 
-            </div>
-        </div>
-
-        {{-- =======================
-             MAIN CONTENT
-        ======================== --}}
-        <div class="grid grid-cols-3 gap-8">
-
-            {{-- LEFT SIDE --}}
-            <div class="col-span-2 space-y-8">
-
-                {{-- INFORMASI --}}
-                <div class="bg-white rounded-2xl shadow-sm border p-6">
-                    <h3 class="text-lg font-semibold mb-6">Informasi Expense</h3>
-
-                    <div class="grid grid-cols-2 gap-6 text-sm">
-
-                        <div>
-                            <div class="text-gray-500 mb-1">Project</div>
-                            <div class="font-medium">
-                                {{ optional($record->project)->nama_perusahaan }}
-                            </div>
-                        </div>
-
-                        <div>
-                            <div class="text-gray-500 mb-1">Pemohon</div>
-                            <div class="font-medium">
-                                {{ optional($record->user)->firstname }}
-                                {{ optional($record->user)->lastname }}
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div class="mt-8">
-                        <div class="text-gray-500 mb-2 text-sm">Keterangan</div>
-                        <div class="text-gray-800 leading-relaxed">
-                            {{ $record->keterangan_expense }}
-                        </div>
-                    </div>
-                </div>
-
-                {{-- ITEM LIST --}}
-                @if($record->itemExpenses->count())
-                    <div class="bg-white rounded-2xl shadow-sm border p-6">
-                        <h3 class="text-lg font-semibold mb-6">Detail Item</h3>
-
-                        <div class="divide-y">
-
-                            @foreach($record->itemExpenses as $item)
-                                <div class="py-4 flex justify-between items-start">
-
-                                    <div>
-                                        <div class="font-semibold text-gray-900">
-                                            {{ $item->name }}
-                                        </div>
-
-                                        <div class="text-sm text-gray-500 mt-1">
-                                            {{ $item->description }}
-                                        </div>
-
-                                        <div class="text-xs text-gray-400 mt-2">
-                                            {{ $item->quantity }} × 
-                                            Rp {{ number_format($item->price, 0, ',', '.') }}
-                                        </div>
-                                    </div>
-
-                                    <div class="font-semibold text-gray-900">
-                                        Rp {{ number_format($item->subtotal, 0, ',', '.') }}
-                                    </div>
-
-                                </div>
-                            @endforeach
-
-                        </div>
+                @if($record->status === 'Ditolak' && filled($record->rejection_reason))
+                    <div class="rl-note" data-color="danger" role="status">
+                        <strong>Alasan ditolak</strong>
+                        <p>{{ $record->rejection_reason }}</p>
                     </div>
                 @endif
-
             </div>
+        </x-filament::section>
 
-            {{-- RIGHT SIDE --}}
-            <div class="space-y-8">
-
-                {{-- APPROVAL --}}
-                <div class="bg-white rounded-2xl shadow-sm border p-6">
-                    <h3 class="text-lg font-semibold mb-6">Approval</h3>
-
-                    @if($record->status === 'Ditolak')
-                        <div class="text-red-600 text-sm mb-4">
-                            {{ $record->rejection_reason }}
-                        </div>
-                    @endif
-
-                    @if($record->paid)
-                        <div class="space-y-3 text-sm">
-
-                            <div>
-                                <div class="text-gray-500">Nominal Dibayar</div>
-                                <div class="font-medium">
-                                    Rp {{ number_format($record->paid, 0, ',', '.') }}
-                                </div>
-                            </div>
-
-                            <div>
-                                <div class="text-gray-500">Reference</div>
-                                <div class="font-medium">
-                                    {{ $record->reference }}
-                                </div>
-                            </div>
-
-                        </div>
-                    @else
-                        <div class="text-gray-400 text-sm">
-                            Belum ada pembayaran.
-                        </div>
-                    @endif
+        <x-filament::section heading="Detail pengajuan">
+            <dl class="rl-details">
+                <div>
+                    <dt>Project</dt>
+                    <dd>{{ $project ?? 'Tanpa project' }}</dd>
                 </div>
-
-                {{-- ATTACHMENT --}}
-                <div class="bg-white rounded-2xl shadow-sm border p-6">
-                    <h3 class="text-lg font-semibold mb-6">Lampiran</h3>
-
-                    <div class="space-y-4">
-
-                        @if($record->attachment)
-                            <a href="{{ asset('storage/'.$record->attachment) }}"
-                               target="_blank"
-                               class="block w-full text-center bg-blue-600 hover:bg-blue-700 transition text-white py-2.5 rounded-lg text-sm font-medium">
-                                Lihat Invoice
-                            </a>
-                        @endif
-
-                        @if($record->attachment_pay)
-                            <a href="{{ asset('storage/'.$record->attachment_pay) }}"
-                               target="_blank"
-                               class="block w-full text-center bg-green-600 hover:bg-green-700 transition text-white py-2.5 rounded-lg text-sm font-medium">
-                                Lihat Bukti Pembayaran
-                            </a>
-                        @endif
-
-                        @if(!$record->attachment && !$record->attachment_pay)
-                            <div class="text-sm text-gray-400">
-                                Tidak ada lampiran.
-                            </div>
-                        @endif
-
+                <div>
+                    <dt>Kategori</dt>
+                    <dd>{{ $record->category ?: '—' }}</dd>
+                </div>
+                <div>
+                    <dt>Rekening pembayaran</dt>
+                    <dd>{{ $record->paymentAccount?->name ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt>No. referensi</dt>
+                    <dd>{{ $record->reference ?: '—' }}</dd>
+                </div>
+                @if(filled($record->keterangan_expense))
+                    <div class="span-all">
+                        <dt>Keterangan</dt>
+                        <dd class="is-plain">{{ $record->keterangan_expense }}</dd>
                     </div>
+                @endif
+                <div class="span-all">
+                    <dt>Lampiran</dt>
+                    <dd class="rl-files">
+                        @if($record->attachment)
+                            <a href="{{ asset('storage/' . $record->attachment) }}" target="_blank" rel="noopener" class="rl-file">
+                                <x-filament::icon icon="heroicon-m-document-text" class="h-3.5 w-3.5" /> Invoice / nota
+                            </a>
+                        @endif
+                        @if($record->attachment_pay)
+                            <a href="{{ asset('storage/' . $record->attachment_pay) }}" target="_blank" rel="noopener" class="rl-file">
+                                <x-filament::icon icon="heroicon-m-banknotes" class="h-3.5 w-3.5" /> Bukti pembayaran
+                            </a>
+                        @endif
+                        @if(! $record->attachment && ! $record->attachment_pay)
+                            <span class="text-sm font-normal text-gray-500 dark:text-gray-300">Belum ada lampiran. Tambahkan lewat tombol Edit.</span>
+                        @endif
+                    </dd>
                 </div>
+            </dl>
+        </x-filament::section>
 
-            </div>
-
-        </div>
-
+        @if($items->isNotEmpty())
+            <x-filament::section heading="Item" :description="$items->count() . ' item · ' . \App\Helpers\Money::rupiah($items->sum('subtotal'))">
+                @include('filament.pages.partials.realisasi-items', ['label' => 'Item expense', 'batch' => [
+                    'items' => $items->map(fn ($item) => [
+                        'id' => $item->id, 'name' => $item->name, 'description' => $item->description,
+                        'quantity' => $item->quantity, 'price' => $item->price, 'subtotal' => $item->subtotal, 'files' => [],
+                    ])->all(),
+                ]])
+            </x-filament::section>
+        @endif
     </div>
-</x-filament::page>
+</x-filament-panels::page>

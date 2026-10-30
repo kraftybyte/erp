@@ -73,7 +73,7 @@ class ConnectedAccountMetricResource extends Resource
 
                 Tables\Columns\TextColumn::make('engagement_rate')
                     ->label('Eng. Rate')
-                    ->formatStateUsing(fn (float $state) => number_format($state, 2) . '%')
+                    ->formatStateUsing(fn (float $state) => number_format($state, 2, ',', '.') . '%')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('profile_visits')

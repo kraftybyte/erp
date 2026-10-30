@@ -38,6 +38,20 @@ class ThemePaletteTest extends TestCase
         ];
     }
 
+    public function test_shade_400_terbaca_di_mode_gelap(): void
+    {
+        $theme = ThemePalette::readable(['gray' => '#485173', 'primary' => '#3150AE', 'danger' => '#ff5467']);
+        $rgb   = fn (string $value) => array_map('intval', explode(',', $value));
+        $card  = $rgb($theme['gray'][900]);
+
+        foreach (['gray', 'primary', 'danger'] as $name) {
+            $this->assertGreaterThanOrEqual(4.5, ThemePalette::contrast($rgb($theme[$name][400]), $card), "{$name}-400");
+        }
+
+        // Danger-400 sudah terbaca: tidak diubah.
+        $this->assertSame(Color::hex('#ff5467')[400], $theme['danger'][400]);
+    }
+
     public function test_warna_yang_sudah_terbaca_tidak_diubah_dan_nilai_lain_diteruskan(): void
     {
         $theme = ThemePalette::readable(['primary' => '#3150AE', 'custom' => ['500' => '1, 2, 3']]);

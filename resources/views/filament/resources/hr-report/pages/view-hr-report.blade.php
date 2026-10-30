@@ -8,9 +8,9 @@
         --c-primary:   #07a0cf;
         --c-primary-dk:#0589b0;
         --c-accent:    #ff5915;
-        --c-warn:      #f59e0b;
+        --c-warn:      #d97706;
         --c-success:   #10b981;
-        --c-muted:     #94a3b8;
+        --c-muted:     #64748b;
         --c-text:      #0f172a;
         --c-surface:   #ffffff;
         --c-bg:        #f4f7fb;
@@ -100,7 +100,7 @@
     }
     .period-btn-inactive {
         background: transparent;
-        color: #64748b;
+        color: #475569;
     }
     .period-btn-inactive:hover {
         color: #334155;
@@ -135,7 +135,7 @@
         position: absolute;
         inset: -3px;
         border-radius: 50%;
-        background: linear-gradient(135deg, var(--c-primary), #3bbeff, #07a0cf);
+        background: linear-gradient(135deg, var(--c-primary), #0284c7, #07a0cf);
         z-index: -1;
     }
     .avatar-img {
@@ -148,7 +148,7 @@
     .avatar-initials {
         width: 68px; height: 68px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #07a0cf 0%, #3bbeff 100%);
+        background: linear-gradient(135deg, #07a0cf 0%, #0284c7 100%);
         display: flex; align-items: center; justify-content: center;
         color: white; font-weight: 700; font-size: 20px;
         border: 3px solid white;
@@ -267,12 +267,12 @@
     }
 
     /* ── CHART CARDS ── */
-    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 
     /* ── ATTENDANCE ── */
     .attend-grid {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
         gap: 12px;
         margin-bottom: 16px;
     }
@@ -412,7 +412,7 @@
     }
     .task-client {
         font-size: 11px;
-        color: #94a3b8;
+        color: #64748b;
         margin-top: 2px;
         font-weight: 500;
     }
@@ -497,7 +497,7 @@
     .thin-scroll::-webkit-scrollbar { width: 5px; }
     .thin-scroll::-webkit-scrollbar-track { background: transparent; }
     .thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    .thin-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .thin-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
     .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 
     /* ── BREAKDOWN ── */
@@ -594,6 +594,71 @@
 
     /* ── SECTION DIVIDER ── */
     .section-row { display: grid; gap: 14px; }
+
+    /* ── GRID RESPONSIF ── dulu 2, 3, dan 5 kolom tetap, sehingga grafik
+       meluber keluar layar dan kartu menyempit di HP. */
+    .hr-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .hr-grid-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
+    .chart-grid > *, .hr-grid-3 > *, .hr-grid-main > * { min-width: 0; }
+    @media (max-width: 1024px) {
+        .chart-grid, .hr-grid-3, .hr-grid-main { grid-template-columns: minmax(0, 1fr); }
+    }
+
+    /* ── TOKEN TEKS ── */
+    .hr-page { --hr-muted: #64748b; --hr-body: #475569; --hr-faint: #94a3b8; --hr-chip: #f0f4f8; }
+
+    /* ── MODE GELAP ── dulu semua kartu tetap putih. */
+    .dark .hr-page { --c-surface: rgb(var(--gray-900)); --c-text: #fff; --c-border: rgba(255,255,255,.1);
+                     --hr-muted: rgb(var(--gray-300)); --hr-body: rgb(var(--gray-200)); --hr-faint: rgb(var(--gray-400)); --hr-chip: rgba(255,255,255,.08); }
+    .dark .hr-page .card,
+    .dark .hr-page .stat-card { border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .card:hover { border-color: rgba(255,255,255,.2); }
+    .dark .hr-page .card-title,
+    .dark .hr-page .profile-name,
+    .dark .hr-page .task-name,
+    .dark .hr-page .note-task { color: #fff; }
+    .dark .hr-page .profile-email,
+    .dark .hr-page .stat-lbl,
+    .dark .hr-page .attend-lbl,
+    .dark .hr-page .prog-label,
+    .dark .hr-page .tbl thead th,
+    .dark .hr-page .abs-table thead th,
+    .dark .hr-page .task-header,
+    .dark .hr-page .task-client,
+    .dark .hr-page .task-note,
+    .dark .hr-page .task-date,
+    .dark .hr-page .breakdown-pct,
+    .dark .hr-page .avg-box-label,
+    .dark .hr-page .avg-box-sub,
+    .dark .hr-page .note-meta,
+    .dark .hr-page .period-btn-inactive { color: rgb(var(--gray-300)); }
+    .dark .hr-page .tbl tbody td,
+    .dark .hr-page .abs-table tbody td,
+    .dark .hr-page .breakdown-name,
+    .dark .hr-page .note-body { color: rgb(var(--gray-200)); }
+    .dark .hr-page .period-group { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .period-btn-active { background: rgb(var(--gray-800)); }
+    .dark .hr-page .period-btn-inactive:hover { color: #fff; background: rgba(255,255,255,.06); }
+    .dark .hr-page .avatar-img, .dark .hr-page .avatar-initials { border-color: rgb(var(--gray-900)); }
+    .dark .hr-page .attend-item,
+    .dark .hr-page .note-card { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.08); }
+    .dark .hr-page .note-card:hover { background: rgba(255,255,255,.07); }
+    .dark .hr-page .prog-bar-bg { background: rgba(255,255,255,.1); }
+    .dark .hr-page .tbl-container { border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .tbl thead,
+    .dark .hr-page .abs-table thead,
+    .dark .hr-page .task-header { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .tbl thead tr,
+    .dark .hr-page .abs-table thead tr { border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .tbl tbody tr,
+    .dark .hr-page .abs-table tbody tr { border-color: rgba(255,255,255,.06); }
+    .dark .hr-page .tbl tbody tr:hover,
+    .dark .hr-page .abs-table tbody tr:hover { background: rgba(255,255,255,.03); }
+    .dark .hr-page .task-row { background: transparent; }
+    .dark .hr-page .task-row:hover { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .task-row-late { background: rgba(var(--danger-500), .08); border-color: rgba(var(--danger-500), .2); }
+    .dark .hr-page .avg-box { border-color: rgba(255,255,255,.1); }
+    .dark .hr-page .kpi-card { background: rgb(var(--gray-900)) !important; } /* latar pastel inline */
 </style>
 
 @php
@@ -602,7 +667,7 @@
     $initials  = strtoupper(substr($employee->firstname ?? 'U',0,1).substr($employee->lastname ?? 'U',0,1));
     $avgLabel  = ($stats['avgDays'] !== null) ? $stats['avgDays'].' hari' : '-';
     $rateLabel = $stats['doneRate'].'%';
-    $statusColors  = ['done'=>'#07a0cf','process'=>'#ff5915','review'=>'#f59e0b','hold'=>'#94a3b8'];
+    $statusColors  = ['done'=>'#07a0cf','process'=>'#ff5915','review'=>'#d97706','hold'=>'#64748b'];
     $statusBgAlpha = ['done'=>'rgba(7,160,207,.12)','process'=>'rgba(255,89,21,.12)','review'=>'rgba(245,158,11,.12)','hold'=>'rgba(148,163,184,.12)'];
     $chartJson = json_encode($chartData ?? ['labels'=>[],'taskDone'=>[],'taskTotal'=>[],'attendance'=>[]]);
 
@@ -610,13 +675,13 @@
 
     /* stat card bottom accent colors */
     $statAccents = [
-        'total'   => '#0f172a',
+        'total'   => 'var(--c-text)',
         'done'    => '#07a0cf',
         'process' => '#ff5915',
-        'review'  => '#f59e0b',
+        'review'  => '#d97706',
         'late'    => '#ef4444',
-        'avg'     => '#f59e0b',
-        'rate'    => '#3bbeff',
+        'avg'     => '#d97706',
+        'rate'    => '#0284c7',
     ];
 @endphp
 
@@ -652,7 +717,7 @@
                     <span class="role-chip">{{ \Illuminate\Support\Str::headline($role->name) }}</span>
                     @endforeach
                 </div>
-                <div style="margin-top:12px;font-size:11px;color:#94a3b8;font-weight:600;">
+                <div style="margin-top:12px;font-size:11px;color:var(--hr-muted);font-weight:600;">
                     Periode: <span style="color:#07a0cf;">{{ $periodLabels[$period] ?? 'Semua' }}</span>
                 </div>
             </div>
@@ -714,11 +779,11 @@
                 <div class="attend-lbl">Hadir</div>
             </div>
             <div class="attend-item">
-                <div class="attend-val" style="color:#3bbeff;">{{ $absenceStat['wfa'] }}</div>
+                <div class="attend-val" style="color:#0284c7;">{{ $absenceStat['wfa'] }}</div>
                 <div class="attend-lbl">WFA</div>
             </div>
             <div class="attend-item">
-                <div class="attend-val" style="color:#f59e0b;">{{ $absenceStat['cuti'] }}</div>
+                <div class="attend-val" style="color:#d97706;">{{ $absenceStat['cuti'] }}</div>
                 <div class="attend-lbl">Cuti / Izin</div>
             </div>
             <div class="attend-item">
@@ -726,13 +791,13 @@
                 <div class="attend-lbl">Tukar Hari</div>
             </div>
             <div class="attend-item">
-                <div class="attend-val" style="color:#64748b;">{{ $absenceStat['workDays'] }}</div>
+                <div class="attend-val" style="color:var(--hr-muted);">{{ $absenceStat['workDays'] }}</div>
                 <div class="attend-lbl">Hari Kerja</div>
             </div>
         </div>
         @php
             $ar = $absenceStat['attendRate'];
-            $arColor = $ar >= 80 ? '#07a0cf' : ($ar >= 60 ? '#f59e0b' : '#ef4444');
+            $arColor = $ar >= 80 ? '#07a0cf' : ($ar >= 60 ? '#d97706' : '#ef4444');
         @endphp
         <div class="prog-label">
             <span>Attendance Rate</span>
@@ -818,7 +883,7 @@
         $absTableDefs = [
             [
                 'title'   => 'Detail WFA / WFH',
-                'color'   => '#3bbeff',
+                'color'   => '#0284c7',
                 'bgColor' => 'rgba(59,190,255,.08)',
                 'rows'    => $wfaRows,
                 'type'    => 'wfa',
@@ -827,7 +892,7 @@
             ],
             [
                 'title'   => 'Detail Cuti / Izin',
-                'color'   => '#f59e0b',
+                'color'   => '#d97706',
                 'bgColor' => 'rgba(245,158,11,.08)',
                 'rows'    => $cutiRows,
                 'type'    => '',
@@ -846,7 +911,7 @@
         ];
     @endphp
 
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+    <div class="hr-grid-3">
         @foreach($absTableDefs as $tbl)
         <div class="card" style="border-top:3px solid {{ $tbl['color'] }};">
             <div class="card-title" style="margin-bottom:12px;">
@@ -873,8 +938,8 @@
                         @if(($tbl['type'] ?? '') === 'wfa' && !empty($row['work_report']))
                         <tr style="background:rgba(59,190,255,.04);border-bottom:1px solid rgba(59,190,255,.12)!important;">
                             <td colspan="{{ count($tbl['cols']) }}" style="padding:10px 14px 12px;">
-                                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#3bbeff;margin-bottom:4px;">Work Report</div>
-                                <div style="font-size:12px;color:#475569;line-height:1.6;white-space:pre-line;">{{ $row['work_report'] }}</div>
+                                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#0284c7;margin-bottom:4px;">Work Report</div>
+                                <div style="font-size:12px;color:var(--hr-body);line-height:1.6;white-space:pre-line;">{{ $row['work_report'] }}</div>
                             </td>
                         </tr>
                         @endif
@@ -883,7 +948,7 @@
                 </table>
             </div>
             @else
-            <div style="text-align:center;padding:32px 0;color:#64748b;font-size:11px;">
+            <div style="text-align:center;padding:32px 0;color:var(--hr-muted);font-size:11px;">
                 <div style="font-size:28px;opacity:.25;margin-bottom:8px;">📅</div>
                 Tidak ada data
             </div>
@@ -893,11 +958,11 @@
     </div>
 
     {{-- ── TASK LIST + BREAKDOWN ── --}}
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;">
+    <div class="hr-grid-main">
 
         <div class="card">
             <div class="card-title">Detail Task
-                <span style="margin-left:auto;background:#f0f4f8;color:#64748b;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.3px;text-transform:none;">{{ count($taskDetail) }} items</span>
+                <span style="margin-left:auto;background:var(--hr-chip);color:var(--hr-muted);font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.3px;text-transform:none;">{{ count($taskDetail) }} items</span>
             </div>
             @if(count($taskDetail) > 0)
             <div class="task-header">
@@ -910,7 +975,7 @@
             </div>
             <div class="thin-scroll" style="max-height:380px;overflow-y:auto;">
                 @foreach($taskDetail as $t)
-                @php $sc = $statusColors[$t['status']] ?? '#94a3b8'; $sbg = $statusBgAlpha[$t['status']] ?? 'rgba(148,163,184,.12)'; @endphp
+                @php $sc = $statusColors[$t['status']] ?? '#64748b'; $sbg = $statusBgAlpha[$t['status']] ?? 'rgba(148,163,184,.12)'; @endphp
                 <div class="task-row {{ $t['is_late'] ? 'task-row-late' : '' }}">
                     <div>
                         <div class="task-name">{{ $t['nama_task'] }}</div>
@@ -922,19 +987,19 @@
                     </div>
                     <div class="task-date">{{ $t['mulai'] }}</div>
                     <div class="task-date" style="color:{{ $t['is_late'] ? '#ef4444' : '#64748b' }};">{{ $t['deadline'] }}</div>
-                    <div class="task-dur" style="color:{{ $t['status']==='done' ? '#07a0cf' : '#f59e0b' }};">{{ $t['durasi'] }}</div>
-                    <div style="font-size:11px;color:#64748b;line-height:1.5;">
+                    <div class="task-dur" style="color:{{ $t['status']==='done' ? '#07a0cf' : '#d97706' }};">{{ $t['durasi'] }}</div>
+                    <div style="font-size:11px;color:var(--hr-muted);line-height:1.5;">
                         @if($t['done_note'])
                             <span style="font-style:italic;">{{ Str::limit($t['done_note'], 80) }}</span>
                         @else
-                            <span style="color:#cbd5e1;">—</span>
+                            <span style="color:var(--hr-faint);">—</span>
                         @endif
                     </div>
                 </div>
                 @endforeach
             </div>
             @else
-            <div style="text-align:center;padding:48px 0;color:#64748b;font-size:12px;">
+            <div style="text-align:center;padding:48px 0;color:var(--hr-muted);font-size:12px;">
                 <div style="font-size:36px;margin-bottom:10px;opacity:.3;">📋</div>
                 Tidak ada task di periode ini
             </div>
@@ -974,7 +1039,7 @@
     @if(count($doneNotes) > 0)
     <div class="card">
         <div class="card-title">Catatan Penyelesaian
-            <span style="margin-left:auto;background:#f0f4f8;color:#64748b;font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;text-transform:none;">{{ count($doneNotes) }} catatan</span>
+            <span style="margin-left:auto;background:var(--hr-chip);color:var(--hr-muted);font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;text-transform:none;">{{ count($doneNotes) }} catatan</span>
         </div>
         <div class="thin-scroll" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-height:320px;overflow-y:auto;">
             @foreach($doneNotes as $note)
@@ -995,7 +1060,7 @@
     var chartData = {!! $chartJson !!};
 
     var BRAND  = '#07a0cf';
-    var BRAND2 = '#3bbeff';
+    var BRAND2 = '#0284c7';
     var GRID   = '#f1f5f9';
     var FONT   = "'Inter', sans-serif";
 
@@ -1049,13 +1114,13 @@
                 scales: {
                     x: {
                         grid: { display: false },
-                        ticks: { font: { size: 10 }, color: '#94a3b8' },
+                        ticks: { font: { size: 10 }, color: '#64748b' },
                         border: { display: false }
                     },
                     y: {
                         beginAtZero: true,
                         grid: { color: GRID },
-                        ticks: { font: { size: 10 }, color: '#94a3b8', stepSize: 1 },
+                        ticks: { font: { size: 10 }, color: '#64748b', stepSize: 1 },
                         border: { display: false, dash: [4,4] }
                     }
                 }
@@ -1109,7 +1174,7 @@
                 scales: {
                     x: {
                         grid: { display: false },
-                        ticks: { font: { size: 10, family: FONT }, color: '#94a3b8', maxRotation: 0 },
+                        ticks: { font: { size: 10, family: FONT }, color: '#64748b', maxRotation: 0 },
                         border: { display: false }
                     },
                     y: {
@@ -1124,7 +1189,7 @@
                         grid: { color: '#f0f4f8' },
                         ticks: {
                             font: { size: 10, family: FONT },
-                            color: '#94a3b8',
+                            color: '#64748b',
                             stepSize: 5,
                             callback: function(v) {
                                 if (v > 100) return '';

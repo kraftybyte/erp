@@ -187,7 +187,8 @@ class TaskResource extends Resource implements HasShieldPermissions
             ->columns([
                 Tables\Columns\TextColumn::make('nama_task')
                     ->searchable()
-                    ->limit(30)
+                    ->wrap()
+                    ->lineClamp(2)
                     ->label('Judul Task'),
                 Tables\Columns\TextColumn::make('project.nama_perusahaan')
                     ->searchable()
@@ -201,6 +202,7 @@ class TaskResource extends Resource implements HasShieldPermissions
                     ->sortable()
                     ->color(fn (string $state): string => ColorHelper::status($state)),
                 Tables\Columns\TextColumn::make('proritas')
+                    ->label('Prioritas')
                     ->searchable()
                     ->badge()
                     ->sortable()
@@ -216,12 +218,12 @@ class TaskResource extends Resource implements HasShieldPermissions
                     ->badge(),
                 Tables\Columns\TextColumn::make('mulai_task')
                     ->searchable()
-                    ->label('Tanggal Dibuat')
+                    ->label('Mulai')
                     ->sortable()
-                    ->formatStateUsing(fn($state) => Carbon::parse($state)->locale('id')->isoFormat('dddd, D MMMM YYYY')),
+                    ->formatStateUsing(fn($state) => Carbon::parse($state)->locale('id')->translatedFormat('j M Y')),
                 Tables\Columns\TextColumn::make('selesai_task')
                     ->searchable()
-                    ->label('Task Selesai')
+                    ->label('Deadline')
                     ->sortable()
                     ->formatStateUsing(function ($state, $record) {
                         $now = Carbon::now();

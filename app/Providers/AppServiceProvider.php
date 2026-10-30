@@ -122,6 +122,17 @@ class AppServiceProvider extends ServiceProvider
                 ->label('Company')
         ]);
 
+        // Format Indonesia untuk semua tabel: "1.250.000" dan "24 Okt 2026", bukan
+        // "1,250,000.00" dan "Oct 24, 2026". ->rupiah() untuk kolom nominal:
+        // "Rp 1.250.000" tanpa ",00", sama dengan bagian lain aplikasi.
+        Table::$defaultNumberLocale = 'id';
+        Table::$defaultDateDisplayFormat = 'j M Y';
+        Table::$defaultDateTimeDisplayFormat = 'j M Y, H.i';
+        \Filament\Tables\Columns\TextColumn::macro('rupiah', function () {
+            /** @var \Filament\Tables\Columns\TextColumn $this */
+            return $this->formatStateUsing(fn ($state) => is_numeric($state) ? \App\Helpers\Money::signed($state) : $state);
+        });
+
         Table::configureUsing(function (Table $table): void {
             $table
                 ->emptyStateHeading('No data yet')

@@ -132,7 +132,7 @@ protected function mutateFormDataBeforeCreate(array $data): array
                 Tables\Columns\TextColumn::make('total_harga')
                     ->searchable()
                     ->sortable()
-                    ->money('IDR'),
+                    ->rupiah(),
                 Tables\Columns\TextColumn::make('pajak')
                     ->searchable()
                     ->suffix('%'),

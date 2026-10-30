@@ -110,7 +110,7 @@ class PurchaseRequestResource extends Resource
                 ->label('Jumlah'),
             
                 Tables\Columns\TextColumn::make('price')
-                ->money('IDR')
+                ->rupiah()
                 ->label('Harga'),
 
                 Tables\Columns\TextColumn::make('reference_link')

@@ -111,15 +111,20 @@ class ExpenseResource extends Resource
                     ->sortable()
                     ->wrap(),
 
-                Tables\Columns\BadgeColumn::make('category')
-                    ->label('Kategori')
-                    ->sortable()
-                    ->color('info'),
-
+                // Kategori di bawah keterangan; kolom sendiri bisa dimunculkan lagi.
                 Tables\Columns\TextColumn::make('keterangan_expense')
-                    ->label('Keterangan Expense')
+                    ->label('Keterangan')
+                    ->description(fn (Expense $record) => $record->category)
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->lineClamp(2),
+
+                Tables\Columns\TextColumn::make('category')
+                    ->label('Kategori')
+                    ->badge()
+                    ->color('gray')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Nominal')
@@ -130,8 +135,9 @@ class ExpenseResource extends Resource
                     ->label('Rekening')
                     ->formatStateUsing(fn($state, $record) => $state ?? '-')
                     ->badge()
-                    ->color('info')
-                    ->sortable(),
+                    ->color('gray')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -149,9 +155,11 @@ class ExpenseResource extends Resource
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('attachment')
-                    ->label('Lampiran Invoice')
+                    ->label('Nota')
                     ->badge()
-                    ->formatStateUsing(fn($state) => $state ? 'Link Invoice' : 'Belum Ada')
+                    ->color(fn ($state) => $state ? 'info' : 'gray')
+                    ->formatStateUsing(fn($state) => $state ? 'Lihat' : 'Belum ada')
+                    ->placeholder('Belum ada')
                     ->action(function ($record) {
                         if ($record && $record->attachment) {
                             return redirect()->to(asset('storage/' . $record->attachment));
@@ -186,7 +194,7 @@ class ExpenseResource extends Resource
                     ->size('xs')
                     ->icon('heroicon-o-arrow-up-circle')
                     ->color('danger')
-                    ->label('Upload Invoice Pembelian')
+                    ->label('Upload Nota')
                     ->action(function ($record, array $data) {
                         $file = $data['attachment'];
                         if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -449,19 +457,24 @@ class ExpenseResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->hidden(fn($record) => !auth()->user()->can('restore_expense', Expense::class) || $record->status === 'Disetujui' || $record->status === 'Ditolak' || $record->status === 'Dibayarkan' || $record->status === 'Selesai'),
 
+                // Aksi lain di menu ⋮ supaya kolom aksi tidak mendorong tabel keluar layar.
+                Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('selesai')
-                    ->label('Selesaikan Expense')
-                    ->action(function ($record) {
-                        $record->update(['status' => 'Selesai']);
-                    })
-                    ->requiresConfirmation()
-                    ->color('success')
-                    ->icon('heroicon-o-check-circle')
-                    ->hidden(fn($record) => !auth()->user()->can('restore_expense', Expense::class) || $record->status === 'Disetujui' || $record->status === 'Ditolak' || $record->status === 'Selesai'),
+                        ->label('Selesaikan Expense')
+                        ->action(function ($record) {
+                            $record->update(['status' => 'Selesai']);
+                        })
+                        ->requiresConfirmation()
+                        ->color('success')
+                        ->icon('heroicon-o-check-circle')
+                        // Hanya expense yang sudah dibayarkan. Dulu tombolnya juga muncul pada
+                        // expense Pending, sehingga bisa ditutup tanpa disetujui dan dibayar.
+                        ->hidden(fn($record) => !auth()->user()->can('restore_expense', Expense::class) || $record->status !== 'Dibayarkan'),
 
-                Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
-                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
-                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+                    Tables\Actions\ViewAction::make()->label('Detail'),
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make()->label('Hapus'),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

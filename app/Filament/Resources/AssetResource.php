@@ -130,17 +130,17 @@ class AssetResource extends Resource
                 Tables\Columns\ImageColumn::make('foto')
                     ->label('Foto')
                     ->circular(),
-                Tables\Columns\TextColumn::make('uuid')->label('ID Barang')->searchable(),
+                Tables\Columns\TextColumn::make('uuid')->label('ID Barang')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('nama_barang')->label('Nama Barang')->searchable(),
                 Tables\Columns\TextColumn::make('tanggal_pembelian')->label('Tanggal Pembelian')->date(),
-                Tables\Columns\TextColumn::make('pembelian_dari')->label('Pembelian Dari'),
+                Tables\Columns\TextColumn::make('pembelian_dari')->label('Pembelian Dari')->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('kondisi')->label('Kondisi'),
                 Tables\Columns\TextColumn::make('user.firstname')
-                ->label('Penganggung Jawab')
+                ->label('Penanggung Jawab')
                 ->sortable()
                 ->searchable()
                 ->alignment('center'),
-                Tables\Columns\TextColumn::make('harga_barang')->label('Harga')->money('IDR'),
+                Tables\Columns\TextColumn::make('harga_barang')->label('Harga')->rupiah(),
             ])
             ->filters([
                 SelectFilter::make('pembelian_dari')

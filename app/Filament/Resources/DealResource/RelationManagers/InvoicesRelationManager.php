@@ -323,12 +323,12 @@ Forms\Components\Section::make(trans('filament-invoices::messages.invoices.secti
                         ->toggleable(isToggledHiddenByDefault: true),
                     Tables\Columns\TextColumn::make('total')
                         ->label(trans('filament-invoices::messages.invoices.columns.total'))
-                        ->money(locale: 'en', currency: (fn($record) => $record->currency?->iso))
+                        ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
                         ->color('success')
                         ->sortable(),
                     Tables\Columns\TextColumn::make('paid')
                         ->label(trans('filament-invoices::messages.invoices.columns.paid'))
-                        ->money(locale: 'en', currency: (fn($record) => $record->currency?->iso))
+                        ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
                         ->color('info')
                         ->sortable(),
                     Tables\Columns\TextColumn::make('updated_at')

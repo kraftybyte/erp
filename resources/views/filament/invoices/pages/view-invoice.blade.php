@@ -1,172 +1,120 @@
     <div>
         <x-filament-panels::page>
 
+            @php
+                $invoice = $this->getRecord();
+                $money   = fn ($value) => \App\Helpers\Money::inCurrency($value, $invoice->currency?->iso);
+                $date    = fn ($value) => $value ? \Carbon\Carbon::parse($value)->locale('id')->translatedFormat('j M Y') : '—';
+                $subtotal = ($invoice->grand_total + $invoice->total_discount) - ($invoice->total_vat + $invoice->shipping);
+            @endphp
+
+            {{-- Warna dari variabel tema supaya ikut terang/gelap; tata letak
+                 bertumpuk di HP (dulu grid 2 dan 5 kolom tetap). --}}
+            <style>
+                .iv { display: flex; flex-direction: column; gap: 2rem; font-size: .875rem; color: rgb(var(--gray-700)); }
+                .iv-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 18rem); gap: 2rem; }
+                .iv-label { font-size: .75rem; color: rgb(var(--gray-500)); }
+                .iv-strong { font-weight: 600; color: rgb(var(--gray-950)); }
+                .iv-type { font-size: 1.5rem; line-height: 2rem; font-weight: 700; color: rgb(var(--gray-950)); }
+                .iv-meta { display: grid; gap: .5rem; margin-top: 1rem; }
+                .iv-meta div, .iv-totals div { display: flex; justify-content: space-between; gap: 1rem; }
+                .iv-items { border: 1px solid rgba(var(--gray-950), .08); border-radius: .75rem; overflow: hidden; }
+                .iv-row { display: grid; grid-template-columns: minmax(0, 1fr) 9rem 4rem 9rem; gap: .75rem; padding: .875rem 1rem; align-items: start; }
+                .iv-row + .iv-row { border-top: 1px solid rgba(var(--gray-950), .06); }
+                .iv-row.is-head { background: rgba(var(--gray-950), .03); font-size: .75rem; font-weight: 500; color: rgb(var(--gray-500)); }
+                .iv-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+                .iv-row .desc { margin-top: .25rem; font-size: .8125rem; color: rgb(var(--gray-500)); }
+                .iv-row .qty-mobile { display: none; }
+                .iv-totals { display: grid; gap: .5rem; width: min(100%, 22rem); margin-left: auto; font-variant-numeric: tabular-nums; }
+                .iv-totals .grand { padding-top: .75rem; border-top: 1px solid rgba(var(--gray-950), .1); font-size: 1rem; font-weight: 700; color: rgb(var(--gray-950)); }
+                .iv-notes { padding-top: 1.25rem; border-top: 1px solid rgba(var(--gray-950), .08); white-space: pre-line; }
+                .dark .iv { color: rgb(var(--gray-200)); }
+                .dark .iv-label, .dark .iv-row.is-head, .dark .iv-row .desc { color: rgb(var(--gray-300)); }
+                .dark .iv-strong, .dark .iv-type, .dark .iv-totals .grand { color: #fff; }
+                .dark .iv-items { border-color: rgba(255, 255, 255, .1); }
+                .dark .iv-row + .iv-row { border-color: rgba(255, 255, 255, .06); }
+                .dark .iv-row.is-head { background: rgba(255, 255, 255, .03); }
+                .dark .iv-totals .grand, .dark .iv-notes { border-color: rgba(255, 255, 255, .1); }
+                @media (max-width: 640px) {
+                    .iv-head { grid-template-columns: 1fr; }
+                    .iv-row.is-head { display: none; }
+                    .iv-row { grid-template-columns: minmax(0, 1fr) auto; }
+                    .iv-row .price, .iv-row .qty { display: none; }
+                    .iv-row .qty-mobile { display: block; margin-top: .25rem; color: rgb(var(--gray-500)); }
+                }
+            </style>
+
             <x-filament::section>
-                <div class="space-y-12">
-
-                    {{-- ================= HEADER ================= --}}
-                    <div class="grid grid-cols-2 gap-16">
-
-                        {{-- BILL TO --}}
+                <div class="iv">
+                    <div class="iv-head">
                         <div>
-                            <div class="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-3">
-                                Bill To
-                            </div>
-
-                            <div class="text-sm font-bold">
-                                {{ $this->getRecord()->nama_perusahaan ?? 'N/A' }}
-                            </div>
-
-                            <div class="mt-3 text-sm text-gray-600">
-                                {{ $this->getRecord()->alamat ?? 'N/A' }}
-                            </div>
-
-                            <div class="mt-2 text-sm text-gray-600">
-                                {{ $this->getRecord()->telephone ?? 'N/A' }}
-                            </div>
+                            <div class="iv-label">Ditagihkan kepada</div>
+                            <div class="iv-strong mt-1">{{ $invoice->nama_perusahaan ?: '—' }}</div>
+                            @if(filled($invoice->nama_pic) && $invoice->nama_pic !== '-')
+                                <div class="mt-1">u.p. {{ $invoice->nama_pic }}</div>
+                            @endif
+                            @if(filled($invoice->alamat))
+                                <div class="mt-1">{{ $invoice->alamat }}</div>
+                            @endif
+                            @if(filled($invoice->telephone))
+                                <div class="mt-1">{{ $invoice->telephone }}</div>
+                            @endif
                         </div>
 
-                        {{-- INVOICE META --}}
-                        <div class="text-right">
-                            <div class="text-3xl font-bold uppercase">
-                                {{ type_of($this->getRecord()->type, 'invoices', 'type')->name }}
-                            </div>
-
-                            <div class="mt-2 text-sm text-gray-500">
-                                {{ $this->getRecord()->uuid }}
-                            </div>
-
-                            <div class="mt-8 space-y-2 text-sm">
-                                <div class="flex justify-between">
-                                    <span class="text-gray-400">Issue Date</span>
-                                    <span class="font-medium">
-                                        {{ $this->getRecord()->created_at->toDateString() }}
-                                    </span>
-                                </div>
-
-                                <div class="flex justify-between">
-                                    <span class="text-gray-400">Due Date</span>
-                                    <span class="font-medium">
-                                        {{ $this->getRecord()->due_date->toDateString() }}
-                                    </span>
-                                </div>
-
-                                <div class="flex justify-between">
-                                    <span class="text-gray-400">Status</span>
-                                    <span class="font-semibold">
-                                        {{ type_of($this->getRecord()->status, 'invoices', 'status')->name }}
-                                    </span>
-                                </div>
+                        <div>
+                            <div class="iv-type">{{ type_of($invoice->type, 'invoices', 'type')?->name ?? ucfirst((string) $invoice->type) }}</div>
+                            <div class="iv-label mt-1">{{ $invoice->uuid }}</div>
+                            <div class="iv-meta">
+                                <div><span class="iv-label">Tanggal</span><span class="iv-strong">{{ $date($invoice->created_at) }}</span></div>
+                                <div><span class="iv-label">Jatuh tempo</span><span class="iv-strong">{{ $date($invoice->due_date) }}</span></div>
+                                <div><span class="iv-label">Status</span><span class="iv-strong">{{ type_of($invoice->status, 'invoices', 'status')?->name ?? (filled($invoice->status) ? ucfirst($invoice->status) : '—') }}</span></div>
                             </div>
                         </div>
-
                     </div>
 
-
-                    {{-- ================= ITEMS ================= --}}
-                    <div class="border rounded-2xl overflow-hidden">
-
-                        <div class="grid grid-cols-5 bg-gray-50 text-xs uppercase tracking-wide text-gray-500 font-semibold p-4">
-                            <div class="col-span-2">Item</div>
-                            <div class="text-right">Price</div>
-                            <div class="text-right">Qty</div>
-                            <div class="text-right">Total</div>
+                    <div class="iv-items" role="table" aria-label="Item invoice">
+                        <div class="iv-row is-head" role="row">
+                            <span role="columnheader">Item</span>
+                            <span role="columnheader" class="num">Harga</span>
+                            <span role="columnheader" class="num">Qty</span>
+                            <span role="columnheader" class="num">Total</span>
                         </div>
-
-                        @foreach($this->getRecord()->invoicesitems as $item)
-                            <div class="grid grid-cols-5 p-4 border-t text-sm items-start">
-
-                                <div class="col-span-2">
-                                    <div class="font-semibold text-gray-900">
-                                        {{ $item->item }}
-                                    </div>
-
+                        @foreach($invoice->invoicesitems as $item)
+                            <div class="iv-row" role="row">
+                                <div role="cell">
+                                    <div class="iv-strong">{{ $item->item }}</div>
                                     @if($item->description)
-                                        <div class="text-gray-400 text-xs mt-1">
-                                            {!! str($item->description ?? '')->sanitizeHtml() !!}
-                                        </div>
+                                        <div class="desc">{!! str($item->description)->sanitizeHtml() !!}</div>
                                     @endif
+                                    <div class="qty-mobile">{{ \App\Helpers\Money::qty($item->qty) }} × {{ $money($item->price) }}</div>
                                 </div>
-
-                                <div class="text-right">
-                                    <small class="text-xs text-gray-400">
-                                        {{ $this->getRecord()->currency?->iso }}
-                                    </small>
-                                    {{ number_format($item->price, 2) }}
-                                </div>
-
-                                <div class="text-right">
-                                    {{ $item->qty }}
-                                </div>
-
-                                <div class="text-right font-semibold">
-                                    <small class="text-xs text-gray-400">
-                                        {{ $this->getRecord()->currency?->iso }}
-                                    </small>
-                                    {{ number_format($item->total, 2) }}
-                                </div>
-
+                                <div role="cell" class="num price">{{ $money($item->price) }}</div>
+                                <div role="cell" class="num qty">{{ \App\Helpers\Money::qty($item->qty) }}</div>
+                                <div role="cell" class="num iv-strong">{{ $money($item->total) }}</div>
                             </div>
                         @endforeach
-
                     </div>
 
-
-                    {{-- ================= TOTAL ================= --}}
-                    <div class="flex justify-end">
-
-                        <div class="w-96 space-y-3">
-
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-500">Subtotal</span>
-                                <span class="font-medium">
-                                    {{ $this->getRecord()->currency?->iso }}
-                                    {{ number_format(($this->getRecord()->grand_total + $this->getRecord()->total_discount) - ($this->getRecord()->total_vat + $this->getRecord()->shipping), 2) }}
-                                </span>
-                            </div>
-
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-500">Tax</span>
-                                <span>
-                                    {{ $this->getRecord()->currency?->iso }}
-                                    {{ number_format($this->getRecord()->total_vat, 2) }}
-                                </span>
-                            </div>
-
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-500">Discount</span>
-                                <span>
-                                    {{ $this->getRecord()->currency?->iso }}
-                                    {{ number_format($this->getRecord()->total_discount, 2) }}
-                                </span>
-                            </div>
-
-                            <div class="border-t pt-3 flex justify-between text-lg font-bold">
-                                <span>Total</span>
-                                <span>
-                                    {{ $this->getRecord()->currency?->iso }}
-                                    {{ number_format($this->getRecord()->grand_total, 2) }}
-                                </span>
-                            </div>
-
-                        </div>
-
+                    <div class="iv-totals">
+                        <div><span>Subtotal</span><span>{{ $money($subtotal) }}</span></div>
+                        @if((float) $invoice->total_vat)
+                            <div><span>Pajak</span><span>{{ $money($invoice->total_vat) }}</span></div>
+                        @endif
+                        @if((float) $invoice->total_discount)
+                            <div><span>Diskon</span><span>-{{ $money($invoice->total_discount) }}</span></div>
+                        @endif
+                        @if((float) $invoice->shipping)
+                            <div><span>Ongkos kirim</span><span>{{ $money($invoice->shipping) }}</span></div>
+                        @endif
+                        <div class="grand"><span>Total</span><span>{{ $money($invoice->grand_total) }}</span></div>
                     </div>
 
-
-                    {{-- ================= NOTES ================= --}}
-                    @if($this->getRecord()->notes)
-                        <div class="pt-8 border-t">
-                            <div class="text-sm uppercase tracking-wide text-gray-400 font-semibold mb-2">
-                                Notes
-                            </div>
-
-                            <div class="text-sm text-gray-600">
-                                {!! nl2br(e($this->getRecord()->notes)) !!}
-                            </div>
+                    @if($invoice->notes)
+                        <div class="iv-notes">
+                            <div class="iv-label">Catatan</div>
+                            <div class="mt-1">{{ $invoice->notes }}</div>
                         </div>
                     @endif
-
                 </div>
             </x-filament::section>
 

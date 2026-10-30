@@ -42,7 +42,7 @@ class RecentInvoicesTable extends BaseWidget
                     
                 Tables\Columns\TextColumn::make('grand_total')
                     ->label('Total')
-                    ->money('IDR')
+                    ->rupiah()
                     ->sortable(),
                     
                 Tables\Columns\BadgeColumn::make('status')

@@ -76,7 +76,7 @@ class TransactionsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Jumlah')
-                    ->money('IDR')
+                    ->rupiah()
                     ->sortable()
                     ->formatStateUsing(fn($state, $record) => ($record->type === 'in' ? '+' : '-') . ' Rp ' . number_format((float) $state, 0, ',', '.'))
                     ->color(fn($record) => $record->type === 'in' ? 'success' : 'danger')

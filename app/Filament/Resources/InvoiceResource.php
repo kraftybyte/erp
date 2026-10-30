@@ -1228,7 +1228,7 @@ class InvoiceResource extends BaseInvoiceResource
                             'estimate',
                     ])
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 /*
                 |--------------------------------------------------------------------------
@@ -1440,13 +1440,7 @@ class InvoiceResource extends BaseInvoiceResource
                             'filament-invoices::messages.invoices.columns.total'
                         )
                     )
-                    ->money(
-                        locale: 'id',
-                        currency: fn ($record) =>
-                            $record
-                                ->currency?->iso
-                            ?? 'IDR'
-                    )
+                    ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
                     ->color('success')
                     ->searchable(
                         query: fn (Builder $query, string $search) => AmountSearch::apply($query, $search, 'grand_total')
@@ -1470,7 +1464,7 @@ class InvoiceResource extends BaseInvoiceResource
                     )
                     ->date('Y-m-d')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 /*
                 |--------------------------------------------------------------------------
@@ -1608,13 +1602,7 @@ class InvoiceResource extends BaseInvoiceResource
                             'filament-invoices::messages.invoices.columns.paid'
                         )
                     )
-                    ->money(
-                        locale: 'id',
-                        currency: fn ($record) =>
-                            $record
-                                ->currency?->iso
-                            ?? 'IDR'
-                    )
+                    ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
                     ->color('info')
                     ->sortable(),
 
@@ -2484,94 +2472,6 @@ class InvoiceResource extends BaseInvoiceResource
 
                 /*
                 |--------------------------------------------------------------------------
-                | DUPLICATE
-                |--------------------------------------------------------------------------
-                */
-
-                Tables\Actions\Action::make(
-                    'duplicate'
-                )
-                    ->iconButton()
-                    ->color('warning')
-                    ->icon(
-                        'heroicon-s-document-duplicate'
-                    )
-                    ->label(
-                        'Duplicate'
-                    )
-                    ->tooltip(
-                        'Duplicate Invoice'
-                    )
-                    ->action(
-                        function (Invoice $record) {
-
-                            // Generate new UUID with next sequence
-                            $newUuid = Invoice::generateUuid(
-                                $record->type ?? 'sale'
-                            );
-
-                            // Create duplicate
-                            $newInvoice = Invoice::create([
-                                'uuid' => $newUuid,
-                                'date' => now(),
-                                'due_date' => now()->addDays(30),
-                                'type' => $record->type ?? 'sale',
-                                'status' => 'draft',
-                                'type_payment' => $record->type_payment ?? 'full_payment',
-                                'nama_perusahaan' => $record->nama_perusahaan,
-                                'nama_pic' => $record->nama_pic,
-                                'telephone' => $record->telephone,
-                                'alamat' => $record->alamat,
-                                'deal_id' => $record->deal_id,
-                                'po_number' => null,
-                                'faktur' => null,
-                                'delivery_note_number' => null,
-                                'subtotal' => $record->subtotal,
-                                'total_discount' => $record->total_discount,
-                                'total_vat' => $record->total_vat,
-                                'grand_total' => $record->grand_total,
-                                'paid' => 0,
-                                'currency_id' => $record->currency_id,
-                                'notes' => $record->notes,
-                                'user_id' => auth()->id(),
-                            ]);
-
-                            // Copy items
-                            foreach ($record->invoicesItems as $item) {
-                                $newInvoice->invoicesItems()->create([
-                                    'item' => $item->item,
-                                    'description' => $item->description,
-                                    'qty' => $item->qty,
-                                    'price' => $item->price,
-                                    'discount' => $item->discount,
-                                    'vat_percentage' => $item->vat_percentage,
-                                    'vat' => $item->vat,
-                                    'total' => $item->total,
-                                    'original_price' => $item->original_price,
-                                ]);
-                            }
-
-                            Notification::make()
-                                ->title(
-                                    'Invoice Duplicated'
-                                )
-                                ->body(
-                                    'New invoice created: ' . $newUuid
-                                )
-                                ->success()
-                                ->send();
-
-                            // Redirect to edit the new invoice
-                            return redirect()->to(
-                                InvoiceResource::getUrl('edit', [
-                                    'record' => $newInvoice
-                                ])
-                            );
-                        }
-                    ),
-
-                /*
-                |--------------------------------------------------------------------------
                 | PAYMENT
                 |--------------------------------------------------------------------------
                 */
@@ -2762,100 +2662,195 @@ class InvoiceResource extends BaseInvoiceResource
                     ),
 
                 /*
-                |--------------------------------------------------------------------------
-                | PROJECT
-                |--------------------------------------------------------------------------
-                |
-                | Buat project langsung dari invoice ini (cukup pilih kategori), atau
-                | buka project yang sudah dibuat darinya.
-                |--------------------------------------------------------------------------
+                | Aksi lain di menu ⋮. Dulu tujuh ikon berjejer di depan setiap baris
+                | sehingga tabel 750px lebih lebar dari layar; Convert dan Bayar tetap
+                | tampil karena itu langkah kerja berikutnya.
                 */
+                Tables\Actions\ActionGroup::make([
 
-                ProjectFromInvoiceAction::table(),
+                    /*
+                    |--------------------------------------------------------------------------
+                    | DUPLICATE
+                    |--------------------------------------------------------------------------
+                    */
 
-                /*
-                |--------------------------------------------------------------------------
-                | VIEW
-                |--------------------------------------------------------------------------
-                */
-
-                Tables\Actions\ViewAction::make()
-                    ->iconButton()
-                    ->tooltip(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.view_invoice'
-                        )
-                    ),
-
-                /*
-                |--------------------------------------------------------------------------
-                | EDIT
-                |--------------------------------------------------------------------------
-                */
-
-                Tables\Actions\EditAction::make()
-                    ->iconButton()
-                    ->tooltip(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.edit_invoice'
-                        )
-                    ),
-
-                /*
-                |--------------------------------------------------------------------------
-                | DELETE
-                |--------------------------------------------------------------------------
-                */
-
-                Tables\Actions\DeleteAction::make()
-                    ->iconButton()
-                    ->icon(
-                        'heroicon-s-archive-box'
+                    Tables\Actions\Action::make(
+                        'duplicate'
                     )
-                    ->label(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.archive_invoice'
+                        ->iconButton()
+                        ->color('warning')
+                        ->icon(
+                            'heroicon-s-document-duplicate'
                         )
-                    )
-                    ->modalHeading(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.archive_invoice'
+                        ->label(
+                            'Duplicate'
                         )
-                    )
-                    ->tooltip(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.archive_invoice'
+                        ->tooltip(
+                            'Duplicate Invoice'
                         )
-                    ),
+                        ->action(
+                            function (Invoice $record) {
 
-                /*
-                |--------------------------------------------------------------------------
-                | FORCE DELETE
-                |--------------------------------------------------------------------------
-                */
+                                // Generate new UUID with next sequence
+                                $newUuid = Invoice::generateUuid(
+                                    $record->type ?? 'sale'
+                                );
 
-                Tables\Actions\ForceDeleteAction::make()
-                    ->iconButton()
-                    ->tooltip(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.delete_invoice_forever'
+                                // Create duplicate
+                                $newInvoice = Invoice::create([
+                                    'uuid' => $newUuid,
+                                    'date' => now(),
+                                    'due_date' => now()->addDays(30),
+                                    'type' => $record->type ?? 'sale',
+                                    'status' => 'draft',
+                                    'type_payment' => $record->type_payment ?? 'full_payment',
+                                    'nama_perusahaan' => $record->nama_perusahaan,
+                                    'nama_pic' => $record->nama_pic,
+                                    'telephone' => $record->telephone,
+                                    'alamat' => $record->alamat,
+                                    'deal_id' => $record->deal_id,
+                                    'po_number' => null,
+                                    'faktur' => null,
+                                    'delivery_note_number' => null,
+                                    'subtotal' => $record->subtotal,
+                                    'total_discount' => $record->total_discount,
+                                    'total_vat' => $record->total_vat,
+                                    'grand_total' => $record->grand_total,
+                                    'paid' => 0,
+                                    'currency_id' => $record->currency_id,
+                                    'notes' => $record->notes,
+                                    'user_id' => auth()->id(),
+                                ]);
+
+                                // Copy items
+                                foreach ($record->invoicesItems as $item) {
+                                    $newInvoice->invoicesItems()->create([
+                                        'item' => $item->item,
+                                        'description' => $item->description,
+                                        'qty' => $item->qty,
+                                        'price' => $item->price,
+                                        'discount' => $item->discount,
+                                        'vat_percentage' => $item->vat_percentage,
+                                        'vat' => $item->vat,
+                                        'total' => $item->total,
+                                        'original_price' => $item->original_price,
+                                    ]);
+                                }
+
+                                Notification::make()
+                                    ->title(
+                                        'Invoice Duplicated'
+                                    )
+                                    ->body(
+                                        'New invoice created: ' . $newUuid
+                                    )
+                                    ->success()
+                                    ->send();
+
+                                // Redirect to edit the new invoice
+                                return redirect()->to(
+                                    InvoiceResource::getUrl('edit', [
+                                        'record' => $newInvoice
+                                    ])
+                                );
+                            }
+                        ),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | PROJECT
+                    |--------------------------------------------------------------------------
+                    |
+                    | Buat project langsung dari invoice ini (cukup pilih kategori), atau
+                    | buka project yang sudah dibuat darinya.
+                    |--------------------------------------------------------------------------
+                    */
+
+                    ProjectFromInvoiceAction::table(),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | VIEW
+                    |--------------------------------------------------------------------------
+                    */
+
+                    Tables\Actions\ViewAction::make()
+                        ->iconButton()
+                        ->tooltip(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.view_invoice'
+                            )
+                        ),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | EDIT
+                    |--------------------------------------------------------------------------
+                    */
+
+                    Tables\Actions\EditAction::make()
+                        ->iconButton()
+                        ->tooltip(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.edit_invoice'
+                            )
+                        ),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | DELETE
+                    |--------------------------------------------------------------------------
+                    */
+
+                    Tables\Actions\DeleteAction::make()
+                        ->iconButton()
+                        ->icon(
+                            'heroicon-s-archive-box'
                         )
-                    ),
-
-                /*
-                |--------------------------------------------------------------------------
-                | RESTORE
-                |--------------------------------------------------------------------------
-                */
-
-                Tables\Actions\RestoreAction::make()
-                    ->iconButton()
-                    ->tooltip(
-                        trans(
-                            'filament-invoices::messages.invoices.actions.restore_invoice'
+                        ->label(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.archive_invoice'
+                            )
                         )
-                    ),
+                        ->modalHeading(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.archive_invoice'
+                            )
+                        )
+                        ->tooltip(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.archive_invoice'
+                            )
+                        ),
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | FORCE DELETE
+                    |--------------------------------------------------------------------------
+                    */
+
+                    Tables\Actions\ForceDeleteAction::make()
+                        ->iconButton()
+                        ->tooltip(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.delete_invoice_forever'
+                            )
+                        ),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RESTORE
+                    |--------------------------------------------------------------------------
+                    */
+
+                    Tables\Actions\RestoreAction::make()
+                        ->iconButton()
+                        ->tooltip(
+                            trans(
+                                'filament-invoices::messages.invoices.actions.restore_invoice'
+                            )
+                        ),
+                ]),
             ])
 
             /* =====================================================
