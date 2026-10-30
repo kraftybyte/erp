@@ -19,4 +19,16 @@ class Money
 
         return rtrim(rtrim(number_format((float) $amount, 2, '.', ''), '0'), '.');
     }
+
+    /** "Rp 1.250.000"; tanda minus dibuang, labelnya yang menjelaskan arah. */
+    public static function rupiah(mixed $amount): string
+    {
+        return 'Rp ' . number_format(abs((float) $amount), 0, ',', '.');
+    }
+
+    /** Jumlah barang: 2.00 → "2", 1.50 → "1,5". */
+    public static function qty(mixed $value): string
+    {
+        return rtrim(rtrim(number_format((float) $value, 2, ',', '.'), '0'), ',');
+    }
 }

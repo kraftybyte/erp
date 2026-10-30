@@ -105,8 +105,9 @@ class ExpenseResource extends Resource
 
                 Tables\Columns\TextColumn::make('user.firstname')
                     ->label('Permohonan User')
-                    ->formatStateUsing(fn($state, $record) => $record->user->firstname . ' ' . $record->user->lastname)
-                    ->description(fn(Expense $record): string => $record->submission_date, position: 'after')
+                    ->formatStateUsing(fn($state, $record) => $record->user?->fullName ?? '-')
+                    // Dulu tampil mentah "2026-08-24 00:00:00".
+                    ->description(fn(Expense $record): string => $record->submission_date?->format('d M Y') ?? '', position: 'below')
                     ->sortable()
                     ->wrap(),
 

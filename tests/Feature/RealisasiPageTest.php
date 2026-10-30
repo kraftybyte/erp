@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\AdvanceResource\Pages\RealisasiAdvance;
+use App\Filament\Resources\AdvanceResource\Pages\ViewAdvance;
 use App\Models\Advance;
 use App\Models\Project;
 use App\Models\User;
@@ -122,6 +123,75 @@ class RealisasiPageTest extends TestCase
 
         $this->assertSame(Advance::STATUS_DISETUJUI, $advance->fresh()->status);
         $this->assertFalse(\App\Models\Transaction::where('reference_type', 'advance_return')->where('reference_id', $advance->id)->exists());
+    }
+
+    public function test_view_advance_menampilkan_semua_batch_dan_jalan_ke_realisasi(): void
+    {
+        $owner   = $this->user('Staff');
+        $this->actingAs($this->user('Finance'));
+        $project = Project::create(['nama_project' => 'Video Profile', 'nama_perusahaan' => 'PT Nestory', 'nama_pic' => 'Budi', 'status' => 'in_progress']);
+        $advance = $this->advance($owner, 2_000_000, $project);
+        $service = app(RealisasiService::class);
+        $service->createBatch($advance, ['uploaded_by' => $owner->id], [['name' => 'Sewa lighting', 'quantity' => 2, 'price' => 350_000]]);
+        $service->createBatch($advance->fresh(), ['uploaded_by' => $owner->id], [['name' => 'Konsumsi kru', 'quantity' => 1, 'price' => 200_000]]);
+        $advance->update(['status' => Advance::STATUS_REALIZED_USER, 'reference_number' => 'TRF-0912']);
+
+        Livewire::test(ViewAdvance::class, ['record' => $advance->getRouteKey()])
+            ->assertOk()
+            ->assertSee('Budi - PT Nestory | Video Profile')   // dulu hanya nama perusahaan
+            ->assertSee('TRF-0912')                             // dulu selalu "-" (kolom salah)
+            ->assertSee('Sewa lighting')
+            ->assertSee('Konsumsi kru')                         // batch kedua dulu terpotong
+            ->assertSee('Rp 900.000')
+            ->assertActionVisible('realisasi');                 // dulu tidak ada untuk status ini
+
+        $pending = $this->advance($owner, 500_000, status: Advance::STATUS_DISETUJUI);
+        Livewire::test(ViewAdvance::class, ['record' => $pending->getRouteKey()])
+            ->assertSee('Realisasi bisa dicatat setelah advance dicairkan.')
+            ->assertActionHidden('realisasi');
+    }
+
+    public function test_daftar_advance_menampilkan_ringkasan_realisasi(): void
+    {
+        $owner   = $this->user('Staff');
+        $this->actingAs($this->user('Finance'));
+        $advance = $this->advance($owner, 1_000_000);
+        app(RealisasiService::class)->createBatch($advance, ['uploaded_by' => $owner->id], [['name' => 'Bensin', 'quantity' => 1, 'price' => 400_000]]);
+
+        Livewire::test(\App\Filament\Resources\AdvanceResource\Pages\ListAdvances::class)
+            ->assertOk()
+            ->assertSee('Rp 400.000')
+            ->assertSee('40% · sisa Rp 600.000')
+            ->assertDontSee('Dicairkan Rp 1.000.000');   // sama dengan yang diajukan, tidak diulang
+    }
+
+    public function test_tombol_bayarkan_hanya_untuk_advance_yang_disetujui(): void
+    {
+        $this->actingAs($this->user('super_admin'));
+        $owner      = $this->user('Staff');
+        $disetujui  = $this->advance($owner, 500_000, status: Advance::STATUS_DISETUJUI);
+        $realisasi  = $this->advance($owner, 500_000);
+        $realisasi->update(['status' => Advance::STATUS_REALIZED_USER]);
+
+        Livewire::test(\App\Filament\Resources\AdvanceResource\Pages\ListAdvances::class)
+            ->assertTableActionVisible('convert_to_pay', $disetujui)
+            ->assertTableActionHidden('convert_to_pay', $realisasi)   // dulu tampil walau sudah dibayar
+            ->assertTableActionVisible('realisasi', $realisasi);
+    }
+
+    public function test_selesaikan_dari_daftar_yang_belum_siap_memberi_pesan_bukan_error(): void
+    {
+        $this->actingAs($this->user('super_admin'));
+        $owner   = $this->user('Staff');
+        $advance = $this->advance($owner, 1_000_000);
+        app(RealisasiService::class)->createBatch($advance, ['uploaded_by' => $owner->id], [['name' => 'Bensin', 'quantity' => 1, 'price' => 400_000]]);
+        $advance->update(['status' => Advance::STATUS_REALIZED_USER]);
+
+        Livewire::test(\App\Filament\Resources\AdvanceResource\Pages\ListAdvances::class)
+            ->callTableAction('selesai', $advance)
+            ->assertNotified('Advance belum bisa diselesaikan');
+
+        $this->assertSame(Advance::STATUS_REALIZED_USER, $advance->fresh()->status);
     }
 
     // =================================================================

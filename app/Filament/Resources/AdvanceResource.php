@@ -6,7 +6,7 @@ use App\Filament\Filters\SubmissionDateFilter;
 use App\Enums\FinanceCategory;
 use App\Filament\Resources\AdvanceResource\Pages;
 use App\Filament\Resources\AdvanceResource\RelationManagers;
-use App\Helpers\ColorHelper;
+use App\Helpers\ClientLabel;
 use App\Helpers\Money;
 use App\Models\Advance;
 use App\Models\PaymentAccount;
@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use App\Models\Project;
 
 class AdvanceResource extends Resource 
@@ -159,97 +160,78 @@ class AdvanceResource extends Resource
                     ->size('sm'),
 
                 Tables\Columns\TextColumn::make('user.fullName')
-                    ->label('User')
+                    ->label('Pemohon')
                     ->description(fn (Advance $record): string => $record->submission_date?->format('d M Y') ?? '', position: 'below')
-                    ->sortable()
-                    ->wrap(),
+                    ->sortable(),
 
-                Tables\Columns\BadgeColumn::make('category')
+                Tables\Columns\TextColumn::make('category')
                     ->label('Kategori')
-                    ->sortable()
-                    ->color('info'),
-
-Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
-    ->label('Project')
-    ->sortable()
-    ->wrap()
-    ->formatStateUsing(function ($record) {
-        $deal = $record->project?->deal;
-
-        if (!$deal) {
-            return '-';
-        }
-
-        $namaPic = $deal->nama_pic === '-' || empty($deal->nama_pic)
-            ? '(Pribadi)'
-            : $deal->nama_pic;
-
-        return $namaPic . ' - ' . $deal->nama_perusahaan;
-    }),
-
-                Tables\Columns\TextColumn::make('paid')
-                    ->label('Dibayarkan')
-                    ->sortable()
-                    ->formatStateUsing(fn($state) => $state ? 'Rp ' . number_format((float)$state, 0, ',', '.') : '-')
-                    ->color('info'),
-
-                Tables\Columns\TextColumn::make('amount')
-                    ->label('Diajukan')
-                    ->sortable()
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format((float)($state ?? 0), 0, ',', '.'))
-                    ->color('primary'),
-
-                Tables\Columns\TextColumn::make('total_realisasi_display')
-                    ->label('Terealisasi')
-                    ->alignCenter()
-                    ->getStateUsing(function (Advance $record): string {
-                        $total = $record->realizasis->flatMap->items->sum('subtotal');
-                        $paid = (float) ($record->paid ?? 0);
-                        if ($paid <= 0) return '-';
-                        $pct = round(($total / $paid) * 100);
-                        return 'Rp ' . number_format($total, 0, ',', '.') . " ({$pct}%)";
-                    })
                     ->badge()
-                    ->color(fn (Advance $record): string => match(true) {
-                        $record->realizasis->flatMap->items->sum('subtotal') >= (float)$record->paid => 'success',
-                        default => 'warning',
+                    ->sortable()
+                    ->color('gray')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // Klien di baris pertama, nama project di bawahnya (dulu hanya
+                // perusahaan dari deal, tanpa nama project).
+                Tables\Columns\TextColumn::make('project.nama_project')
+                    ->label('Project')
+                    ->state(fn (Advance $record) => $record->project ? (ClientLabel::projectParts($record->project)[0] ?? '-') : '-')
+                    ->description(fn (Advance $record) => $record->project ? ClientLabel::projectParts($record->project)[1] : null)
+                    ->wrap()
+                    ->extraAttributes(['style' => 'min-width: 12rem']),
+
+                // Diajukan dan dicairkan dalam satu kolom supaya tabel muat di layar.
+                Tables\Columns\TextColumn::make('amount')
+                    ->label('Nominal')
+                    ->sortable()
+                    ->alignEnd()
+                    ->formatStateUsing(fn ($state) => Money::rupiah($state))
+                    ->description(fn (Advance $record) => match (true) {
+                        (float) $record->paid <= 0                              => 'Belum dicairkan',
+                        (float) $record->paid !== (float) $record->amount       => 'Dicairkan ' . Money::rupiah($record->paid),
+                        default                                                 => null,
                     }),
 
-                Tables\Columns\TextColumn::make('remaining_display')
-                    ->label('Sisa')
-                    ->alignCenter()
-                    ->getStateUsing(function (Advance $record): string {
-                        $total = $record->realizasis->flatMap->items->sum('subtotal');
-                        $paid = (float) ($record->paid ?? 0);
-                        $remaining = $paid - $total;
-                        if ($paid <= 0) return '-';
-                        if ($remaining <= 0) return '-';
-                        return 'Rp ' . number_format($remaining, 0, ',', '.');
+                Tables\Columns\TextColumn::make('realisasi_display')
+                    ->label('Realisasi')
+                    ->alignEnd()
+                    ->state(function (Advance $record): string {
+                        if ((float) $record->paid <= 0) {
+                            return '-';
+                        }
+
+                        return Money::rupiah($record->realizasis->flatMap->items->sum('subtotal'));
                     })
-                    ->color(fn (Advance $record): string => match(true) {
-                        ($record->paid ?? 0) > 0 && (float)$record->paid <= $record->realizasis->flatMap->items->sum('subtotal') => 'success',
-                        default => 'danger',
-                    }),
+                    ->description(function (Advance $record): ?string {
+                        $paid = (float) $record->paid;
+                        if ($paid <= 0) {
+                            return null;
+                        }
+
+                        $total     = (float) $record->realizasis->flatMap->items->sum('subtotal');
+                        $remaining = $paid - $total;
+                        $pct       = round($total / $paid * 100);
+
+                        return "{$pct}% · " . match (true) {
+                            $remaining > 0 => 'sisa ' . Money::rupiah($remaining),
+                            $remaining < 0 => 'lebih ' . Money::rupiah($remaining),
+                            default        => 'pas',
+                        };
+                    })
+                    ->tooltip(fn (Advance $record) => $record->realizasis->count() . ' batch realisasi'),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->sortable()
                     ->badge()
-                    ->alignCenter()
-                    ->color(fn ($record) => ColorHelper::status($record->status))
-                    ->description(fn($record) => match ($record->status) {
-                        'Ditolak' => $record->rejection_reason ?? '',
-                        'Dibayarkan' => $record->paidBy ? 'by ' . $record->paidBy->fullName : null,
-                        default => null,
+                    ->formatStateUsing(fn (Advance $record) => $record->getStatusLabel())
+                    ->color(fn (Advance $record) => $record->getStatusBadgeClass())
+                    ->description(fn (Advance $record) => match ($record->status) {
+                        Advance::STATUS_DITOLAK    => Str::limit((string) $record->rejection_reason, 60) ?: null,
+                        Advance::STATUS_DIBAYARKAN => $record->paidBy ? 'oleh ' . $record->paidBy->fullName : null,
+                        default                    => null,
                     })
                     ->wrap(),
-
-                Tables\Columns\TextColumn::make('batch_count')
-                    ->label('Batch')
-                    ->alignCenter()
-                    ->getStateUsing(fn (Advance $record): string => (string) $record->realizasis->count())
-                    ->badge()
-                    ->color('gray'),
             ])
             ->filters([
                 SubmissionDateFilter::make(),
@@ -277,7 +259,10 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                 ->color('gray')
                 ->label('Realisasi')
                 ->url(fn ($record) => '/admin/advances/' . $record->id . '/realisasi')
-                ->visible(fn ($record) => in_array($record->status, ['Dibayarkan', 'Sedang di-Realisasi User'])),
+                ->visible(fn ($record) => in_array($record->status, [
+                    Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER,
+                    Advance::STATUS_READY_TO_CLOSE, Advance::STATUS_SELESAI,
+                ], true)),
 
                 Tables\Actions\Action::make('convert_to_pay')
                     ->button()
@@ -398,9 +383,12 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                         ->requiresConfirmation()
                         ->color('success')
                         ->icon('heroicon-o-credit-card')
+                        // Hanya advance yang sudah disetujui dan belum dibayar. Dulu tombolnya
+                        // juga muncul pada advance yang sedang direalisasi (sudah dibayar);
+                        // aksinya menolak, tapi tombolnya menyesatkan.
                         ->hidden(fn($record) =>
                         !Auth::user()?->can('restore_advance') ||
-                        in_array($record->status, ['Pending','Dibayarkan','Selesai','Ditolak'])
+                        $record->status !== Advance::STATUS_DISETUJUI
                     ),
 
                 /*
@@ -439,54 +427,65 @@ Tables\Columns\TextColumn::make('project.deal.nama_perusahaan')
                     $record->status !== Advance::STATUS_PENDING
                 ),
 
-                // Action untuk menyetujui overrun
-                Tables\Actions\Action::make('approveOverrun')
-                    ->label('Setujui Overrun')
-                    ->action(function ($record) {
-                        $service = new \App\Services\RealisasiService();
-                        $service->approveOverrun($record);
-                    })
-                    ->requiresConfirmation()
-                    ->color('warning')
-                    ->icon('heroicon-o-check-circle')
-                    ->hidden(fn($record) =>
-                    !Auth::user()?->can('restore_advance') ||
-                    $record->overrun_approved_by !== null ||
-                    !in_array($record->status, ['Sedang di-Realisasi User'])
-                ),
+                // Aksi lain di menu ⋮ supaya kolom aksi tidak mendorong tabel keluar layar;
+                // persetujuan kelebihan dan penyelesaian juga ada di halaman Realisasi.
+                Tables\Actions\ActionGroup::make([
+                    // Action untuk menyetujui overrun
+                    Tables\Actions\Action::make('approveOverrun')
+                        ->label('Setujui Overrun')
+                        ->action(function ($record) {
+                            $service = new \App\Services\RealisasiService();
+                            $service->approveOverrun($record);
+                        })
+                        ->requiresConfirmation()
+                        ->color('warning')
+                        ->icon('heroicon-o-check-circle')
+                        ->hidden(fn($record) =>
+                        !Auth::user()?->can('restore_advance') ||
+                        $record->overrun_approved_by !== null ||
+                        !in_array($record->status, ['Sedang di-Realisasi User'])
+                    ),
 
 
-                Tables\Actions\Action::make('selesai')
-                    ->label('Selesaikan Advance')
-                    ->action(function ($record) {
-                        $service = new \App\Services\RealisasiService();
+                    Tables\Actions\Action::make('selesai')
+                        ->label('Selesaikan Advance')
+                        ->action(function ($record) {
+                            $service = new \App\Services\RealisasiService();
 
-                        // Check if ready to close
-                        if (!$service->isReadyToClose($record)) {
-                            throw new \InvalidArgumentException('Advance belum siap untuk diselesaikan. Pastikan total realization sudah sesuai atau overrun sudah disetujui.');
-                        }
+                            // Ditolak dengan pesan; dulu exception membuat halaman error.
+                            $totalRealisasi = $service->getTotalRealisasi($record);
+                            $remaining = (float) $record->paid - $totalRealisasi;
+                            $refusal = match (true) {
+                                $remaining < 0 && !$record->overrun_approved_by => 'Kelebihan realisasi belum disetujui Finance.',
+                                !$service->isReadyToClose($record)             => 'Realisasi belum sama dengan nominal yang dicairkan. Catat pengembalian sisa atau setujui kelebihannya dulu.',
+                                default                                         => null,
+                            };
 
-                        // Check if overrun exists and not approved
-                        $totalRealisasi = $service->getTotalRealisasi($record);
-                        $remaining = (float) $record->paid - $totalRealisasi;
-                        if ($remaining < 0 && !$record->overrun_approved_by) {
-                            throw new \InvalidArgumentException('Overrun belum disetujui Finance.');
-                        }
+                            if ($refusal) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Advance belum bisa diselesaikan')
+                                    ->body($refusal)
+                                    ->warning()
+                                    ->send();
 
-                        // Finish the advance
-                        $service->finishAdvance($record);
-                    })
-                    ->requiresConfirmation()
-                    ->color('success')
-                    ->icon('heroicon-o-check-circle')
-                    ->hidden(fn($record) =>
-                    !Auth::user()?->can('restore_advance') ||
-                    !in_array($record->status, ['Sedang di-Realisasi User'])
-                ),
+                                return;
+                            }
 
-                Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
-                Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
-                Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Delete'),
+                            // Finish the advance
+                            $service->finishAdvance($record);
+                        })
+                        ->requiresConfirmation()
+                        ->color('success')
+                        ->icon('heroicon-o-check-circle')
+                        ->hidden(fn($record) =>
+                        !Auth::user()?->can('restore_advance') ||
+                        !in_array($record->status, ['Sedang di-Realisasi User'])
+                    ),
+
+                    Tables\Actions\ViewAction::make()->label('Detail'),
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make()->label('Hapus'),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

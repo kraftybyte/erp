@@ -255,32 +255,7 @@ class RealisasiAdvance extends Page
         $this->totalRealisasi = $service->getTotalRealisasi($this->record);
         $this->remaining = (float) $this->record->paid - $this->totalRealisasi;
         $this->progressPercentage = $service->getProgressPercentage($this->record);
-        $this->batches = $service->getBatchesWithDetails($this->record)
-            ->map(fn ($b) => [
-                'id' => $b->id,
-                'batch_number' => $b->batch_number,
-                'notes' => $b->notes,
-                'created_at' => $b->created_at->toIso8601String(),
-                'uploaded_by_name' => $b->uploadedBy->fullName ?? 'Unknown',
-                'total_amount' => $b->getTotalAmount(),
-                'items' => $b->items->map(fn ($i) => [
-                    'id' => $i->id,
-                    'name' => $i->name,
-                    'description' => $i->description,
-                    'quantity' => $i->quantity,
-                    'price' => $i->price,
-                    'subtotal' => $i->subtotal,
-                    'files' => $i->files->map(fn ($f) => [
-                        'id' => $f->id,
-                        'original_name' => $f->original_name,
-                        'filepath' => $f->filepath,
-                        'filesize' => $f->filesize,
-                        'mime_type' => $f->mime_type,
-                        'is_image' => $f->isImage(),
-                        'is_pdf' => $f->isPdf(),
-                    ])->all(),
-                ])->all(),
-            ])->all();
+        $this->batches = $service->batchesForDisplay($this->record);
         $evaluation = $service->evaluateStatus($this->record);
         $this->status = $evaluation['status'];
         $this->statusMessage = $evaluation['message'];
