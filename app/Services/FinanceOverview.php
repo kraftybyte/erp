@@ -34,7 +34,7 @@ class FinanceOverview
         Advance::STATUS_SELESAI,
     ];
 
-    private const INVOICE_CANCELLED = ['cancelled', 'canceled', 'batal', 'ditolak'];
+    public const INVOICE_CANCELLED = ['cancelled', 'canceled', 'batal', 'ditolak'];
 
     private ?ReportPeriod $period = null;
 

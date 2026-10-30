@@ -5,8 +5,11 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ProjectResource\Pages;
 use App\Filament\Resources\ProjectResource\Pages\PackingSlip;
 use App\Helpers\ColorHelper;
+use App\Helpers\Money;
 use App\Models\Deal;
+use App\Models\Invoice;
 use App\Models\Project;
+use App\Services\ProjectProfit;
 use App\Settings\GeneralSettings;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -97,8 +100,25 @@ class ProjectResource extends Resource
                                 $set('nama_pic', $deal?->nama_pic);
                                 $set('status', $deal?->status);
                             }
+                            $set('invoice_id', null);
                         })
                         ->default(request()->get('deal_id')),
+                            // Pembayaran invoice ini (beserta DP/pelunasannya) menjadi uang masuk project.
+                            Forms\Components\Select::make('invoice_id')
+                                ->label('Invoice')
+                                ->options(fn (callable $get) => Invoice::query()
+                                    ->whereNull('deleted_at')
+                                    ->where(fn (Builder $query) => $query
+                                        ->where('deal_id', $get('deal_id') ?: 0)
+                                        ->orWhere('id', $get('invoice_id') ?: 0))
+                                    ->orderByDesc('date')
+                                    ->get()
+                                    ->mapWithKeys(fn (Invoice $invoice) => [
+                                        $invoice->id => $invoice->uuid . ' · ' . Money::rupiah($invoice->grand_total) . ($invoice->type === 'estimate' ? ' (proforma)' : ''),
+                                    ]))
+                                ->searchable()
+                                ->placeholder('Semua invoice client ini')
+                                ->helperText('Pilih bila client ini punya beberapa project, supaya pembayarannya terhitung di project yang benar.'),
                             Forms\Components\Select::make('nama_project')
                                 ->label('Kategori Project')
                                 ->required()
@@ -245,6 +265,73 @@ class ProjectResource extends Resource
                 })
                 ->sortable(query: fn (Builder $query, string $direction) => $query->orderBy('timeline_selesai', $direction)),
 
+            // Keuangan project, hanya untuk Director, Finance, dan super_admin (lihat ProjectProfit).
+            // Laba saja yang tampil; uang masuk dan biaya bisa dimunculkan lewat pilihan kolom.
+            Tables\Columns\TextColumn::make('uang_masuk')
+                ->label('Uang masuk')
+                ->visible(fn () => ProjectProfit::visibleTo(auth()->user()))
+                ->state(fn (Project $record, $livewire) => self::profit($livewire, $record)['received'] ?? null)
+                ->rupiah()
+                ->placeholder('—')
+                ->description(function (Project $record, $livewire): ?string {
+                    $profit = self::profit($livewire, $record);
+
+                    return match (true) {
+                        ($profit['shared'] ?? 0) > 0      => "Invoice client dipakai {$profit['shared']} project",
+                        ($profit['outstanding'] ?? 0) > 0 => Money::rupiah($profit['outstanding']) . ' belum dibayar',
+                        default                           => null,
+                    };
+                })
+                ->toggleable(isToggledHiddenByDefault: true),
+
+            Tables\Columns\TextColumn::make('biaya')
+                ->label('Biaya')
+                ->visible(fn () => ProjectProfit::visibleTo(auth()->user()))
+                ->state(fn (Project $record, $livewire) => self::profit($livewire, $record)['cost'] ?? null)
+                ->rupiah()
+                ->description(function (Project $record, $livewire): ?string {
+                    $pending = self::profit($livewire, $record)['expense_pending'] ?? 0;
+
+                    return $pending > 0 ? '+ ' . Money::rupiah($pending) . ' expense menunggu' : null;
+                })
+                ->toggleable(isToggledHiddenByDefault: true),
+
+            Tables\Columns\TextColumn::make('laba')
+                ->label('Laba')
+                ->visible(fn () => ProjectProfit::visibleTo(auth()->user()))
+                ->state(fn (Project $record, $livewire) => self::profit($livewire, $record)['profit'] ?? null)
+                ->rupiah()
+                ->placeholder('—')
+                ->weight('semibold')
+                ->color(fn ($state) => $state === null ? null : ($state < 0 ? 'danger' : 'success'))
+                ->description(function (Project $record, $livewire): ?string {
+                    $profit = self::profit($livewire, $record);
+
+                    return match (true) {
+                        $profit === null           => null,
+                        $profit['shared'] > 0      => "Invoice client dipakai {$profit['shared']} project",
+                        $profit['margin'] !== null => 'Margin ' . number_format($profit['margin'], 1, ',', '.') . '%',
+                        $profit['outstanding'] > 0 => 'Belum ada uang masuk · ' . Money::rupiah($profit['outstanding']) . ' ditagih',
+                        default                    => 'Belum ada uang masuk',
+                    };
+                })
+                ->sortable(query: function (Builder $query, string $direction): Builder {
+                    // Laba bukan kolom tabel: urutan project dihitung dulu, lalu dipakai di SQL.
+                    $order = collect(app(ProjectProfit::class)->summaries())
+                        ->sortBy(fn (array $summary) => $summary['profit'] ?? PHP_FLOAT_MAX)
+                        ->keys()
+                        ->values();
+
+                    if ($order->isEmpty()) {
+                        return $query;
+                    }
+
+                    $cases = $order->map(fn (int $id, int $rank) => "WHEN {$id} THEN {$rank}")->implode(' ');
+
+                    return $query->orderByRaw("CASE projects.id {$cases} ELSE {$order->count()} END " . ($direction === 'desc' ? 'desc' : 'asc'));
+                })
+                ->toggleable(),
+
              ])
              ->defaultSort('created_at', 'desc')
              ->filters([
@@ -274,6 +361,11 @@ class ProjectResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    private static function profit(mixed $livewire, Project $record): ?array
+    {
+        return $livewire instanceof Pages\ListProjects ? $livewire->profit($record) : null;
     }
 
     public static function getRelations(): array

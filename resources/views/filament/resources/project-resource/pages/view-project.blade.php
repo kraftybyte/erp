@@ -42,6 +42,31 @@
         .pv-people span { display: inline-flex; width: 1.75rem; height: 1.75rem; margin-left: -.375rem; align-items: center; justify-content: center; border-radius: 9999px;
                           font-size: .6875rem; font-weight: 600; color: rgb(var(--gray-700)); background: rgb(var(--gray-100)); box-shadow: 0 0 0 2px #fff; }
         .dark .pv-people span { color: rgb(var(--gray-200)); background: rgb(var(--gray-700)); box-shadow: 0 0 0 2px rgb(var(--gray-900)); }
+
+        .pv-money { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1.25rem 1.5rem; }
+        .pv-money dt { font-size: .875rem; color: rgb(var(--gray-500)); }
+        .pv-money dd { margin: .25rem 0 0; font-size: 1.5rem; line-height: 2rem; font-weight: 600; color: rgb(var(--gray-950)); font-variant-numeric: tabular-nums; }
+        .pv-money p { margin-top: .125rem; font-size: .8125rem; color: rgb(var(--gray-500)); }
+        .pv-money .is-loss { color: rgb(var(--danger-600)); }
+        .pv-money .is-profit { color: rgb(var(--success-600)); }
+        .dark .pv-money dt, .dark .pv-money p { color: rgb(var(--gray-300)); }
+        .dark .pv-money dd { color: #fff; }
+        .dark .pv-money .is-loss { color: rgb(var(--danger-400)); }
+        .dark .pv-money .is-profit { color: rgb(var(--success-400)); }
+        .pv-note { margin-top: 1rem; font-size: .8125rem; line-height: 1.5; color: rgb(var(--gray-500)); }
+        .dark .pv-note { color: rgb(var(--gray-300)); }
+
+        .pv-table-wrap { overflow-x: auto; margin: -.5rem 0; }
+        /* Di layar sempit tabel digeser ke samping di dalam kotaknya, bukan dipadatkan per kata. */
+        .pv-table { width: 100%; min-width: 44rem; font-size: .875rem; border-collapse: collapse; }
+        .pv-table th { padding: .5rem .75rem .5rem 0; text-align: left; font-weight: 500; color: rgb(var(--gray-500)); white-space: nowrap; }
+        .pv-table td { padding: .625rem .75rem .625rem 0; border-top: 1px solid rgba(var(--gray-950), .06); color: rgb(var(--gray-950)); vertical-align: top; }
+        .pv-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .pv-table .muted { color: rgb(var(--gray-500)); }
+        .pv-table td.muted { white-space: nowrap; }
+        .pv-table tfoot td { font-weight: 600; }
+        .dark .pv-table th, .dark .pv-table .muted { color: rgb(var(--gray-300)); }
+        .dark .pv-table td { color: #fff; border-color: rgba(255, 255, 255, .08); }
     </style>
 
     <div x-data="{ tab: 'overview' }" class="flex flex-col gap-6">
@@ -61,6 +86,9 @@
                 Tasks
                 <x-slot name="badge">{{ $tasks->count() }}</x-slot>
             </x-filament::tabs.item>
+            @if($finance)
+                <x-filament::tabs.item alpine-active="tab === 'finance'" x-on:click="tab = 'finance'">Keuangan</x-filament::tabs.item>
+            @endif
         </x-filament::tabs>
 
         <div x-show="tab === 'overview'" class="pv-grid">
@@ -147,5 +175,156 @@
                 @endforelse
             </x-filament::section>
         </div>
+
+        @if($finance)
+            @php
+                $sum  = $finance['summary'];
+                $rp   = fn ($amount) => \App\Helpers\Money::signed($amount);
+                $kind = fn ($invoice) => match (\App\Services\FinanceOverview::invoiceKind($invoice)) {
+                    'dp'    => 'DP ' . $invoice->dpPercentage() . '%',
+                    'final' => 'Pelunasan',
+                    default => 'Full',
+                };
+            @endphp
+
+            <div x-show="tab === 'finance'" x-cloak class="flex flex-col gap-6">
+                <x-filament::section>
+                    <dl class="pv-money">
+                        <div>
+                            <dt>Uang masuk</dt>
+                            <dd>{{ $sum['received'] === null ? '—' : $rp($sum['received']) }}</dd>
+                            @if($sum['outstanding'] > 0)
+                                <p>{{ $rp($sum['outstanding']) }} belum dibayar klien</p>
+                            @endif
+                        </div>
+                        <div>
+                            <dt>Biaya</dt>
+                            <dd>{{ $rp($sum['cost']) }}</dd>
+                            <p>Expense {{ $rp($sum['expense']) }} · Advance {{ $rp($sum['advance']) }}</p>
+                        </div>
+                        <div>
+                            <dt>Laba</dt>
+                            <dd @class(['is-loss' => $sum['profit'] < 0, 'is-profit' => $sum['profit'] > 0])>{{ $sum['profit'] === null ? '—' : $rp($sum['profit']) }}</dd>
+                            @if($sum['margin'] !== null)
+                                <p>Margin {{ number_format($sum['margin'], 1, ',', '.') }}%</p>
+                            @endif
+                        </div>
+                        @if($sum['profit'] !== null && $sum['outstanding'] > 0)
+                            <div>
+                                <dt>Laba bila tagihan lunas</dt>
+                                <dd @class(['is-loss' => $sum['profit'] + $sum['outstanding'] < 0])>{{ $rp($sum['profit'] + $sum['outstanding']) }}</dd>
+                            </div>
+                        @endif
+                    </dl>
+
+                    @if($sum['shared'])
+                        <p class="pv-note">
+                            Client ini punya {{ $sum['shared'] }} project tanpa invoice, jadi pembayarannya tidak bisa dibagi per project.
+                            Pilih invoice project ini lewat tombol Edit di atas.
+                        </p>
+                    @endif
+                    <p class="pv-note">
+                        Uang masuk adalah pembayaran yang sudah diterima dari invoice project ini. Biaya adalah expense yang sudah dibayarkan
+                        ditambah advance yang dicairkan dikurangi pengembalian (atau realisasinya, bila lebih besar).
+                        @if($sum['expense_pending'] > 0)
+                            Expense yang masih menunggu ({{ $rp($sum['expense_pending']) }}) belum dihitung.
+                        @endif
+                    </p>
+                </x-filament::section>
+
+                <x-filament::section heading="Invoice">
+                    @if($finance['invoices']->isEmpty())
+                        <p class="text-sm text-gray-500 dark:text-gray-300">
+                            {{ $sum['shared'] ? 'Belum ada invoice yang dipilih untuk project ini.' : 'Belum ada invoice penjualan untuk project ini. Proforma baru dihitung setelah diubah menjadi invoice.' }}
+                        </p>
+                    @else
+                        <div class="pv-table-wrap">
+                            <table class="pv-table">
+                                <thead>
+                                    <tr><th>Nomor</th><th>Tanggal</th><th>Jenis</th><th>Status</th><th class="num">Total</th><th class="num">Diterima</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($finance['invoices'] as $invoice)
+                                        <tr>
+                                            <td>
+                                                <x-filament::link :href="\App\Filament\Resources\InvoiceResource::getUrl('view', ['record' => $invoice])">{{ $invoice->uuid }}</x-filament::link>
+                                            </td>
+                                            <td class="muted">{{ $date($invoice->date) }}</td>
+                                            <td>{{ $kind($invoice) }}</td>
+                                            <td><x-filament::badge :color="\App\Helpers\ColorHelper::status((string) $invoice->status)" size="sm">{{ ucfirst((string) $invoice->status) }}</x-filament::badge></td>
+                                            <td class="num">{{ $rp($invoice->grand_total) }}</td>
+                                            <td class="num">{{ $rp($invoice->paid) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </x-filament::section>
+
+                <x-filament::section heading="Expense">
+                    @if($finance['expenses']->isEmpty())
+                        <p class="text-sm text-gray-500 dark:text-gray-300">Belum ada expense untuk project ini.</p>
+                    @else
+                        <div class="pv-table-wrap">
+                            <table class="pv-table">
+                                <thead>
+                                    <tr><th>Tanggal</th><th>Keterangan</th><th>Status</th><th class="num">Nominal</th><th class="num">Dihitung</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($finance['expenses'] as $row)
+                                        <tr>
+                                            <td class="muted">{{ $date($row['expense']->submission_date) }}</td>
+                                            <td>
+                                                <x-filament::link :href="\App\Filament\Resources\ExpenseResource::getUrl('view', ['record' => $row['expense']])">{{ \Illuminate\Support\Str::limit($row['expense']->keterangan_expense ?: 'Expense #' . $row['expense']->id, 70) }}</x-filament::link>
+                                                @if(filled($row['expense']->category))<div class="muted">{{ $row['expense']->category }}</div>@endif
+                                            </td>
+                                            <td><x-filament::badge :color="\App\Helpers\ColorHelper::status((string) $row['expense']->status)" size="sm">{{ $row['expense']->status }}</x-filament::badge></td>
+                                            <td class="num">{{ $rp($row['expense']->amount) }}</td>
+                                            <td class="num">{{ $row['counted'] > 0 ? $rp($row['counted']) : '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot>
+                                    <tr><td colspan="4">Total dihitung</td><td class="num">{{ $rp($sum['expense']) }}</td></tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    @endif
+                </x-filament::section>
+
+                <x-filament::section heading="Advance">
+                    @if($finance['advances']->isEmpty())
+                        <p class="text-sm text-gray-500 dark:text-gray-300">Belum ada advance untuk project ini.</p>
+                    @else
+                        <div class="pv-table-wrap">
+                            <table class="pv-table">
+                                <thead>
+                                    <tr><th>Tanggal</th><th>Keterangan</th><th>Status</th><th class="num">Dicairkan</th><th class="num">Realisasi</th><th class="num">Dikembalikan</th><th class="num">Dihitung</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($finance['advances'] as $row)
+                                        <tr>
+                                            <td class="muted">{{ $date($row['advance']->submission_date) }}</td>
+                                            <td>
+                                                <x-filament::link :href="\App\Filament\Resources\AdvanceResource::getUrl('view', ['record' => $row['advance']])">{{ \Illuminate\Support\Str::limit($row['advance']->keterangan_advance ?: 'Advance #' . $row['advance']->id, 70) }}</x-filament::link>
+                                            </td>
+                                            <td><x-filament::badge :color="$row['advance']->getStatusBadgeClass()" size="sm">{{ $row['advance']->getStatusLabel() }}</x-filament::badge></td>
+                                            <td class="num">{{ $row['disbursed'] > 0 ? $rp($row['disbursed']) : '—' }}</td>
+                                            <td class="num">{{ $row['realized'] > 0 ? $rp($row['realized']) : '—' }}</td>
+                                            <td class="num">{{ $row['returned'] > 0 ? $rp($row['returned']) : '—' }}</td>
+                                            <td class="num">{{ $row['counted'] > 0 ? $rp($row['counted']) : '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot>
+                                    <tr><td colspan="6">Total dihitung</td><td class="num">{{ $rp($sum['advance']) }}</td></tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    @endif
+                </x-filament::section>
+            </div>
+        @endif
     </div>
 </x-filament-panels::page>

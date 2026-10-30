@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProjectResource\Pages;
 
 use App\Filament\Resources\ProjectResource;
+use App\Services\ProjectProfit;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 
@@ -32,7 +33,8 @@ class ViewProject extends ViewRecord
     protected function getViewData(): array
     {
         return [
-            'tasks' => $this->record->tasks()->with('users')->latest()->get(),
+            'tasks'   => $this->record->tasks()->with('users')->latest()->get(),
+            'finance' => ProjectProfit::visibleTo(auth()->user()) ? app(ProjectProfit::class)->details($this->record) : null,
         ];
     }
 }
