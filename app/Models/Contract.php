@@ -11,6 +11,12 @@ class Contract extends Model
     protected $fillable = [
         'deal_id',
         'contract_number',
+        'document_title',
+        'opening_text',
+        'articles',
+        'closing_text',
+        'header_image',
+        'footer_image',
         'type',
         'content',
         'effective_date',
@@ -59,6 +65,7 @@ class Contract extends Model
         'max_revisions' => 'integer',
         'termination_notice_days' => 'integer',
         'has_third_party' => 'boolean',
+        'articles' => 'array',
     ];
 
     public function deal(): BelongsTo
