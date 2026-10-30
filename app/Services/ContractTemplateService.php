@@ -100,6 +100,34 @@ class ContractTemplateService
         ));
     }
 
+    /**
+     * HTML kontrak untuk dilihat di browser (pratinjau di samping form dan
+     * tombol Preview HTML). Di PDF, kop dan kaki surat ditempel dompdf di setiap
+     * halaman lewat path file dan position: fixed di area margin; browser tidak
+     * bisa memuat path file dan menyembunyikan kop di luar layar. Di sini
+     * keduanya tampil sekali di atas dan bawah, dan isinya selebar A4.
+     */
+    public function preview(Contract $contract): string
+    {
+        $html = str_replace(
+            Storage::path('sites/'),
+            parse_url(Storage::url('sites/'), PHP_URL_PATH),
+            $this->generate($contract),
+        );
+
+        return str_replace('</head>', '<style>
+@media screen {
+    html { background: #e5e7eb; }
+    body { box-sizing: border-box; width: 794px; margin: 24px auto; padding: 0 70px 32px; background: #fff;
+           box-shadow: 0 1px 4px rgba(0, 0, 0, .2); display: flex; flex-direction: column; }
+    .header, .footer { position: static; height: auto; margin: 0 -70px; }
+    .header { margin-bottom: 24px; }
+    .footer { order: 1; margin-top: 32px; }
+}
+</style>
+</head>', $html);
+    }
+
     private function getLogoHtml(GeneralSettings $settings): string
     {
         // Use inv_logo (Invoice logo) first, then contract_logo, then brand_logo
