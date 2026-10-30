@@ -201,6 +201,9 @@ apply() {
 
     echo "== 3/6 Maintenance mode"
     (cd "$SITE" && "$PHP" artisan down --retry=60)
+    # Cache komponen Filament dan route bisa masih menyebut kelas yang akan
+    # dihapus (deploy-remove.txt); dibersihkan selagi kode lama masih utuh.
+    (cd "$SITE" && "$PHP" artisan optimize:clear >/dev/null 2>&1) || true
 
     # Bila langkah berikutnya gagal, situs dibiarkan dalam maintenance supaya
     # tidak tampil rusak; pulihkan dengan backup di $BACKUP.
