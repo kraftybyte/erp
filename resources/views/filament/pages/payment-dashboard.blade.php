@@ -633,6 +633,9 @@
         .pd .quick-action.bg-danger  { background-color: rgb(var(--danger-600)); }
         .pd .quick-action.bg-warning { background-color: rgb(var(--warning-600)); }
 
+        .pd .text-gray-400 { color: rgb(var(--gray-500)); }
+        /* Magenta brand dicerahkan di mode gelap (dulu 3,1:1 di kartu gelap). */
+        .dark .pd .text-primary { color: color-mix(in srgb, var(--color-primary) 55%, #fff); }
         .dark .pd .text-success { color: rgb(var(--success-400)); }
         .dark .pd .text-warning { color: rgb(var(--warning-400)); }
         .dark .pd .text-danger  { color: rgb(var(--danger-400)); }

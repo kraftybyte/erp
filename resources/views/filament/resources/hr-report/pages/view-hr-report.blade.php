@@ -5,7 +5,7 @@
 <style>
     /* ── TOKENS ── */
     :root {
-        --c-primary:   #07a0cf;
+        --c-primary:   #0369a1; /* dulu #0284c7: 3,0:1 untuk teks kecil */
         --c-primary-dk:#0589b0;
         --c-accent:    #ff5915;
         --c-warn:      #d97706;
@@ -135,7 +135,7 @@
         position: absolute;
         inset: -3px;
         border-radius: 50%;
-        background: linear-gradient(135deg, var(--c-primary), #0284c7, #07a0cf);
+        background: linear-gradient(135deg, var(--c-primary), #0284c7, #0284c7);
         z-index: -1;
     }
     .avatar-img {
@@ -148,7 +148,7 @@
     .avatar-initials {
         width: 68px; height: 68px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #07a0cf 0%, #0284c7 100%);
+        background: linear-gradient(135deg, #0284c7 0%, #0284c7 100%);
         display: flex; align-items: center; justify-content: center;
         color: white; font-weight: 700; font-size: 20px;
         border: 3px solid white;
@@ -608,7 +608,7 @@
     .hr-page { --hr-muted: #64748b; --hr-body: #475569; --hr-faint: #94a3b8; --hr-chip: #f0f4f8; }
 
     /* ── MODE GELAP ── dulu semua kartu tetap putih. */
-    .dark .hr-page { --c-surface: rgb(var(--gray-900)); --c-text: #fff; --c-border: rgba(255,255,255,.1);
+    .dark .hr-page { --c-primary: #38bdf8; --c-surface: rgb(var(--gray-900)); --c-text: #fff; --c-border: rgba(255,255,255,.1);
                      --hr-muted: rgb(var(--gray-300)); --hr-body: rgb(var(--gray-200)); --hr-faint: rgb(var(--gray-400)); --hr-chip: rgba(255,255,255,.08); }
     .dark .hr-page .card,
     .dark .hr-page .stat-card { border-color: rgba(255,255,255,.1); }
@@ -667,7 +667,7 @@
     $initials  = strtoupper(substr($employee->firstname ?? 'U',0,1).substr($employee->lastname ?? 'U',0,1));
     $avgLabel  = ($stats['avgDays'] !== null) ? $stats['avgDays'].' hari' : '-';
     $rateLabel = $stats['doneRate'].'%';
-    $statusColors  = ['done'=>'#07a0cf','process'=>'#ff5915','review'=>'#d97706','hold'=>'#64748b'];
+    $statusColors  = ['done'=>'#0284c7','process'=>'#ff5915','review'=>'#d97706','hold'=>'#64748b'];
     $statusBgAlpha = ['done'=>'rgba(7,160,207,.12)','process'=>'rgba(255,89,21,.12)','review'=>'rgba(245,158,11,.12)','hold'=>'rgba(148,163,184,.12)'];
     $chartJson = json_encode($chartData ?? ['labels'=>[],'taskDone'=>[],'taskTotal'=>[],'attendance'=>[]]);
 
@@ -676,7 +676,7 @@
     /* stat card bottom accent colors */
     $statAccents = [
         'total'   => 'var(--c-text)',
-        'done'    => '#07a0cf',
+        'done'    => '#0284c7',
         'process' => '#ff5915',
         'review'  => '#d97706',
         'late'    => '#ef4444',
@@ -718,7 +718,7 @@
                     @endforeach
                 </div>
                 <div style="margin-top:12px;font-size:11px;color:var(--hr-muted);font-weight:600;">
-                    Periode: <span style="color:#07a0cf;">{{ $periodLabels[$period] ?? 'Semua' }}</span>
+                    Periode: <span style="color:#0284c7;">{{ $periodLabels[$period] ?? 'Semua' }}</span>
                 </div>
             </div>
         </div>
@@ -775,7 +775,7 @@
         <div class="card-title">Kehadiran Periode Ini</div>
         <div class="attend-grid">
             <div class="attend-item">
-                <div class="attend-val" style="color:#07a0cf;">{{ $absenceStat['hadir'] }}</div>
+                <div class="attend-val" style="color:#0284c7;">{{ $absenceStat['hadir'] }}</div>
                 <div class="attend-lbl">Hadir</div>
             </div>
             <div class="attend-item">
@@ -797,7 +797,7 @@
         </div>
         @php
             $ar = $absenceStat['attendRate'];
-            $arColor = $ar >= 80 ? '#07a0cf' : ($ar >= 60 ? '#d97706' : '#ef4444');
+            $arColor = $ar >= 80 ? '#0284c7' : ($ar >= 60 ? '#d97706' : '#ef4444');
         @endphp
         <div class="prog-label">
             <span>Attendance Rate</span>
@@ -987,7 +987,7 @@
                     </div>
                     <div class="task-date">{{ $t['mulai'] }}</div>
                     <div class="task-date" style="color:{{ $t['is_late'] ? '#ef4444' : '#64748b' }};">{{ $t['deadline'] }}</div>
-                    <div class="task-dur" style="color:{{ $t['status']==='done' ? '#07a0cf' : '#d97706' }};">{{ $t['durasi'] }}</div>
+                    <div class="task-dur" style="color:{{ $t['status']==='done' ? '#0284c7' : '#d97706' }};">{{ $t['durasi'] }}</div>
                     <div style="font-size:11px;color:var(--hr-muted);line-height:1.5;">
                         @if($t['done_note'])
                             <span style="font-style:italic;">{{ Str::limit($t['done_note'], 80) }}</span>
@@ -1059,7 +1059,7 @@
 (function () {
     var chartData = {!! $chartJson !!};
 
-    var BRAND  = '#07a0cf';
+    var BRAND  = '#0284c7';
     var BRAND2 = '#0284c7';
     var GRID   = '#f1f5f9';
     var FONT   = "'Inter', sans-serif";

@@ -9,7 +9,7 @@ $primary = $settings->site_theme['primary'] ?? '#6366f1';
         {{-- Lebar teks dibatasi supaya tidak tertimpa gambar roket di kanan. --}}
         <div class="text-white w-full tw-copy" style="display:flex;flex-direction:column;gap:14px;position:relative;z-index:1;">
 
-            <h2 style="font-size:11px;font-weight:700;text-transform:uppercase;opacity:0.7;margin:0;">
+            <h2 style="font-size:11px;font-weight:700;text-transform:uppercase;opacity:0.9;margin:0;">
                 Rata-rata Penyelesaian Task
             </h2>
 

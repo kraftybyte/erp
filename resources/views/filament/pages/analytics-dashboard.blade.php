@@ -1076,6 +1076,8 @@ $rgba = function ($hex, $opacity) {
         .dark .analytics-page .quick-btn:hover,
         .dark .analytics-page .tab-btn:hover { background: rgba(255, 255, 255, .06); color: #fff; }
         .dark .analytics-page .section-title::after { background: rgba(255, 255, 255, .1); }
+        .analytics-page .badge-count { color: rgb(var(--gray-600)); }
+        .analytics-page .empty-state-text { color: var(--an-muted); }
     </style>
 
 

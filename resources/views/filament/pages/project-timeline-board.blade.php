@@ -151,6 +151,13 @@
     .dark .fc .fc-timeline-slot,
     .dark .fc .fc-scrollgrid { background-color: transparent; }
     .dark .tl-history { color: rgb(var(--gray-300)); }
+
+    .tl-weekend-lane { background-color: #fff1f1; }
+    .tl-weekend-label { color: #dc2626; font-weight: 600; }
+    .tl-project-row { font-weight: 600; background-color: #f9fafb; }
+    .dark .tl-weekend-lane { background-color: rgba(var(--danger-500), .08); }
+    .dark .tl-weekend-label { color: rgb(var(--danger-400)); }
+    .dark .tl-project-row { background-color: rgba(255, 255, 255, .04); }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -258,17 +265,17 @@
             datesSet: function () { requestAnimationFrame(fixToolbar); },
             slotLaneDidMount: function (info) {
                 const d = info.date.getDay();
-                if (d === 0 || d === 6) info.el.style.backgroundColor = '#fff1f1';
+                // Kelas, bukan style inline, supaya warnanya bisa diganti di mode gelap.
+                if (d === 0 || d === 6) info.el.classList.add('tl-weekend-lane');
             },
             slotLabelDidMount: function (info) {
                 const d = info.date.getDay();
-                if (d === 0 || d === 6) { info.el.style.color = '#dc2626'; info.el.style.fontWeight = '600'; }
+                if (d === 0 || d === 6) info.el.classList.add('tl-weekend-label');
             },
             resourceLabelDidMount: function (info) {
                 const rid = info.resource.id;
                 if (rid.startsWith('project-')) {
-                    info.el.style.fontWeight = '600';
-                    info.el.style.backgroundColor = '#f9fafb';
+                    info.el.classList.add('tl-project-row');
                     return;
                 }
                 info.el.style.cursor = 'pointer';

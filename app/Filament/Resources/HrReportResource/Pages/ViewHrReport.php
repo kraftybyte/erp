@@ -83,7 +83,7 @@ class ViewHrReport extends Page
         $this->stats = compact('total','done','process','review','hold','late','avgDays','doneRate');
 
         $this->taskSummary = [
-            ['label'=>'Done',      'count'=>$done,    'color'=>'#07a0cf'],
+            ['label'=>'Done',      'count'=>$done,    'color'=>'#0284c7'],
             ['label'=>'Process',   'count'=>$process, 'color'=>'#ff5915'],
             ['label'=>'Review',    'count'=>$review,  'color'=>'#d97706'],
             ['label'=>'Hold',      'count'=>$hold,    'color'=>'#64748b'],
@@ -192,7 +192,7 @@ class ViewHrReport extends Page
         $score      = round(($taskScore * 0.5) + ($speedScore * 0.3) + ($lateScore * 0.2));
 
         return match(true) {
-            $score >= 90 => ['label'=>'Outstanding',  'color'=>'#07a0cf','bg'=>'#e0f5fc','score'=>$score],
+            $score >= 90 => ['label'=>'Outstanding',  'color'=>'#0284c7','bg'=>'#e0f5fc','score'=>$score],
             $score >= 75 => ['label'=>'Good',          'color'=>'#0284c7','bg'=>'#eaf9ff','score'=>$score],
             $score >= 60 => ['label'=>'Average',       'color'=>'#d97706','bg'=>'#fff8e6','score'=>$score],
             $score >= 40 => ['label'=>'Needs Review',  'color'=>'#ff5915','bg'=>'#fff1eb','score'=>$score],

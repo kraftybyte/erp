@@ -14,8 +14,9 @@ use Filament\Support\Colors\Color;
  * 4,5:1 (WCAG AA); warna dasar (500) tidak diubah.
  *
  * Di mode gelap Filament memakai shade 400 untuk teks (item sidebar aktif,
- * link, keterangan) di atas kartu gray-900. Shade 400 dicerahkan sampai 4,5:1
- * terhadap gray-900 tema; dari #485173, gray-400 dulu 4,0:1.
+ * link, badge) di atas kartu gray-900 dan latar badge/baris hover yang setara
+ * gray-800. Shade 400 dicerahkan sampai 4,5:1 terhadap gray-800 tema; dari
+ * #485173, gray-400 dulu 4,0:1.
  */
 class ThemePalette
 {
@@ -31,18 +32,23 @@ class ThemePalette
     {
         $isHex = fn ($color) => is_string($color) && preg_match('/^#?[0-9a-f]{6}$/i', $color);
 
-        // Latar kartu mode gelap: gray-900 dari warna gray tema, atau bawaan Filament.
-        $darkSurface = self::rgb(($isHex($theme['gray'] ?? null) ? Color::hex('#' . ltrim($theme['gray'], '#')) : Color::Gray)[900]);
+        // Latar terang (gray-50, latar halaman) dan gelap (gray-800) dari warna
+        // gray tema, atau bawaan Filament.
+        $gray = $isHex($theme['gray'] ?? null) ? Color::hex('#' . ltrim($theme['gray'], '#')) : Color::Gray;
 
+        // Abu sendiri diukur terhadap kartu gray-900: terhadap gray-800, gray-400
+        // menjadi terlalu muda untuk ikon di mode terang (2,7:1 di putih).
         return collect($theme)
-            ->map(fn ($color) => $isHex($color) ? self::palette('#' . ltrim($color, '#'), $darkSurface) : $color)
+            ->map(fn ($color, $name) => $isHex($color)
+                ? self::palette('#' . ltrim($color, '#'), self::rgb($gray[$name === 'gray' ? 900 : 800]), self::rgb($gray[50]))
+                : $color)
             ->all();
     }
 
     /**
      * @return array<int, string> shade => "r, g, b"
      */
-    public static function palette(string $hex, ?array $darkSurface = null): array
+    public static function palette(string $hex, ?array $darkSurface = null, ?array $lightSurface = null): array
     {
         $palette = Color::hex($hex);
 
@@ -54,9 +60,13 @@ class ThemePalette
             $palette[400] = implode(', ', $light);
         }
 
-        // Badge memakai latar shade 50, sedikit lebih gelap dari putih; lolos
-        // terhadap shade 50 berarti lolos juga untuk teks putih di tombol.
+        // Badge memakai latar shade 50 dan teks juga tampil di latar halaman
+        // (gray-50); diukur terhadap yang lebih gelap dari keduanya. Lolos di
+        // situ berarti lolos juga untuk teks putih di tombol.
         $badgeBg = self::rgb($palette[50]);
+        if ($lightSurface && self::luminance($lightSurface) < self::luminance($badgeBg)) {
+            $badgeBg = $lightSurface;
+        }
         $prev    = null;
 
         foreach (self::DARK_SHADES as $shade) {

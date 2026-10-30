@@ -157,9 +157,8 @@ class ExpenseResource extends Resource
                 Tables\Columns\TextColumn::make('attachment')
                     ->label('Nota')
                     ->badge()
-                    ->color(fn ($state) => $state ? 'info' : 'gray')
-                    ->formatStateUsing(fn($state) => $state ? 'Lihat' : 'Belum ada')
-                    ->placeholder('Belum ada')
+                    ->state(fn (Expense $record) => $record->attachment ? 'Lihat' : 'Belum ada')
+                    ->color(fn (string $state) => $state === 'Lihat' ? 'info' : 'gray')
                     ->action(function ($record) {
                         if ($record && $record->attachment) {
                             return redirect()->to(asset('storage/' . $record->attachment));

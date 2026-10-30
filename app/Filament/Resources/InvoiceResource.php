@@ -1160,25 +1160,10 @@ class InvoiceResource extends BaseInvoiceResource
                             'filament-invoices::messages.invoices.columns.uuid'
                         )
                     )
+                    // Ringkas ("Proforma · Super Admin") supaya kolom tidak melebar.
                     ->description(
-                        fn ($record) =>
-                            (
-                                $record->type ===
-                                'sale'
-                                    ? 'Invoice'
-                                    : 'Proforma Invoice'
-                            )
-                            . ' '
-                            .
-                            trans(
-                                'filament-invoices::messages.invoices.columns.by'
-                            )
-                            . ' '
-                            .
-                            (
-                                $record->user?->name
-                                ?? '-'
-                            )
+                        fn ($record) => ($record->type === 'sale' ? 'Invoice' : 'Proforma')
+                            . ' · ' . ($record->user?->name ?? '-')
                     )
                     ->sortable()
                     ->searchable()
@@ -1604,7 +1589,9 @@ class InvoiceResource extends BaseInvoiceResource
                     )
                     ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
                     ->color('info')
-                    ->sortable(),
+                    ->sortable()
+                    // Nominal terbayar terlihat dari Status dan Payment; kolomnya bisa dimunculkan.
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 /*
                 |--------------------------------------------------------------------------

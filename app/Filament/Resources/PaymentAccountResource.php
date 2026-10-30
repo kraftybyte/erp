@@ -135,26 +135,24 @@ class PaymentAccountResource extends Resource
 
                 Tables\Columns\TextColumn::make('account_holder')
                     ->label('Pemilik')
-                    ->formatStateUsing(fn($state) => $state ?: '-'),
+                    ->formatStateUsing(fn($state) => $state ?: '-')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('initial_balance')
                     ->label('Saldo Awal')
                     ->rupiah()
                     ->sortable()
-                    ->formatStateUsing(fn($state) => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('current_balance')
                     ->label('Saldo')
+                    ->state(fn ($record) => $record->getAvailableBalance())
                     ->rupiah()
                     ->sortable()
                     ->weight('bold')
-                    ->color('success')
-                    ->formatStateUsing(function ($record) {
-                        $balance = $record->getAvailableBalance();
-                        return 'Rp ' . number_format($balance, 0, ',', '.');
-                    }),
+                    ->color('success'),
 
-                // state() dari transaksi yang sudah dimuat: kolom transactions_sum_*
+                // state() dihitung dari transaksi rekening: kolom transactions_sum_*
                 // tidak pernah ada di query, jadi dulu kedua kolom ini selalu kosong.
                 Tables\Columns\TextColumn::make('transactions_sum_in')
                     ->label('Total Masuk')
