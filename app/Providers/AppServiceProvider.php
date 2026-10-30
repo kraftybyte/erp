@@ -17,7 +17,6 @@ use App\Models\Product;
 use App\Models\Project;
 use App\Models\PurchaseRequest;
 use App\Models\Quotation;
-use App\Models\SocialAccount;
 use App\Models\Task;
 use App\Models\TaskStage;
 use App\Models\Company;
@@ -44,7 +43,6 @@ use App\Observers\ContractObserver;
 use App\Observers\DealObserver;
 use App\Observers\InvoiceObserver;
 use App\Observers\PaymentAccountObserver;
-use App\Observers\SocialAccountObserver;
 use Filament\Tables\Table;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
@@ -96,7 +94,6 @@ class AppServiceProvider extends ServiceProvider
         PaymentAccount::observe(PaymentAccountObserver::class);
         Contract::observe(ContractObserver::class);
         Deal::observe(DealObserver::class);
-        SocialAccount::observe(SocialAccountObserver::class);
         // Task, Announcement, Advance, Expense, dan Absence mendaftarkan observer-nya
         // sendiri di model; mendaftarkannya lagi di sini membuat notifikasi terkirim dobel.
         Invoice::observe(InvoiceObserver::class);

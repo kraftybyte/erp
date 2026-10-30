@@ -14,17 +14,6 @@ class Kernel extends ConsoleKernel
 {
     $schedule->command('financial:analyze')
         ->weeklyOn(1, '09:00'); // Senin jam 09:00 pagi
-
-    // Social media sync - every 6 hours
-    $schedule->command('social:sync')
-        ->everySixHours()
-        ->withoutOverlapping()
-        ->runInBackground();
-
-    // Token refresh - daily
-    $schedule->command('social:refresh-tokens')
-        ->daily()
-        ->withoutOverlapping();
 }
 
     /**

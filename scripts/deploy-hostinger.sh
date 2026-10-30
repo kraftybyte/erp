@@ -6,7 +6,8 @@
 # sekali jalan. Kode diambil dari tarball GitHub pada commit tertentu lalu
 # disalin ke folder situs. Yang TIDAK pernah disentuh: .env, storage/
 # (termasuk gambar upload), public/storage, vendor/, bootstrap/cache/, dan
-# file di server yang tidak ada di repo (tidak ada penghapusan).
+# file di server yang tidak ada di repo. Satu-satunya penghapusan: file kode
+# yang tercantum di scripts/deploy-remove.txt (di-backup dulu).
 #
 # Pemakaian:
 #   deploy-hostinger.sh <folder_situs> <commit> plan         # hanya memeriksa
@@ -76,6 +77,20 @@ changed_files() {
     rsync -rlcn --out-format='%n' "${EXCLUDES[@]}" "$STAGE/" "$SITE/" | grep -v '/$' || true
 }
 
+# File di scripts/deploy-remove.txt yang masih ada di server. Hanya file kode
+# di app/, config/, resources/, routes/ yang sudah tidak ada di repo, jadi
+# .env, storage/ dan vendor/ tidak mungkin terhapus lewat daftar ini.
+removed_files() {
+    local list="$STAGE/scripts/deploy-remove.txt" f
+    [ -f "$list" ] || return 0
+    while read -r f || [ -n "$f" ]; do
+        case "$f" in ''|'#'*|/*|*..*) continue ;; esac
+        case "$f" in app/*|config/*|resources/*|routes/*) ;; *) continue ;; esac
+        if [ -e "$STAGE/$f" ]; then continue; fi
+        if [ -f "$SITE/$f" ]; then echo "$f"; fi
+    done < "$list"
+}
+
 # Migration yang akan dijalankan `artisan migrate` setelah sinkron: semua
 # file di folder migration (dari repo maupun yang hanya ada di server) yang
 # belum tercatat di tabel migrations.
@@ -123,6 +138,10 @@ plan() {
     done <<< "$changed"
     echo
     echo "== File yang akan diubah/ditambah: $total (baru: $new)"
+
+    echo
+    echo "== File yang dihapus dari server (scripts/deploy-remove.txt):"
+    removed_files | sed 's/^/   /'
 
     echo
     echo "== File di server yang tidak ada di repo (dibiarkan, tidak dihapus):"
@@ -174,7 +193,11 @@ apply() {
         fi
     done < "$BACKUP/changed-files.txt"
     (cd "$SITE" && tar -czf "$BACKUP/code-before.tar.gz" -T "$BACKUP/overwritten-files.txt")
-    echo "   $(wc -l < "$BACKUP/overwritten-files.txt") file ditimpa, $(wc -l < "$BACKUP/new-files.txt") file baru"
+    removed_files > "$BACKUP/removed-files.txt"
+    if [ -s "$BACKUP/removed-files.txt" ]; then
+        (cd "$SITE" && tar -czf "$BACKUP/removed-before.tar.gz" -T "$BACKUP/removed-files.txt")
+    fi
+    echo "   $(wc -l < "$BACKUP/overwritten-files.txt") file ditimpa, $(wc -l < "$BACKUP/new-files.txt") file baru, $(wc -l < "$BACKUP/removed-files.txt") file dihapus"
 
     echo "== 3/6 Maintenance mode"
     (cd "$SITE" && "$PHP" artisan down --retry=60)
@@ -183,6 +206,11 @@ apply() {
     # tidak tampil rusak; pulihkan dengan backup di $BACKUP.
     echo "== 4/6 Sinkron kode"
     rsync -rlc "${EXCLUDES[@]}" "$STAGE/" "$SITE/"
+    # Sebelum dump-autoload, supaya classmap tidak lagi memuat kelas yang dihapus.
+    while read -r f; do
+        rm -f "$SITE/$f"
+        (cd "$SITE" && rmdir -p "$(dirname "$f")" 2>/dev/null) || true
+    done < "$BACKUP/removed-files.txt"
 
     echo "== 5/6 Autoload & migrate"
     if [ -f "$SITE/composer.phar" ]; then
@@ -216,6 +244,11 @@ rollback() {
 
     echo "== Kembalikan file yang ditimpa"
     (cd "$SITE" && tar -xzf "$BACKUP/code-before.tar.gz")
+
+    if [ -f "$BACKUP/removed-before.tar.gz" ]; then
+        echo "== Kembalikan file yang dihapus apply"
+        (cd "$SITE" && tar -xzf "$BACKUP/removed-before.tar.gz")
+    fi
 
     echo "== Hapus file yang ditambahkan apply"
     while read -r f; do

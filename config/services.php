@@ -36,13 +36,6 @@ return [
         'finance_webhook_secret' => env('TELEGRAM_FINANCE_WEBHOOK_SECRET'),
     ],
 
-    'meta' => [
-        'app_id'        => env('META_APP_ID'),
-        'app_secret'    => env('META_APP_SECRET'),
-        'business_id'   => env('META_BUSINESS_ID'),
-        'default_token' => env('META_DEFAULT_TOKEN'),
-    ],
-
     'mailgun' => [
         'domain'   => env('MAILGUN_DOMAIN'),
         'secret'   => env('MAILGUN_SECRET'),
@@ -58,12 +51,6 @@ return [
         'key'    => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-    ],
-
-    'instagram' => [
-        'client_id'     => env('INSTAGRAM_CLIENT_ID'),
-        'client_secret' => env('INSTAGRAM_CLIENT_SECRET'),
-        'redirect'      => env('APP_URL') . '/auth/instagram/callback',
     ],
 
 ];

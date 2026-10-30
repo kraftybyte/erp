@@ -77,8 +77,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->resources([
                 config('filament-logger.activity_resource'),
-                \App\Filament\Resources\ConnectedAccountResource\ConnectedAccountResource::class,
-                \App\Filament\Resources\ConnectedAccountMetricResource\ConnectedAccountMetricResource::class,
             ])
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

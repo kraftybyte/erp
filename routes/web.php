@@ -6,7 +6,6 @@ use Filament\Facades\Filament;
 use App\Http\Controllers\QuotationPdfController;
 use App\Http\Controllers\WablasController;
 use App\Http\Controllers\InvoicePdfController;
-use App\Http\Controllers\Auth\InstagramConnectController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
@@ -108,23 +107,6 @@ Route::get('/manifest.json', function () {
             ]
         ]
     ]);
-});
-
-// Instagram OAuth Authentication
-Route::prefix('auth')->group(function () {
-    Route::get('/instagram', [InstagramConnectController::class, 'redirect'])->name('auth.instagram.redirect');
-    Route::get('/instagram/callback', [InstagramConnectController::class, 'callback'])->name('auth.instagram.callback');
-
-    // Business account flow (via Meta)
-    Route::get('/instagram-business', [InstagramConnectController::class, 'redirect'])->name('auth.instagram.business');
-    Route::get('/instagram-business/callback', [InstagramConnectController::class, 'businessCallback']);
-});
-
-// Connected Account API (for AJAX actions)
-Route::prefix('api/connected-accounts')->middleware('auth')->group(function () {
-    Route::post('/{account}/sync', [InstagramConnectController::class, 'sync'])->name('api.connected-accounts.sync');
-    Route::post('/{account}/disconnect', [InstagramConnectController::class, 'disconnect'])->name('api.connected-accounts.disconnect');
-    Route::post('/{account}/refresh-token', [InstagramConnectController::class, 'refreshToken'])->name('api.connected-accounts.refresh-token');
 });
 
 Route::get('test', function () {
