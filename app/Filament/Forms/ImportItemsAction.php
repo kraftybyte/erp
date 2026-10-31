@@ -48,8 +48,8 @@ class ImportItemsAction
                         Forms\Components\Placeholder::make('template')
                             ->hiddenLabel()
                             ->content(fn () => new HtmlString(
-                                'Template ERP (satu baris satu item), atau file budget/penawaran apa adanya dengan kolom ITEMS / Nama Barang / Jenis Pekerjaan, Harga, QTY, dan Total; '
-                                . 'teks di luar tabel dan kolom lain (mis. USD) diabaikan. '
+                                'File budget/penawaran apa adanya (Excel, CSV, atau ODS): kolom nama item, qty, harga, dan total dikenali dari judulnya atau isinya; '
+                                . 'judul dokumen, catatan di luar tabel, dan kolom lain (mis. USD) diabaikan. Bila kolomnya tidak dikenali, pilih sendiri lewat "Atur kolom sendiri". '
                                 . 'Belum punya file? <a href="' . e(route('import-template.items', $template)) . '" target="_blank" class="font-semibold text-primary-600 underline">Unduh template Excel</a>: '
                                 . 'kolom Item, Deskripsi, Qty, Satuan, Harga, Total, dengan contoh dan petunjuk pengisian.'
                             )),
@@ -59,20 +59,68 @@ class ImportItemsAction
                             ->acceptedFileTypes([
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                 'application/vnd.ms-excel',
+                                'application/vnd.oasis.opendocument.spreadsheet',
+                                // Sebagian file .xlsx/.ods dari aplikasi lain terbaca sebagai arsip zip biasa.
+                                'application/zip',
+                                'application/octet-stream',
                                 'text/csv',
                                 'text/plain',
                             ])
                             ->maxSize(10240)
                             ->storeFiles(false)
                             ->live()
-                            ->afterStateUpdated(fn (Set $set) => $set('sheet', null))
+                            ->afterStateUpdated(function (Set $set) {
+                                $set('sheet', null);
+                                $set('manual', false);
+                            })
                             ->required(),
 
                         Forms\Components\Select::make('sheet')
                             ->label('Sheet')
-                            ->options(fn (Get $get) => array_combine($names = self::sheetNames($get('file')), $names))
+                            ->options(fn (Get $get) => array_combine($names = self::sheetNames($get('file')), $names) + [QuotationItemImport::ALL_SHEETS => 'Semua sheet (digabung, nama sheet jadi kategori)'])
                             ->placeholder('Otomatis: sheet yang berisi tabel item')
+                            ->live()
+                            ->afterStateUpdated(function (Get $get, Set $set) {
+                                if ($get('manual')) {
+                                    self::fillMapping($get, $set);
+                                }
+                            })
                             ->visible(fn (Get $get) => count(self::sheetNames($get('file'))) > 1),
+
+                        Forms\Components\Toggle::make('manual')
+                            ->label('Atur kolom sendiri')
+                            ->helperText('Bila hasil baca otomatis kurang tepat atau tabelnya tidak dikenali: pilih kolom mana yang berisi nama item, qty, harga, dan total.')
+                            ->live()
+                            ->afterStateUpdated(function (bool $state, Get $get, Set $set) {
+                                if ($state) {
+                                    self::fillMapping($get, $set);
+                                }
+                            })
+                            ->visible(fn (Get $get) => self::uploaded($get('file')) !== null && $get('sheet') !== QuotationItemImport::ALL_SHEETS),
+
+                        Forms\Components\Fieldset::make('Kolom')
+                            ->visible(fn (Get $get) => $get('manual') && self::uploaded($get('file')) !== null && $get('sheet') !== QuotationItemImport::ALL_SHEETS)
+                            ->columns(4)
+                            ->schema([
+                                Forms\Components\Placeholder::make('preview')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get) => self::preview($get))
+                                    ->columnSpanFull(),
+                                Forms\Components\TextInput::make('map.header_row')
+                                    ->label('Baris judul kolom')
+                                    ->helperText('0 bila tabel tidak punya judul kolom.')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->default(0),
+                                ...collect(QuotationItemImport::ROLES)->map(fn (string $label, string $role) => Forms\Components\Select::make("map.{$role}")
+                                    ->label($label)
+                                    ->options(fn (Get $get) => self::columnOptions($get))
+                                    ->placeholder('Tidak ada')
+                                    ->required($role === 'item')
+                                    ->validationMessages(['required' => 'Pilih kolom yang berisi nama item.']))
+                                    ->values()
+                                    ->all(),
+                            ]),
 
                         Forms\Components\TextInput::make('vat_percentage')
                             ->label('PPN (%) untuk semua item')
@@ -94,7 +142,19 @@ class ImportItemsAction
                             ->default(true),
                     ])
                     ->afterValidation(function (Get $get, Set $set) {
-                        $result = self::read($get('file'), $get('sheet'), $get('layout'));
+                        $manual = (bool) $get('manual');
+
+                        try {
+                            $result = self::read($get('file'), $get('sheet'), $get('layout'), $manual ? $get('map') : null);
+                        } catch (Halt $halt) {
+                            // Tabel tidak dikenali: pilihan kolom langsung dibuka, terisi tebakan terbaiknya.
+                            if (! $manual && $get('sheet') !== QuotationItemImport::ALL_SHEETS && self::uploaded($get('file'))) {
+                                $set('manual', true);
+                                self::fillMapping($get, $set);
+                            }
+
+                            throw $halt;
+                        }
 
                         $set('rows', $result['rows']);
                         $set('expected_total', $result['expected_total']);
@@ -157,7 +217,7 @@ class ImportItemsAction
             ])
             ->action(function (array $data, Get $get, Set $set) use ($repeater, $recalculate, $extra) {
                 // Tanpa langkah Periksa (mis. dipanggil langsung), file dibaca sekarang.
-                $rows  = ($data['rows'] ?? []) ?: self::read($data['file'], $data['sheet'] ?? null, $data['layout'] ?? 'lines')['rows'];
+                $rows  = ($data['rows'] ?? []) ?: self::read($data['file'], $data['sheet'] ?? null, $data['layout'] ?? 'lines', ($data['manual'] ?? false) ? $data['map'] : null)['rows'];
                 $vat   = (float) $data['vat_percentage'];
                 $items = array_map(fn (array $row) => self::item($row), array_values($rows));
 
@@ -202,12 +262,12 @@ class ImportItemsAction
      *
      * @throws Halt  file tidak terbaca atau tanpa item (pengguna diberi tahu)
      */
-    private static function read(mixed $file, ?string $sheet, ?string $layout): array
+    private static function read(mixed $file, ?string $sheet, ?string $layout, ?array $mapping = null): array
     {
         $import = app(QuotationItemImport::class);
 
         try {
-            $result = $import->parse(self::uploaded($file)->getRealPath(), $sheet ?: null);
+            $result = $import->parse(self::uploaded($file)->getRealPath(), $sheet ?: null, $mapping);
         } catch (\Throwable $e) {
             Notification::make()->title('File tidak bisa dibaca')->body($e->getMessage())->danger()->send();
 
@@ -284,6 +344,94 @@ class ImportItemsAction
     private static function warningText(string $text): HtmlString
     {
         return new HtmlString('<span class="fi-color-custom text-custom-600 dark:text-custom-400" style="--c-400:var(--warning-400);--c-600:var(--warning-600);">' . e($text) . '</span>');
+    }
+
+    /**
+     * Hasil baca otomatis file ini (lihat QuotationItemImport::detect()), sekali per request.
+     */
+    private static function detection(Get $get): ?array
+    {
+        static $cache = [];
+
+        $file  = self::uploaded($get('file'));
+        $sheet = $get('sheet') ?: null;
+
+        if (! $file) {
+            return null;
+        }
+
+        try {
+            return $cache[$file->getRealPath() . '|' . $sheet] ??= app(QuotationItemImport::class)->detect($file->getRealPath(), $sheet);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Isi pilihan kolom dengan tebakan terbaik dari file.
+     */
+    private static function fillMapping(Get $get, Set $set): void
+    {
+        $detected = self::detection($get);
+
+        $set('map.header_row', $detected['header_row'] ?? 0);
+
+        foreach (array_keys(QuotationItemImport::ROLES) as $role) {
+            $set("map.{$role}", $detected['columns'][$role] ?? null);
+        }
+    }
+
+    /**
+     * "B · ITEMS" untuk setiap kolom; huruf saja bila kolomnya tanpa judul.
+     *
+     * @return array<string, string>
+     */
+    private static function columnOptions(Get $get): array
+    {
+        $labels = self::detection($get)['labels'] ?? [];
+        $row    = (int) $get('map.header_row');
+
+        // Judul mengikuti baris judul yang dipilih pengguna, bila ada di cuplikan.
+        foreach (self::detection($get)['preview'] ?? [] as $preview) {
+            if ($preview['row'] === $row) {
+                $labels = $preview['cells'];
+            }
+        }
+
+        return collect($labels)->map(fn (string $label, string $letter) => $label !== '' ? "{$letter} · " . Str::limit($label, 30) : $letter)->all();
+    }
+
+    /**
+     * Cuplikan baris-baris pertama tabel, dengan huruf kolom dan nomor baris.
+     */
+    private static function preview(Get $get): HtmlString
+    {
+        $detected = self::detection($get);
+
+        if (! $detected || ! $detected['preview']) {
+            return new HtmlString('<p class="text-sm">Isi file tidak bisa ditampilkan.</p>');
+        }
+
+        $letters = array_keys($detected['labels']);
+        $head    = '<tr><th></th>' . implode('', array_map(fn ($letter) => '<th>' . e($letter) . '</th>', $letters)) . '</tr>';
+        $body    = implode('', array_map(
+            fn (array $row) => '<tr><th>' . $row['row'] . '</th>' . implode('', array_map(fn ($cell) => '<td>' . e($cell) . '</td>', $row['cells'])) . '</tr>',
+            $detected['preview'],
+        ));
+
+        return new HtmlString(<<<HTML
+            <style>
+                .imp-preview { overflow-x: auto; border: 1px solid rgb(var(--gray-200)); border-radius: .5rem; }
+                .imp-preview table { border-collapse: collapse; font-size: .75rem; white-space: nowrap; }
+                .imp-preview th, .imp-preview td { padding: .25rem .5rem; border-bottom: 1px solid rgb(var(--gray-100)); text-align: left; }
+                .imp-preview th { color: rgb(var(--gray-500)); font-weight: 500; background: rgb(var(--gray-50)); }
+                .dark .imp-preview { border-color: rgb(255 255 255 / .1); }
+                .dark .imp-preview th { color: rgb(var(--gray-400)); background: rgb(255 255 255 / .05); }
+                .dark .imp-preview th, .dark .imp-preview td { border-color: rgb(255 255 255 / .06); }
+            </style>
+            <p class="mb-2 text-sm">Isi awal file (huruf = kolom, angka = baris). Pilih kolom mana yang dibaca:</p>
+            <div class="imp-preview"><table><thead>{$head}</thead><tbody>{$body}</tbody></table></div>
+            HTML);
     }
 
     /**
