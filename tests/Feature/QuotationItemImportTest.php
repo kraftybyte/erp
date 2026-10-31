@@ -276,6 +276,214 @@ class QuotationItemImportTest extends TestCase
             ->assertSee(route('import-template.items', 'invoice'));
     }
 
+    // =================================================================
+    // Bentuk tabel apa pun
+    // =================================================================
+
+    public function test_judul_kolom_bahasa_inggris_dan_bertanda_rupiah(): void
+    {
+        $import = app(QuotationItemImport::class);
+
+        $english = $import->parse($this->sheetFile([
+            ['No', 'Description', 'Qty', 'Unit Price (IDR)', 'Amount (IDR)'],
+            [1, 'Booth 3x3 m', 2, 'Rp 5.000.000', 'Rp 10.000.000'],
+            [2, 'LED screen rental', 1, 7_500_000, 7_500_000],
+            [null, 'Total', null, null, 17_500_000],
+        ]));
+        $this->assertSame(['Booth 3x3 m', 'LED screen rental'], array_column($english['items'], 'name'));
+        $this->assertEquals([17_500_000, 17_500_000], [$english['total'], $english['expected_total']]);
+
+        $rupiah = $import->parse($this->sheetFile([
+            ['Uraian Pekerjaan', 'Vol', 'Sat', 'Harga Satuan (Rp)', 'Jumlah (Rp)'],
+            ['Cetak banner', 4, 'lbr', 250_000, 1_000_000],
+        ]));
+        $this->assertEquals([4, 250_000, 1_000_000], [$rupiah['items'][0]['qty'], $rupiah['items'][0]['price'], $rupiah['items'][0]['total']]);
+        $this->assertSame('4 lbr', $rupiah['items'][0]['quantity'], '"Jumlah (Rp)" adalah total, bukan qty; satuannya ikut.');
+    }
+
+    public function test_judul_kolom_dua_baris(): void
+    {
+        $book  = new Spreadsheet();
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray([
+            ['No', 'Uraian', 'Volume', 'Satuan', 'HARGA', null],
+            [null, null, null, null, 'Satuan', 'Jumlah'],
+            [1, 'Rangka hollow', 10, 'm', 150_000, 1_500_000],
+            [2, 'Cat duco', 2, 'kg', 300_000, 600_000],
+        ]);
+        $sheet->mergeCells('E1:F1');
+
+        $items = app(QuotationItemImport::class)->parse($this->save($book))['items'];
+
+        $this->assertSame(['Rangka hollow', 'Cat duco'], array_column($items, 'name'));
+        $this->assertEquals([10, 150_000, 1_500_000], [$items[0]['qty'], $items[0]['price'], $items[0]['total']]);
+    }
+
+    public function test_tabel_tanpa_judul_kolom_dikenali_dari_isinya(): void
+    {
+        $result = app(QuotationItemImport::class)->parse($this->sheetFile([
+            ['PENAWARAN HARGA PT CONTOH'],
+            [],
+            ['PRODUKSI'],
+            ['Booth 3x3', 2, 'unit', 5_000_000, 10_000_000],
+            ['Backdrop 4x3', 1, 'unit', 3_500_000, 3_500_000],
+            [null, null, null, null, 13_500_000],
+        ]));
+
+        $this->assertSame(['Booth 3x3', 'Backdrop 4x3'], array_column($result['items'], 'name'));
+        $this->assertSame(['PRODUKSI', 'PRODUKSI'], array_column($result['items'], 'section'), 'Judul bagian tepat di atas tabel ikut; judul dokumen tidak.');
+        $this->assertEquals([2, 5_000_000], [$result['items'][0]['qty'], $result['items'][0]['price']]);
+        $this->assertEquals(13_500_000, $result['expected_total']);
+    }
+
+    public function test_penanda_bagian_di_kolom_no_dan_sub_total_di_kolom_nama(): void
+    {
+        $result = app(QuotationItemImport::class)->parse($this->sheetFile([
+            ['NO', 'ITEMS', 'QTY', 'UNIT', 'PRICE', 'TOTAL'],
+            [null, 'FLEX - SCBD - FINAL'],
+            [null, 'Pekerjaan Renovasi'],
+            [null, 'Lingkup pekerjaan antara lain :'],
+            [null, 'Persiapan Pekerjaan'],
+            [null, 'Mobilisasi dan akomodasi', 1, 'ls', 40_000_000, 40_000_000],
+            [null, 'Total Harga Persiapan', null, null, null, 40_000_000],
+            ['A', 'Pekerjaan Lantai'],
+            [1, 'Bongkar lantai', 1, 'ls', 33_000_000, 33_000_000],
+            [2, 'Pasang granit', 1, 'ls'],
+            [null, 'Total Harga Pekerjaan Lantai', null, null, null, 33_000_000],
+            ['B', 'Pekerjaan Partisi'],
+            [null, 'Sisi Kanan'],
+            [1, 'Partisi gypsum', 1, 'ls', 30_000_000, 30_000_000],
+            [null, 'Total Harga Pekerjaan Partisi', null, null, null, 30_000_000],
+            [null, 'GRAND TOTAL', null, null, null, 103_000_000],
+        ]));
+
+        $this->assertSame(
+            [['Persiapan Pekerjaan', null], ['Pekerjaan Lantai', null], ['Pekerjaan Lantai', null], ['Pekerjaan Partisi', 'Sisi Kanan']],
+            array_map(fn ($item) => [$item['section'], $item['subsection']], $result['items']),
+        );
+        $this->assertSame(['Tidak ada harga di file.'], $result['items'][2]['issues'], 'Item bernomor tanpa harga tetap item.');
+        $this->assertEquals([103_000_000, 103_000_000], [$result['total'], $result['expected_total']], 'Baris "Total Harga …" bukan item.');
+        $this->assertContains('Tidak diimpor (tanpa harga, di luar tabel item): "FLEX - SCBD - FINAL", "Pekerjaan Renovasi", "Lingkup pekerjaan antara lain :".', $result['warnings']);
+    }
+
+    public function test_semua_sheet_bisa_digabung(): void
+    {
+        $book = new Spreadsheet();
+        $book->getActiveSheet()->setTitle('Lantai 1')->fromArray([['Item', 'Qty', 'Harga', 'Total'], ['Booth', 1, 5_000_000, 5_000_000]]);
+        $book->createSheet()->setTitle('Lantai 2')->fromArray([['Item', 'Qty', 'Harga', 'Total'], ['Backdrop', 2, 1_000_000, 2_000_000], ['Total', null, null, 2_000_000]]);
+        $book->createSheet()->setTitle('Catatan')->fromArray([['Harga belum termasuk PPN']]);
+
+        $result = app(QuotationItemImport::class)->parse($this->save($book), QuotationItemImport::ALL_SHEETS);
+
+        $this->assertSame(['Lantai 1', 'Lantai 2'], array_column($result['items'], 'section'));
+        $this->assertEquals(7_000_000, $result['total']);
+        $this->assertNull($result['expected_total'], 'Lantai 1 tidak punya total di file.');
+        $this->assertSame(['Sheet tanpa tabel item dilewati: "Catatan".'], $result['notes']);
+    }
+
+    public function test_file_xls_ods_dan_sel_jauh_di_kanan(): void
+    {
+        $import = app(QuotationItemImport::class);
+
+        foreach (['Xls' => 'xls', 'Ods' => 'ods'] as $writer => $extension) {
+            $book = new Spreadsheet();
+            $book->getActiveSheet()->fromArray([['Item', 'Qty', 'Harga', 'Total'], ['Booth', 2, 5_000_000, 10_000_000]]);
+
+            $this->assertEquals(10_000_000, $import->parse($this->save($book, $writer, $extension))['total'], $extension);
+        }
+
+        // Dulu setiap kolom sampai sel terjauh dibaca satu per satu, dan file seperti ini kehabisan memori.
+        $book = new Spreadsheet();
+        $book->getActiveSheet()->fromArray([['Item', 'Qty', 'Harga', 'Total'], ['Booth', 2, 5_000_000, 10_000_000]]);
+        $book->getActiveSheet()->setCellValue('XEK40', 'catatan tersembunyi');
+
+        $this->assertEquals(10_000_000, $import->parse($this->save($book))['total']);
+    }
+
+    public function test_kolom_yang_tidak_dikenali_bisa_dipilih_sendiri(): void
+    {
+        $path = $this->sheetFile([
+            ['Barang / Jasa', 'Banyaknya Unit', 'Nilai Per Unit', 'Nilai Akhir'],
+            ['Video profil', 1, 'Lima juta', 'Lima juta'],
+            ['Foto produk', 20, 'Dua ratus ribu', 'Empat juta'],
+        ]);
+        $import = app(QuotationItemImport::class);
+
+        try {
+            $import->parse($path);
+            $this->fail('Kolom seperti ini tidak dikenali otomatis.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Atur kolom sendiri', $e->getMessage());
+        }
+
+        $detected = $import->detect($path);
+        $this->assertFalse($detected['found']);
+        $this->assertSame('Barang / Jasa', $detected['preview'][0]['cells']['A']);
+
+        $mapped = $this->sheetFile([
+            ['Barang / Jasa', 'Banyaknya Unit', 'Nilai Per Unit', 'Nilai Akhir'],
+            ['Video profil', 1, 5_000_000, 5_000_000],
+            ['Foto produk', 20, 200_000, 4_000_000],
+        ]);
+        $result = $import->parse($mapped, mapping: ['header_row' => 1, 'item' => 'A', 'qty' => 'B', 'price' => 'C', 'total' => 'D']);
+
+        $this->assertEquals([20, 200_000, 4_000_000], [$result['items'][1]['qty'], $result['items'][1]['price'], $result['items'][1]['total']]);
+        $this->assertEquals(9_000_000, $result['total']);
+    }
+
+    public function test_jendela_import_membuka_pilihan_kolom_bila_tabel_tidak_dikenali(): void
+    {
+        $this->actingAs($this->importer());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $file = UploadedFile::fake()->createWithContent('aneh.xlsx', file_get_contents($this->sheetFile([
+            ['Barang / Jasa', 'Banyaknya Unit', 'Nilai Per Unit', 'Nilai Akhir'],
+            ['Video profil', 1, 'lima juta', 'lima juta'],
+        ])));
+
+        $component = Livewire::test(CreateQuotation::class)
+            ->call('mountFormComponentAction', 'itemsSection', 'importItems')
+            ->set('mountedFormComponentActionsData.0.file', $file)
+            ->call('dispatchFormEvent', 'wizard::nextStep', 'mountedFormComponentActionsData.0', 0)
+            ->assertNotified('File tidak bisa dibaca')
+            ->assertSet('mountedFormComponentActionsData.0.manual', true)
+            ->assertSee('Isi awal file')
+            ->assertSee('A · Barang / Jasa');
+
+        // Pengguna memilih kolomnya; angka teks tidak terbaca, jadi baris itu ditandai tanpa harga.
+        $component
+            ->set('mountedFormComponentActionsData.0.map.item', 'A')
+            ->set('mountedFormComponentActionsData.0.map.qty', 'B')
+            ->set('mountedFormComponentActionsData.0.map.price', 'C')
+            ->set('mountedFormComponentActionsData.0.map.header_row', 1)
+            ->call('dispatchFormEvent', 'wizard::nextStep', 'mountedFormComponentActionsData.0', 0)
+            ->assertSee('1 item');
+
+        $rows = array_values($component->get('mountedFormComponentActionsData.0.rows'));
+        $this->assertSame('Video profil', $rows[0]['item']);
+    }
+
+    /**
+     * @param  array<int, array<int, mixed>>  $rows
+     */
+    private function sheetFile(array $rows): string
+    {
+        $book = new Spreadsheet();
+        $book->getActiveSheet()->fromArray($rows, null, 'A1', true);
+
+        return $this->save($book);
+    }
+
+    private function save(Spreadsheet $book, string $writer = 'Xlsx', string $extension = 'xlsx'): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'quo-') . '.' . $extension;
+        $this->paths[] = $path;
+        IOFactory::createWriter($book, $writer)->save($path);
+        $book->disconnectWorksheets();
+
+        return $path;
+    }
+
     private function importer(): User
     {
         $user = User::forceCreate([
