@@ -65,6 +65,33 @@ class ReceiptScannerTest extends TestCase
         $this->assertGreaterThan(200, $this->gray($out, intdiv(imagesx($out), 2), imagesy($out) - 10), 'Bagian bawah kertas ikut.');
     }
 
+    public function test_hasil_hitam_putih_bersih_jari_hilang_cap_tetap(): void
+    {
+        $image = imagecreatetruecolor(900, 1400);
+        imagefill($image, 0, 0, imagecolorallocate($image, 60, 50, 45));
+        $quad = [[200, 100], [700, 100], [700, 1300], [200, 1300]];
+        imagefilledpolygon($image, array_merge(...$quad), imagecolorallocate($image, 238, 236, 230));
+        $this->text($image, $quad);
+
+        // Cap merah tua di tengah kertas, jari berkuteks di pinggir kanan.
+        imagefilledrectangle($image, 380, 1150, 520, 1200, imagecolorallocate($image, 150, 20, 30));
+        imagefilledellipse($image, 700, 300, 130, 80, imagecolorallocate($image, 180, 90, 100));
+
+        $out = $this->scan($this->jpeg($image));
+        $w   = imagesx($out);
+        $h   = imagesy($out);
+        $at  = fn (float $rx, float $ry) => imagecolorat($out, (int) ($rx * ($w - 1)), (int) ($ry * ($h - 1)));
+
+        // Abu-abu murni (gaya scan hitam-putih), kertas putih bersih.
+        foreach ([[0.5, 0.05], [0.9, 0.5], [0.3, 0.95]] as [$rx, $ry]) {
+            $rgb = $at($rx, $ry);
+            $this->assertSame([255, 255, 255], [($rgb >> 16) & 255, ($rgb >> 8) & 255, $rgb & 255], "kertas {$rx},{$ry}");
+        }
+
+        $this->assertLessThan(120, $at(0.5, (1175 - 100) / 1200) & 0xFF, 'Cap berwarna di dalam kertas tetap terlihat.');
+        $this->assertGreaterThan(230, $at(0.98, (300 - 100) / 1200) & 0xFF, 'Jari di pinggir kertas jadi putih.');
+    }
+
     public function test_kertas_yang_memenuhi_foto_tidak_dipotong(): void
     {
         $image = imagecreatetruecolor(900, 1200);
