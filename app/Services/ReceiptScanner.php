@@ -37,6 +37,12 @@ class ReceiptScanner
     // tulisannya tidak kotak-kotak saat dibuka di layar.
     private const MAX_UPSCALE = 2.5;
 
+    // Hitam-putih (setelah bayangan diangkat): di bawah INK_LEVEL hitam pekat,
+    // di atas PAPER_LEVEL putih bersih, di antaranya landai (tepi huruf halus).
+    private const INK_LEVEL   = 140;
+    private const PAPER_LEVEL = 225;
+    private const MAX_GAIN    = 2.3;
+
     // Ukuran kerja untuk mencari kertas: cukup kecil supaya tulisan melebur.
     private const DETECT_SIDE = 240;
 
@@ -591,8 +597,8 @@ class ReceiptScanner
 
         // Peta latar dari versi kecil: foto dikecilkan dulu dengan perataan area
         // (supaya noise JPEG tidak terbawa), baru diluruskan kasar.
-        $bw     = max(4, intdiv($w, 6));
-        $bh     = max(4, intdiv($h, 6));
+        $bw     = max(4, intdiv($w, 5));
+        $bh     = max(4, intdiv($h, 5));
         $k      = min(1, $bw / max(1, $width));
         $source = $k < 1 ? $this->fit($image, (int) max(1, round(max(imagesx($image), imagesy($image)) * $k)), always: true) : $image;
         $kx     = imagesx($source) / imagesx($image);
@@ -614,8 +620,9 @@ class ReceiptScanner
         $lut        = $this->toneTable();
 
         // Homografi dari titik hasil (u, v) ke titik di foto (x, y).
-        $m   = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
-        $out = imagecreatetruecolor($w, $h);
+        $m    = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
+        $out  = imagecreatetruecolor($w, $h);
+        $grid = [];
 
         // Interpolasi bilinear: titik terdekat membuat tepi huruf bergerigi.
         for ($v = 0; $v < $h; $v++) {
@@ -636,15 +643,20 @@ class ReceiptScanner
                 $c10 = imagecolorat($image, $x1, $y0);
                 $c01 = imagecolorat($image, $x0, $y1);
                 $c11 = imagecolorat($image, $x1, $y1);
-                $row = $lut[imagecolorat($background, $u, $v) & 0xFF];
 
                 $r = (int) (((($c00 >> 16) & 0xFF) * $bx + (($c10 >> 16) & 0xFF) * $ax) * $by + ((($c01 >> 16) & 0xFF) * $bx + (($c11 >> 16) & 0xFF) * $ax) * $ay);
                 $g = (int) (((($c00 >> 8) & 0xFF) * $bx + (($c10 >> 8) & 0xFF) * $ax) * $by + ((($c01 >> 8) & 0xFF) * $bx + (($c11 >> 8) & 0xFF) * $ax) * $ay);
                 $b = (int) ((($c00 & 0xFF) * $bx + ($c10 & 0xFF) * $ax) * $by + (($c01 & 0xFF) * $bx + ($c11 & 0xFF) * $ax) * $ay);
 
-                imagesetpixel($out, $u, $v, ($row[$r] << 16) | ($row[$g] << 8) | $row[$b]);
+                imagesetpixel($out, $u, $v, $lut[imagecolorat($background, $u, $v) & 0xFF][$this->inkLevel($r, $g, $b)] * 0x010101);
+
+                if (($u & 3) === 0 && ($v & 3) === 0) {
+                    $grid[$v >> 2][$u >> 2] = $this->isColored($r, $g, $b);
+                }
             }
         }
+
+        $this->whitenFingers($out, $grid);
 
         return $out;
     }
@@ -677,21 +689,28 @@ class ReceiptScanner
     {
         $w     = imagesx($image);
         $h     = imagesy($image);
-        $small = imagecreatetruecolor(max(4, intdiv($w, 6)), max(4, intdiv($h, 6)));
+        $small = imagecreatetruecolor(max(4, intdiv($w, 5)), max(4, intdiv($h, 5)));
         imagecopyresampled($small, $image, 0, 0, 0, 0, imagesx($small), imagesy($small), $w, $h);
 
         $background = $this->background($small, $w, $h);
         $lut        = $this->toneTable();
         $out        = imagecreatetruecolor($w, $h);
+        $grid       = [];
 
         for ($y = 0; $y < $h; $y++) {
             for ($x = 0; $x < $w; $x++) {
                 $rgb = imagecolorat($image, $x, $y);
-                $row = $lut[imagecolorat($background, $x, $y) & 0xFF];
+                [$r, $g, $b] = [($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF];
 
-                imagesetpixel($out, $x, $y, ($row[($rgb >> 16) & 0xFF] << 16) | ($row[($rgb >> 8) & 0xFF] << 8) | $row[$rgb & 0xFF]);
+                imagesetpixel($out, $x, $y, $lut[imagecolorat($background, $x, $y) & 0xFF][$this->inkLevel($r, $g, $b)] * 0x010101);
+
+                if (($x & 3) === 0 && ($y & 3) === 0) {
+                    $grid[$y >> 2][$x >> 2] = $this->isColored($r, $g, $b);
+                }
             }
         }
+
+        $this->whitenFingers($out, $grid);
 
         return $out;
     }
@@ -732,10 +751,77 @@ class ReceiptScanner
         return $background;
     }
 
+    private function isColored(int $r, int $g, int $b): bool
+    {
+        $max = max($r, $g, $b);
+
+        return $max > 60 && $max - min($r, $g, $b) > 0.3 * $max;
+    }
+
     /**
-     * Tabel [terang latar][nilai kanal] → nilai hasil: dikalikan supaya latar
-     * kertas putih (penguatan 1–1,9×), titik hitam sedikit diturunkan, dan
-     * kertas yang sudah hampir putih jadi putih bersih (belang JPEG hilang).
+     * Jari yang memegang struk (kulit, kuteks) masuk dari luar kertas, jadi
+     * menempel ke pinggir gambar: area berwarna yang tersambung ke pinggir
+     * dijadikan putih. Tinta dan logo berwarna di dalam kertas tidak tersentuh.
+     *
+     * @param  array<int, array<int, bool>>  $grid  berwarna? per sel 4×4 piksel
+     */
+    private function whitenFingers(GdImage $out, array $grid): void
+    {
+        $rows  = count($grid);
+        $cols  = $rows ? count($grid[0]) : 0;
+        $seen  = [];
+        $queue = [];
+
+        for ($y = 0; $y < $rows; $y++) {
+            for ($x = 0; $x < $cols; $x++) {
+                if (($y === 0 || $x === 0 || $y === $rows - 1 || $x === $cols - 1) && ! empty($grid[$y][$x])) {
+                    $seen[$y][$x] = true;
+                    $queue[]      = [$x, $y];
+                }
+            }
+        }
+
+        while ($queue) {
+            [$x, $y] = array_pop($queue);
+
+            foreach ([[1, 0], [-1, 0], [0, 1], [0, -1]] as [$dx, $dy]) {
+                $nx = $x + $dx;
+                $ny = $y + $dy;
+
+                if (! empty($grid[$ny][$nx]) && empty($seen[$ny][$nx])) {
+                    $seen[$ny][$nx] = true;
+                    $queue[]        = [$nx, $ny];
+                }
+            }
+        }
+
+        // Diperlebar dua sel, supaya tepi jari dan bayangan tipisnya ikut putih.
+        $white = 0xFFFFFF;
+        foreach ($seen as $y => $row) {
+            foreach (array_keys($row) as $x) {
+                imagefilledrectangle($out, ($x - 2) * 4, ($y - 2) * 4, ($x + 3) * 4 - 1, ($y + 3) * 4 - 1, $white);
+            }
+        }
+    }
+
+    /**
+     * Terang piksel untuk hitam-putih. Warna terang yang bukan tinta (kulit
+     * jari yang memegang struk) dianggap kertas; tinta gelap, termasuk logo
+     * dan cap berwarna tua, tetap gelap.
+     */
+    private function inkLevel(int $r, int $g, int $b): int
+    {
+        $luma = ($r * 77 + $g * 150 + $b * 29) >> 8;
+        $max  = max($r, $g, $b);
+
+        return $luma > 150 && $max - min($r, $g, $b) > 0.25 * $max ? 255 : $luma;
+    }
+
+    /**
+     * Tabel [terang latar][terang piksel] → abu-abu hasil, gaya scan hitam-
+     * putih: piksel dikalikan supaya latar kertas putih (bayangan terangkat),
+     * lalu yang jelas tulisan jadi hitam dan yang jelas kertas jadi putih
+     * bersih. Di antaranya landai, jadi tepi huruf tetap halus (tidak pecah).
      *
      * @return array<int, array<int, int>>
      */
@@ -744,10 +830,11 @@ class ReceiptScanner
         $table = [];
 
         for ($bg = 0; $bg < 256; $bg++) {
-            $gain = min(1.9, max(1.0, 245 / max(1, $bg)));
+            $gain = min(self::MAX_GAIN, max(1.0, 245 / max(1, $bg)));
 
             for ($value = 0; $value < 256; $value++) {
-                $table[$bg][$value] = (int) max(0, min(255, ($value * $gain - 20) * 255 / 212));
+                $lifted = min(255, $value * $gain);
+                $table[$bg][$value] = (int) max(0, min(255, ($lifted - self::INK_LEVEL) * 255 / (self::PAPER_LEVEL - self::INK_LEVEL)));
             }
         }
 
