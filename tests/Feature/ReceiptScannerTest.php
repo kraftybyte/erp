@@ -41,6 +41,30 @@ class ReceiptScannerTest extends TestCase
         $this->assertGreaterThan(0.01, $this->darkShare($out));
     }
 
+    public function test_struk_dipegang_di_depan_dinding_terang_tidak_terpotong(): void
+    {
+        // Seperti foto struk Alfamart: dinding terang di atas, printer gelap di
+        // tengah, meja terang di kiri bawah, jari di pinggir kertas.
+        $image = imagecreatetruecolor(800, 1400);
+        imagefill($image, 0, 0, imagecolorallocate($image, 225, 225, 228));
+        imagefilledrectangle($image, 60, 300, 760, 1000, imagecolorallocate($image, 30, 32, 40));
+        imagefilledrectangle($image, 500, 260, 760, 420, imagecolorallocate($image, 30, 60, 160));
+
+        $quad = [[230, 140], [620, 140], [650, 1380], [240, 1380]];
+        imagefilledpolygon($image, array_merge(...$quad), imagecolorallocate($image, 246, 246, 244));
+        $this->text($image, $quad);
+
+        $skin = imagecolorallocate($image, 225, 160, 140);
+        imagefilledellipse($image, 640, 200, 150, 90, $skin);
+        imagefilledellipse($image, 200, 1330, 170, 110, $skin);
+
+        $out = $this->scan($this->jpeg($image));
+
+        // Panjang struk utuh (±1240 × 400), bukan berhenti di batas printer.
+        $this->assertEqualsWithDelta(1240 / 400, imagesy($out) / imagesx($out), 0.35);
+        $this->assertGreaterThan(200, $this->gray($out, intdiv(imagesx($out), 2), imagesy($out) - 10), 'Bagian bawah kertas ikut.');
+    }
+
     public function test_kertas_yang_memenuhi_foto_tidak_dipotong(): void
     {
         $image = imagecreatetruecolor(900, 1200);
@@ -71,15 +95,19 @@ class ReceiptScannerTest extends TestCase
         Http::assertSentCount(1);
     }
 
-    public function test_tanpa_gemini_foto_yang_tidak_terdeteksi_tetap_dirapikan_utuh(): void
+    public function test_tanpa_gemini_foto_yang_kertasnya_tidak_ketemu_disimpan_apa_adanya(): void
     {
+        // Meja kayu tanpa kertas: lebih baik foto asli daripada olahan yang rusak.
         $image = imagecreatetruecolor(1000, 800);
-        imagefill($image, 0, 0, imagecolorallocate($image, 250, 250, 250));
+        imagefill($image, 0, 0, imagecolorallocate($image, 150, 105, 70));
         Http::fake();
 
-        $out = $this->scan($this->jpeg($image));
+        $scanner = app(ReceiptScanner::class);
+        $this->assertNull($scanner->scan($jpeg = $this->jpeg($image)));
 
-        $this->assertSame([1000, 800], [imagesx($out), imagesy($out)]);
+        $stored = $scanner->store($jpeg, 'image/jpeg', 'expense/invoice/tes');
+        $this->assertFalse($stored['scanned']);
+        $this->assertSame($jpeg, Storage::disk('public')->get($stored['path']));
         Http::assertNothingSent();
     }
 
