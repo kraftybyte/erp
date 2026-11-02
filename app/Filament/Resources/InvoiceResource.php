@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Exceptions\InvoicePaymentException;
 use App\Filament\Actions\ProjectFromInvoiceAction;
 use App\Filament\Forms\ImportItemsAction;
+use App\Filament\Forms\PaymentTypeFields;
 use App\Helpers\AmountSearch;
 use App\Models\Invoice;
 use App\Models\Deal;
@@ -337,50 +338,7 @@ class InvoiceResource extends BaseInvoiceResource
                        PAYMENT TYPE
                     ================================================= */
 
-                    Forms\Components\Select::make(
-                        'type_payment'
-                    )
-                        ->label(
-                            'Tipe Pembayaran'
-                        )
-                        ->required()
-                        ->searchable()
-                        ->options([
-
-                            'full_payment' =>
-                                'Full Payment',
-
-                            'final_payment' =>
-                                'Final Payment',
-
-                            'dp_10' =>
-                                'Down Payment 10%',
-
-                            'dp_20' =>
-                                'Down Payment 20%',
-
-                            'dp_30' =>
-                                'Down Payment 30%',
-
-                            'dp_40' =>
-                                'Down Payment 40%',
-
-                            'dp_50' =>
-                                'Down Payment 50%',
-
-                            'dp_60' =>
-                                'Down Payment 60%',
-
-                            'dp_70' =>
-                                'Down Payment 70%',
-
-                            'dp_80' =>
-                                'Down Payment 80%',
-
-                            'dp_90' =>
-                                'Down Payment 90%',
-
-                        ]),
+                    ...PaymentTypeFields::make(),
 
                     Forms\Components\TextInput::make(
                         'po_number'

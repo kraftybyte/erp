@@ -672,7 +672,8 @@ class QuotationItemImportTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         $component = Livewire::test(CreateInvoice::class)
-            ->set('data.type_payment', 'dp_50')
+            ->set('data.type_payment', 'dp')
+            ->set('data.dp_persen', 50)
             ->call('mountFormComponentAction', 'itemsSection', 'importItems')
             ->set('mountedFormComponentActionsData.0.file', UploadedFile::fake()->createWithContent('budget.xlsx', file_get_contents($this->budget())))
             ->call('callMountedFormComponentAction')

@@ -161,7 +161,9 @@ class CriticalFixesTest extends TestCase
             'harga_layanan'  => 5_000_000,
         ]);
 
-        $component = Livewire::test(CreateInvoice::class)->set('data.type_payment', 'dp_50');
+        $component = Livewire::test(CreateInvoice::class)
+            ->set('data.type_payment', 'dp')
+            ->set('data.dp_persen', 50);
         $key       = array_key_first($component->get('data.invoicesItems'));
 
         $component

@@ -21,6 +21,7 @@ use carbon\Carbon;
 use TomatoPHP\FilamentLocations\Models\Currency;
 use App\Providers\Company;
 use App\Models\Invoice;
+use App\Filament\Forms\PaymentTypeFields;
 
     class InvoicesRelationManager extends RelationManager
     {
@@ -127,9 +128,7 @@ use App\Models\Invoice;
                             ->default('draft')
                             ->searchable()
                             ->options($statues->pluck('name', 'key')->toArray()),
-                            Forms\Components\TextInput::make('type_payment')
-                            ->label('Type Payment')
-                            ->required(),
+                        ...PaymentTypeFields::make(),
                         Forms\Components\Select::make('currency_id')
                             ->label(trans('filament-invoices::messages.invoices.sections.invoice_data.columns.currency'))
                             ->required()
