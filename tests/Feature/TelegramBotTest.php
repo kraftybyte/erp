@@ -424,7 +424,9 @@ class TelegramBotTest extends TestCase
         $scan    = imagecreatefromstring(Storage::disk('public')->get($expense->attachment));
 
         $this->assertStringEndsWith('.jpg', $expense->attachment);
-        $this->assertLessThan(imagesx($photo), imagesx($scan), 'Meja di sekeliling struk terpotong.');
+        // Meja di sekeliling struk terpotong: perbandingan sisinya mengikuti kertas, pojoknya putih.
+        $this->assertEqualsWithDelta(880 / 520, imagesy($scan) / imagesx($scan), 0.15);
+        $this->assertGreaterThan(200, imagecolorat($scan, 3, 3) & 0xFF);
         $this->assertNotNull(\App\Services\ReceiptScanner::original($expense->attachment), 'Foto asli ikut disimpan.');
     }
 
