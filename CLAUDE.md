@@ -51,7 +51,7 @@ protected static function boot() {
 ### Navigation Groups
 - CRM → Leads, Client, Product, Quotation, Contract
 - Project → Project, Task Kanban, Timeline
-- Finance → Expense, Advance, Budget, Invoice, Analytics
+- Finance → Expense, Advance, Budget, Invoice, Analytics, Faktur (rekap faktur pajak keluaran + nota/struk masukan)
 - HR → Employee, Absence
 
 ### Color Helper Usage

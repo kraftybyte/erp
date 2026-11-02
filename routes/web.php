@@ -9,6 +9,7 @@ use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
+use App\Http\Controllers\FakturController;
 use App\Services\ItemImportTemplate;
 use Filament\Notifications\Notification;
 
@@ -84,6 +85,14 @@ Route::get('/import-template/{type}', function (ItemImportTemplate $template, st
 
     return response()->download($path, ItemImportTemplate::filename($type))->deleteFileAfterSend();
 })->whereIn('type', array_keys(ItemImportTemplate::TYPES))->middleware('auth')->name('import-template.items');
+
+// Halaman Faktur: rekap Excel dan ZIP faktur masukan satu bulan.
+Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
+    Route::get('/faktur/{bulan}/excel', [FakturController::class, 'excel'])
+        ->where('bulan', '\d{4}-(0[1-9]|1[0-2])')->name('faktur.excel');
+    Route::get('/faktur/{bulan}/zip', [FakturController::class, 'zip'])
+        ->where('bulan', '\d{4}-(0[1-9]|1[0-2])')->name('faktur.zip');
+});
 
 // WhatsApp Message Route
 Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');
