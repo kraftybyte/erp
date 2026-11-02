@@ -192,7 +192,12 @@ class FinanceOverview
      */
     public static function invoiceUnpaid(Invoice $invoice): float
     {
-        return $invoice->status === 'paid' ? 0.0 : max(round((float) $invoice->grand_total - (float) $invoice->paid, 2), 0);
+        // Pelunasan: yang ditagih harga penuh dikurangi DP (Invoice::amountDue()),
+        // sama dengan "Sisa Pembayaran" di PDF. Dulu dihitung dari harga penuh,
+        // sehingga pelunasan yang sudah dibayar sesuai PDF tetap tersisa sebesar DP.
+        $due = $invoice->type_payment === 'final_payment' ? $invoice->amountDue() : (float) $invoice->grand_total;
+
+        return $invoice->status === 'paid' ? 0.0 : max(round($due - (float) $invoice->paid, 2), 0);
     }
 
     /**

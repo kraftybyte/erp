@@ -830,16 +830,20 @@ class PembayaranIntegritasTest extends TestCase
         );
     }
 
-    public function test_pdf_pelunasan_membaca_dari_tautan_bukan_catatan_teks(): void
+    public function test_pdf_pelunasan_dan_tombol_bayar_memakai_dp_yang_sama(): void
     {
-        $sumber = file_get_contents(resource_path('views/pdf/invoice-dynamic.blade.php'));
+        $dp = new Invoice(['type' => 'sale', 'type_payment' => 'dp_30']);
+        $dp->grand_total = 10_000_000;
 
-        $this->assertStringContainsString(
-            '$invoice->parent_invoice_id ? $invoice->parentInvoice : null',
-            $sumber,
-            'Nilai DP pada invoice pelunasan harus datang dari invoice DP yang ditautkan, '
-            . 'bukan dari mem-parsing teks bebas di kolom notes.'
-        );
+        $pelunasan = new Invoice(['type' => 'sale', 'type_payment' => 'final_payment', 'notes' => 'DP: 50% - Rp 999.000']);
+        $pelunasan->grand_total       = 10_000_000;
+        $pelunasan->parent_invoice_id = 1;
+        $pelunasan->setRelation('parentInvoice', $dp);
+        $pelunasan->setRelation('invoicesItems', collect());
+
+        // Dari invoice DP yang ditautkan, bukan dari teks catatan.
+        $this->assertEquals(7_000_000, $pelunasan->amountDue());
+        $this->assertStringContainsString('Sisa Pembayaran : Rp7.000.000', $this->teksPdfInvoice($pelunasan));
     }
 
     private function teksPdfInvoice(Invoice $invoice): string

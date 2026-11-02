@@ -146,18 +146,112 @@ class Invoice extends BaseInvoice
     }
 
     /**
+     * DP yang sudah ditagih sebelum invoice pelunasan ini: dari invoice DP yang
+     * ditautkan (parent_invoice_id), atau, untuk invoice lama tanpa tautan,
+     * catatan "DP: 50% - Rp 20.000.000". Null bila bukan pelunasan atau DP-nya
+     * tidak diketahui. Sumber yang sama dipakai PDF, tombol Bayar, laporan
+     * piutang, dan rekap faktur.
+     *
+     * @return array{percent: int, amount: float, full: float}|null  full = harga penuh pekerjaan
+     */
+    public function settledDp(): ?array
+    {
+        if ($this->type_payment !== 'final_payment') {
+            return null;
+        }
+
+        if ($this->parent_invoice_id && ($dp = $this->parentInvoice)) {
+            $full    = (float) $dp->grand_total ?: (float) $this->grand_total;
+            $percent = $dp->dpPercentage();
+            $amount  = $percent !== null ? $full * $percent / 100 : (float) $dp->paid;
+
+            if ($percent === null && $amount <= 0) {
+                return null;
+            }
+
+            return ['percent' => (int) ($percent ?? round($amount / max($full, 1) * 100)), 'amount' => $amount, 'full' => $full];
+        }
+
+        if (preg_match('/DP[:\s]*(\d+)%\s*[-–:]*\s*[Rr]p\s*([\d.,]+)/i', trim((string) $this->notes), $match)) {
+            $percent = (int) $match[1];
+            $amount  = (float) str_replace('.', '', $match[2]);
+
+            if ($percent > 0 && $percent < 100 && $amount > 0) {
+                return ['percent' => $percent, 'amount' => $amount, 'full' => $amount / ($percent / 100)];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Nominal yang ditagihkan lewat invoice ini.
      *
-     * Untuk invoice DP, yang ditagih adalah DP-nya — persentase dari harga penuh —
-     * bukan sisanya. grand_total menyimpan harga penuh pekerjaan.
+     * Invoice DP menagih DP-nya: persentase dari harga penuh (grand_total
+     * menyimpan harga penuh pekerjaan). Invoice pelunasan menagih sisanya:
+     * harga penuh dikurangi DP yang sudah ditagih, sama dengan "Sisa
+     * Pembayaran" di PDF. Dulu pelunasan ditagih penuh, sehingga yang sudah
+     * dibayar klien sesuai PDF tetap tercatat belum lunas.
      */
     public function amountDue(): float
     {
-        $persen = $this->dpPercentage();
+        if (($persen = $this->dpPercentage()) !== null) {
+            return (float) $this->grand_total * ($persen / 100);
+        }
 
-        return $persen !== null
-            ? (float) $this->grand_total * ($persen / 100)
-            : (float) $this->grand_total;
+        if ($dp = $this->settledDp()) {
+            return max(0, $dp['full'] - $dp['amount']);
+        }
+
+        return (float) $this->grand_total;
+    }
+
+    /**
+     * Salinan draft invoice ini beserta itemnya, bernomor baru (Duplikat dan
+     * Buat pelunasan).
+     */
+    public function duplicateAsDraft(array $overrides = []): self
+    {
+        $copy = static::create($overrides + [
+            'uuid'                 => static::generateUuid($this->type ?? 'sale'),
+            'date'                 => now(),
+            'due_date'             => now()->addDays(30),
+            'type'                 => $this->type ?? 'sale',
+            'status'               => 'draft',
+            'type_payment'         => $this->type_payment ?? 'full_payment',
+            'nama_perusahaan'      => $this->nama_perusahaan,
+            'nama_pic'             => $this->nama_pic,
+            'telephone'            => $this->telephone,
+            'alamat'               => $this->alamat,
+            'deal_id'              => $this->deal_id,
+            'po_number'            => null,
+            'faktur'               => null,
+            'delivery_note_number' => null,
+            'subtotal'             => $this->subtotal,
+            'total_discount'       => $this->total_discount,
+            'total_vat'            => $this->total_vat,
+            'grand_total'          => $this->grand_total,
+            'paid'                 => 0,
+            'currency_id'          => $this->currency_id,
+            'notes'                => $this->notes,
+            'user_id'              => auth()->id() ?? $this->user_id,
+        ]);
+
+        foreach ($this->invoicesItems as $item) {
+            $copy->invoicesItems()->create([
+                'item'           => $item->item,
+                'description'    => $item->description,
+                'qty'            => $item->qty,
+                'price'          => $item->price,
+                'discount'       => $item->discount,
+                'vat_percentage' => $item->vat_percentage,
+                'vat'            => $item->vat,
+                'total'          => $item->total,
+                'original_price' => $item->original_price,
+            ]);
+        }
+
+        return $copy;
     }
 
     /**

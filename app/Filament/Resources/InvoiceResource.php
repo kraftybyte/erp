@@ -56,6 +56,32 @@ class InvoiceResource extends BaseInvoiceResource
         );
     }
 
+    /**
+     * Invoice DP milik client yang sama, untuk dipilih sebagai dasar pelunasan.
+     *
+     * @return array<int, string>
+     */
+    public static function dpInvoiceOptions(mixed $dealId, ?string $company, ?int $exceptId = null): array
+    {
+        return Invoice::query()
+            ->where('type', 'sale')
+            ->where('type_payment', 'like', 'dp\\_%')
+            ->whereNull('deleted_at')
+            ->when($exceptId, fn (Builder $query) => $query->whereKeyNot($exceptId))
+            ->where(fn (Builder $query) => $query
+                ->when($dealId, fn (Builder $q) => $q->where('deal_id', $dealId))
+                ->when(filled($company), fn (Builder $q) => $q->orWhere('nama_perusahaan', $company))
+                ->when(! $dealId && blank($company), fn (Builder $q) => $q->whereRaw('1 = 0')))
+            ->orderByDesc('date')
+            ->limit(50)
+            ->get()
+            ->mapWithKeys(fn (Invoice $invoice) => [
+                $invoice->id => $invoice->uuid . ' · DP ' . $invoice->dpPercentage() . '% · '
+                    . \App\Helpers\Money::rupiah($invoice->amountDue()) . ' dari ' . \App\Helpers\Money::rupiah($invoice->grand_total),
+            ])
+            ->all();
+    }
+
     public static function getPages(): array
     {
         return array_merge(parent::getPages(), [
@@ -339,6 +365,16 @@ class InvoiceResource extends BaseInvoiceResource
                     ================================================= */
 
                     ...PaymentTypeFields::make(),
+
+                    // Pelunasan menagih harga penuh dikurangi DP dari invoice ini
+                    // (Invoice::amountDue(), PDF, tombol Bayar).
+                    Forms\Components\Select::make('parent_invoice_id')
+                        ->label('Invoice DP')
+                        ->visible(fn (Get $get) => $get('type_payment') === 'final_payment')
+                        ->options(fn (Get $get, ?Invoice $record) => self::dpInvoiceOptions($get('_deal_id'), $get('nama_perusahaan'), $record?->id))
+                        ->searchable()
+                        ->placeholder('Pilih invoice DP-nya')
+                        ->helperText('Sisa tagihan = harga penuh dikurangi DP dari invoice ini.'),
 
                     Forms\Components\TextInput::make(
                         'po_number'
@@ -2650,71 +2686,46 @@ class InvoiceResource extends BaseInvoiceResource
                         )
                         ->action(
                             function (Invoice $record) {
-
-                                // Generate new UUID with next sequence
-                                $newUuid = Invoice::generateUuid(
-                                    $record->type ?? 'sale'
-                                );
-
-                                // Create duplicate
-                                $newInvoice = Invoice::create([
-                                    'uuid' => $newUuid,
-                                    'date' => now(),
-                                    'due_date' => now()->addDays(30),
-                                    'type' => $record->type ?? 'sale',
-                                    'status' => 'draft',
-                                    'type_payment' => $record->type_payment ?? 'full_payment',
-                                    'nama_perusahaan' => $record->nama_perusahaan,
-                                    'nama_pic' => $record->nama_pic,
-                                    'telephone' => $record->telephone,
-                                    'alamat' => $record->alamat,
-                                    'deal_id' => $record->deal_id,
-                                    'po_number' => null,
-                                    'faktur' => null,
-                                    'delivery_note_number' => null,
-                                    'subtotal' => $record->subtotal,
-                                    'total_discount' => $record->total_discount,
-                                    'total_vat' => $record->total_vat,
-                                    'grand_total' => $record->grand_total,
-                                    'paid' => 0,
-                                    'currency_id' => $record->currency_id,
-                                    'notes' => $record->notes,
-                                    'user_id' => auth()->id(),
-                                ]);
-
-                                // Copy items
-                                foreach ($record->invoicesItems as $item) {
-                                    $newInvoice->invoicesItems()->create([
-                                        'item' => $item->item,
-                                        'description' => $item->description,
-                                        'qty' => $item->qty,
-                                        'price' => $item->price,
-                                        'discount' => $item->discount,
-                                        'vat_percentage' => $item->vat_percentage,
-                                        'vat' => $item->vat,
-                                        'total' => $item->total,
-                                        'original_price' => $item->original_price,
-                                    ]);
-                                }
+                                $newInvoice = $record->duplicateAsDraft();
 
                                 Notification::make()
-                                    ->title(
-                                        'Invoice Duplicated'
-                                    )
-                                    ->body(
-                                        'New invoice created: ' . $newUuid
-                                    )
+                                    ->title('Invoice diduplikat')
+                                    ->body('Invoice baru: ' . $newInvoice->uuid)
                                     ->success()
                                     ->send();
 
-                                // Redirect to edit the new invoice
-                                return redirect()->to(
-                                    InvoiceResource::getUrl('edit', [
-                                        'record' => $newInvoice
-                                    ])
-                                );
+                                return redirect()->to(InvoiceResource::getUrl('edit', ['record' => $newInvoice]));
                             }
                         ),
+
+                    // Invoice pelunasan yang langsung tertaut ke invoice DP ini, jadi
+                    // sisa tagihannya (harga penuh − DP) dihitung benar di PDF dan ERP.
+                    Tables\Actions\Action::make('pelunasan')
+                        ->label('Buat pelunasan')
+                        ->icon('heroicon-m-banknotes')
+                        ->color('gray')
+                        ->visible(fn (Invoice $record) => $record->type === 'sale'
+                            && $record->dpPercentage() !== null
+                            && ! $record->childInvoices()->where('type_payment', 'final_payment')->exists())
+                        ->requiresConfirmation()
+                        ->modalHeading('Buat invoice pelunasan')
+                        ->modalDescription(fn (Invoice $record) => 'Invoice baru menagih sisa ' . (100 - $record->dpPercentage()) . '% ('
+                            . \App\Helpers\Money::rupiah((float) $record->grand_total - $record->amountDue()) . ') dan tertaut ke ' . $record->uuid . '.')
+                        ->modalSubmitActionLabel('Buat')
+                        ->action(function (Invoice $record) {
+                            $final = $record->duplicateAsDraft([
+                                'type_payment'      => 'final_payment',
+                                'parent_invoice_id' => $record->id,
+                            ]);
+
+                            Notification::make()
+                                ->title('Invoice pelunasan dibuat')
+                                ->body($final->uuid . ' · sisa ' . \App\Helpers\Money::rupiah($final->amountDue()))
+                                ->success()
+                                ->send();
+
+                            return redirect()->to(InvoiceResource::getUrl('edit', ['record' => $final]));
+                        }),
 
                     /*
                     |--------------------------------------------------------------------------

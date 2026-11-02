@@ -262,10 +262,8 @@ class FakturCollector
             return [1.0, 'Full payment', null];
         }
 
-        // Sama dengan PDF pelunasan: dari invoice DP yang ditautkan, atau
-        // catatan "DP: 50% - Rp …" pada invoice lama.
-        $paidDp = $invoice->parentInvoice?->dpPercentage()
-            ?? (preg_match('/DP[:\s]*(\d+)%/i', (string) $invoice->notes, $m) ? (int) $m[1] : null);
+        // Sumber DP yang sama dengan PDF dan tombol Bayar (Invoice::settledDp()).
+        $paidDp = $invoice->settledDp()['percent'] ?? null;
 
         return $paidDp !== null && $paidDp > 0 && $paidDp < 100
             ? [1 - $paidDp / 100, 'Pelunasan ' . (100 - $paidDp) . '%', null]
