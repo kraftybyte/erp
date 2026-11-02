@@ -72,6 +72,8 @@ class Invoice extends BaseInvoice
         'type_payment',
         'po_number',
         'faktur',
+        // PDF faktur pajak keluaran, di disk public (halaman Faktur).
+        'faktur_file',
         'delivery_note_number',
         'is_activated',
         'is_offer',
