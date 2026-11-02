@@ -92,6 +92,41 @@ class ReceiptScannerTest extends TestCase
         $this->assertGreaterThan(230, $at(0.98, (300 - 100) / 1200) & 0xFF, 'Jari di pinggir kertas jadi putih.');
     }
 
+    public function test_dokumen_berwarna_hanya_dipotong_dan_kontrasnya_naik(): void
+    {
+        // Invoice berwarna difoto miring di meja, agak redup: kop biru selebar
+        // isi, logo merah, baris tulisan.
+        $image = imagecreatetruecolor(1200, 1600);
+        imagefill($image, 0, 0, imagecolorallocate($image, 70, 55, 45));
+        $quad = [[230, 160], [990, 210], [960, 1460], [200, 1420]];
+        imagefilledpolygon($image, array_merge(...$quad), imagecolorallocate($image, 205, 203, 198));
+
+        $lerp = fn ($a, $b, $t) => [$a[0] + ($b[0] - $a[0]) * $t, $a[1] + ($b[1] - $a[1]) * $t];
+        $at   = fn ($u, $v) => $lerp($lerp($quad[0], $quad[1], $u), $lerp($quad[3], $quad[2], $u), $v);
+        $box  = fn ($u0, $v0, $u1, $v1) => array_merge($at($u0, $v0), $at($u1, $v0), $at($u1, $v1), $at($u0, $v1));
+
+        imagefilledpolygon($image, $box(0.05, 0.05, 0.95, 0.15), imagecolorallocate($image, 40, 70, 150));
+        imagefilledpolygon($image, $box(0.1, 0.2, 0.2, 0.28), imagecolorallocate($image, 170, 40, 40));
+        for ($v = 0.35; $v < 0.9; $v += 0.05) {
+            imagefilledpolygon($image, $box(0.1, $v, 0.8, $v + 0.015), imagecolorallocate($image, 50, 50, 55));
+        }
+
+        $out = $this->scan($this->jpeg($image));
+        $pix = fn (float $u, float $v) => imagecolorat($out, (int) ($u * (imagesx($out) - 1)), (int) ($v * (imagesy($out) - 1)));
+
+        // Utuh dari kop sampai bawah, tegak (±760 × 1250).
+        $this->assertEqualsWithDelta(1250 / 760, imagesy($out) / imagesx($out), 0.15);
+
+        // Warna tetap: kop biru, logo merah.
+        $kop  = $pix(0.5, 0.1);
+        $logo = $pix(0.15, 0.24);
+        $this->assertGreaterThan(80, ($kop & 0xFF) - (($kop >> 16) & 0xFF), 'Kop tetap biru.');
+        $this->assertGreaterThan(80, (($logo >> 16) & 0xFF) - ($logo & 0xFF), 'Logo tetap merah.');
+
+        // Kontras naik: kertas redup (205) jadi hampir putih.
+        $this->assertGreaterThan(235, $pix(0.9, 0.95) & 0xFF);
+    }
+
     public function test_kertas_yang_memenuhi_foto_tidak_dipotong(): void
     {
         $image = imagecreatetruecolor(900, 1200);

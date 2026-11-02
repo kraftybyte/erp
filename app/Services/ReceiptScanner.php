@@ -212,8 +212,16 @@ class ReceiptScanner
             return null;
         }
 
-        $width  = $this->median(array_values($widths));
-        $center = $this->median(array_map(fn ($y) => ($rows[$y][0] + $rows[$y][1]) / 2, array_keys($widths)));
+        // Lebar kertas = bentangan terlebar yang umum (persentil 75): di dokumen
+        // yang padat (kop, logo, garis tebal) banyak baris terpotong isinya,
+        // jadi nilai tengahnya terlalu kecil.
+        $sorted = array_values($widths);
+        sort($sorted);
+        $width  = (float) $sorted[(int) floor(0.75 * (count($sorted) - 1))];
+        $center = $this->median(array_map(
+            fn ($y) => ($rows[$y][0] + $rows[$y][1]) / 2,
+            array_keys(array_filter($widths, fn ($rowWidth) => abs($rowWidth - $width) <= 0.2 * $width))
+        ));
 
         $kept = [];
         foreach ($widths as $y => $rowWidth) {
@@ -272,20 +280,27 @@ class ReceiptScanner
      * terang di ujung struk). Perubahan bertahap (pencahayaan) tetap diikuti.
      *
      * $from–$to: bagian lebar kertas yang diperiksa (0 = tepi kiri, 1 = kanan).
-     * Piksel berwarna (jari di atas kertas) tidak dihitung; bila berhenti
-     * karena didominasi warna, kembaliannya ditandai tertutup.
+     * Baris isi (kop/tabel/logo berwarna atau gelap) dilompati bila pinggiran
+     * kertas di baris itu masih putih: isinya ada di dalam kertas. Benda yang
+     * menutup sampai melewati tepi kertas (printer, jari) menghentikannya;
+     * bila yang menghentikan benda berwarna, kembaliannya ditandai tertutup.
      *
      * @return array{int, bool}  [baris, berhenti karena tertutup]
      */
     private function extend(array $paper, array $gray, array $colored, int $w, int $h, array $left, array $right, array $block, int $step, float $from, float $to): array
     {
-        $band = function (int $y) use ($paper, $gray, $colored, $w, $left, $right, $from, $to): ?array {
+        $span = function (int $y, float $from, float $to) use ($w, $left, $right): ?array {
             $x0 = $left[0] * $y + $left[1];
             $x1 = $right[0] * $y + $right[1];
             $a  = (int) max(0, ceil($x0 + $from * ($x1 - $x0)));
             $b  = (int) min($w - 1, floor($x0 + $to * ($x1 - $x0)));
 
-            if ($b <= $a) {
+            return $b > $a ? [$a, $b] : null;
+        };
+
+        // [bagian kertas, terang kertas, jenis: 'ok' | 'colored' | 'dark']
+        $band = function (int $y) use ($paper, $gray, $colored, $w, $span, $from, $to): ?array {
+            if (! $range = $span($y, $from, $to)) {
                 return null;
             }
 
@@ -293,7 +308,7 @@ class ReceiptScanner
             $color  = 0;
             $ink    = 0;
             $values = [];
-            for ($x = $a; $x <= $b; $x++) {
+            for ($x = $range[0]; $x <= $range[1]; $x++) {
                 $i = $y * $w + $x;
 
                 if ($colored[$i]) {
@@ -312,27 +327,47 @@ class ReceiptScanner
                 }
             }
 
-            $total = $b - $a + 1;
+            $total = $range[1] - $range[0] + 1;
 
             if ($color > 0.6 * $total) {
-                return [0.0, 0.0, true];
+                return [0.0, 0.0, 'colored'];
             }
 
-            // Hampir seluruhnya gelap: bukan tulisan lagi, tapi benda gelap (printer).
             if ($ink > 0.7 * $total) {
-                return [0.0, 0.0, false];
+                return [0.0, 0.0, 'dark'];
             }
 
             // Bagian terang (persentil 80) = kertasnya, juga di baris tulisan padat.
             sort($values);
 
-            return [$on / max(1, $total - $color - $ink), $values[(int) floor(0.8 * (count($values) - 1))], false];
+            return [$on / max(1, $total - $color - $ink), $values[(int) floor(0.8 * (count($values) - 1))], 'ok'];
+        };
+
+        // Pinggiran kiri & kanan kertas di baris ini masih kertas?
+        $framed = function (int $y) use ($paper, $w, $span): bool {
+            foreach ([[0.01, 0.05], [0.95, 0.99]] as [$a, $b]) {
+                $range = $span($y, $a, $b);
+
+                if (! $range) {
+                    return false;
+                }
+
+                $on = 0;
+                for ($x = $range[0]; $x <= $range[1]; $x++) {
+                    $on += $paper[$y * $w + $x] ? 1 : 0;
+                }
+
+                if ($on < 0.6 * ($range[1] - $range[0] + 1)) {
+                    return false;
+                }
+            }
+
+            return true;
         };
 
         $edge = $step < 0 ? $block[0] : end($block);
         $near = $step < 0 ? array_slice($block, 0, 8) : array_slice($block, -8);
-        $ref  = $this->median(array_filter(array_map(fn ($y) => ($row = $band($y)) && ! $row[2] ? $row[1] : null, $near), fn ($v) => $v !== null));
-
+        $ref  = $this->median(array_filter(array_map(fn ($y) => ($row = $band($y)) && $row[2] === 'ok' ? $row[1] : null, $near), fn ($v) => $v !== null));
 
         // Beberapa baris janggal berturut-turut (garis putus-putus, noda) masih
         // ditoleransi; baru berhenti bila berlanjut.
@@ -343,8 +378,17 @@ class ReceiptScanner
         for ($y = $edge + $step; $y >= 0 && $y < $h; $y += $step) {
             $row = $band($y);
 
-            if (! $row || $row[2] || $row[0] < 0.75 || abs($row[1] - $ref) > 16) {
-                $occluded = (bool) ($row[2] ?? false);
+            // Isi di dalam kertas (kop, tabel, logo): dilompati, paling jauh 30% tinggi.
+            if ($row && $row[2] !== 'ok' && $framed($y)) {
+                if (abs($y - $edge) > 0.3 * $h) {
+                    break;
+                }
+
+                continue;
+            }
+
+            if (! $row || $row[2] !== 'ok' || $row[0] < 0.75 || abs($row[1] - $ref) > 16) {
+                $occluded = ($row[2] ?? null) === 'colored';
 
                 if (++$bad > $patience) {
                     break;
@@ -353,9 +397,10 @@ class ReceiptScanner
                 continue;
             }
 
-            $bad  = 0;
-            $ref  = 0.8 * $ref + 0.2 * $row[1];
-            $edge = $y;
+            $bad      = 0;
+            $occluded = false;
+            $ref      = 0.8 * $ref + 0.2 * $row[1];
+            $edge     = $y;
         }
 
         return [$edge, $occluded];
@@ -616,8 +661,12 @@ class ReceiptScanner
             }
         }
 
-        $background = $this->background($small, $w, $h);
-        $lut        = $this->toneTable();
+        // Dokumen berwarna: hanya dipotong, diluruskan, dan kontrasnya
+        // dinaikkan. Struk biasa: hitam-putih bersih.
+        $color      = $this->isColorDocument($small);
+        $levels     = $color ? $this->contrastTable($small) : [];
+        $background = $color ? null : $this->background($small, $w, $h);
+        $lut        = $color ? [] : $this->toneTable();
 
         // Homografi dari titik hasil (u, v) ke titik di foto (x, y).
         $m    = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
@@ -648,6 +697,12 @@ class ReceiptScanner
                 $g = (int) (((($c00 >> 8) & 0xFF) * $bx + (($c10 >> 8) & 0xFF) * $ax) * $by + ((($c01 >> 8) & 0xFF) * $bx + (($c11 >> 8) & 0xFF) * $ax) * $ay);
                 $b = (int) ((($c00 & 0xFF) * $bx + ($c10 & 0xFF) * $ax) * $by + (($c01 & 0xFF) * $bx + ($c11 & 0xFF) * $ax) * $ay);
 
+                if ($color) {
+                    imagesetpixel($out, $u, $v, ($levels[$r] << 16) | ($levels[$g] << 8) | $levels[$b]);
+
+                    continue;
+                }
+
                 imagesetpixel($out, $u, $v, $lut[imagecolorat($background, $u, $v) & 0xFF][$this->inkLevel($r, $g, $b)] * 0x010101);
 
                 if (($u & 3) === 0 && ($v & 3) === 0) {
@@ -656,7 +711,9 @@ class ReceiptScanner
             }
         }
 
-        $this->whitenFingers($out, $grid);
+        if (! $color) {
+            $this->whitenFingers($out, $grid);
+        }
 
         return $out;
     }
@@ -692,9 +749,24 @@ class ReceiptScanner
         $small = imagecreatetruecolor(max(4, intdiv($w, 5)), max(4, intdiv($h, 5)));
         imagecopyresampled($small, $image, 0, 0, 0, 0, imagesx($small), imagesy($small), $w, $h);
 
+        $out = imagecreatetruecolor($w, $h);
+
+        // Dokumen berwarna: hanya kontrasnya dinaikkan.
+        if ($this->isColorDocument($small)) {
+            $levels = $this->contrastTable($small);
+
+            for ($y = 0; $y < $h; $y++) {
+                for ($x = 0; $x < $w; $x++) {
+                    $rgb = imagecolorat($image, $x, $y);
+                    imagesetpixel($out, $x, $y, ($levels[($rgb >> 16) & 0xFF] << 16) | ($levels[($rgb >> 8) & 0xFF] << 8) | $levels[$rgb & 0xFF]);
+                }
+            }
+
+            return $out;
+        }
+
         $background = $this->background($small, $w, $h);
         $lut        = $this->toneTable();
-        $out        = imagecreatetruecolor($w, $h);
         $grid       = [];
 
         for ($y = 0; $y < $h; $y++) {
@@ -751,6 +823,72 @@ class ReceiptScanner
         return $background;
     }
 
+    /**
+     * Dokumen berwarna (logo/kop/tabel berwarna, cap): bagian berwarna di
+     * dalam kertas cukup banyak, atau bagian berwarna secara keseluruhan
+     * besar (mis. kop berwarna selebar kertas). Jari di pojok tidak cukup.
+     */
+    private function isColorDocument(GdImage $small): bool
+    {
+        $w    = imagesx($small);
+        $h    = imagesy($small);
+        $grid = [];
+        $all  = 0;
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $rgb = imagecolorat($small, $x, $y);
+                $max = max(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF);
+                $on  = $max > 60 && $max - min(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF) > 0.2 * $max;
+
+                $grid[$y][$x] = $on;
+                $all         += $on ? 1 : 0;
+            }
+        }
+
+        if ($all > 0.06 * $w * $h) {
+            return true;
+        }
+
+        $edge = count($this->borderConnected($grid));
+
+        return $all - $edge > 0.015 * $w * $h;
+    }
+
+    /**
+     * Tabel kontras per kanal untuk dokumen berwarna: hitam dan putih kertas
+     * direntangkan (persentil 1 dan 98), lalu kurva S ringan. Warna tetap.
+     *
+     * @return array<int, int>
+     */
+    private function contrastTable(GdImage $small): array
+    {
+        $values = [];
+        for ($y = 0; $y < imagesy($small); $y++) {
+            for ($x = 0; $x < imagesx($small); $x++) {
+                $rgb      = imagecolorat($small, $x, $y);
+                $values[] = ((($rgb >> 16) & 0xFF) * 77 + (($rgb >> 8) & 0xFF) * 150 + ($rgb & 0xFF) * 29) >> 8;
+            }
+        }
+
+        sort($values);
+        $low  = $values[(int) floor(0.01 * (count($values) - 1))];
+        $high = $values[(int) floor(0.98 * (count($values) - 1))];
+
+        // Foto yang hampir rata (tanpa tulisan jelas) tidak direntangkan berlebihan.
+        if ($high - $low < 60) {
+            [$low, $high] = [max(0, $high - 60), $high];
+        }
+
+        $table = [];
+        for ($v = 0; $v < 256; $v++) {
+            $t         = max(0.0, min(1.0, ($v - $low) / ($high - $low)));
+            $table[$v] = (int) round(255 * (0.6 * $t + 0.4 * $t * $t * (3 - 2 * $t)));
+        }
+
+        return $table;
+    }
+
     private function isColored(int $r, int $g, int $b): bool
     {
         $max = max($r, $g, $b);
@@ -766,6 +904,23 @@ class ReceiptScanner
      * @param  array<int, array<int, bool>>  $grid  berwarna? per sel 4×4 piksel
      */
     private function whitenFingers(GdImage $out, array $grid): void
+    {
+        $seen = $this->borderConnected($grid);
+
+        // Diperlebar dua sel, supaya tepi jari dan bayangan tipisnya ikut putih.
+        $white = 0xFFFFFF;
+        foreach ($seen as [$x, $y]) {
+            imagefilledrectangle($out, ($x - 2) * 4, ($y - 2) * 4, ($x + 3) * 4 - 1, ($y + 3) * 4 - 1, $white);
+        }
+    }
+
+    /**
+     * Sel bernilai true yang tersambung ke pinggir grid.
+     *
+     * @param  array<int, array<int, bool>>  $grid
+     * @return array<int, array{int, int}>  [x, y]
+     */
+    private function borderConnected(array $grid): array
     {
         $rows  = count($grid);
         $cols  = $rows ? count($grid[0]) : 0;
@@ -795,13 +950,14 @@ class ReceiptScanner
             }
         }
 
-        // Diperlebar dua sel, supaya tepi jari dan bayangan tipisnya ikut putih.
-        $white = 0xFFFFFF;
+        $cells = [];
         foreach ($seen as $y => $row) {
             foreach (array_keys($row) as $x) {
-                imagefilledrectangle($out, ($x - 2) * 4, ($y - 2) * 4, ($x + 3) * 4 - 1, ($y + 3) * 4 - 1, $white);
+                $cells[] = [$x, $y];
             }
         }
+
+        return $cells;
     }
 
     /**
