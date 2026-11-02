@@ -29,6 +29,12 @@ class CreateInvoice extends BaseCreateInvoice
 
         unset($data['_deal_id']);
 
+        // Tautan ke invoice DP hanya berlaku untuk invoice pelunasan. Tipe yang
+        // terkunci (sudah ada pembayaran) tidak ikut dikirim: tautannya dibiarkan.
+        if (array_key_exists('type_payment', $data) && $data['type_payment'] !== 'final_payment') {
+            $data['parent_invoice_id'] = null;
+        }
+
         return $data;
     }
 }

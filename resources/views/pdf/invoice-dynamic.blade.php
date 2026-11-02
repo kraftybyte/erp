@@ -44,37 +44,15 @@ $dpPercentage = $isDP ? (int) str_replace('dp_', '', $typePayment) : 0;
 /*
  | INVOICE PELUNASAN
  |
- | Nilai DP yang sudah dibayar diambil dari invoice DP yang ditautkan lewat
- | parent_invoice_id. Sebelumnya angka ini di-parse dari teks bebas di kolom
- | notes, sehingga catatan yang tidak cocok dengan invoicenya membuat dokumen
- | ke klien mencetak nilai yang sama sekali berbeda dari tagihan sebenarnya.
- |
- | Pembacaan notes dipertahankan hanya sebagai cadangan untuk invoice lama yang
- | terlanjur dibuat sebelum penautan ada.
+ | DP yang sudah ditagih dari Invoice::settledDp(): invoice DP yang ditautkan
+ | (parent_invoice_id), atau catatan "DP: 50% - Rp …" pada invoice lama.
+ | Sumber yang sama dipakai tombol Bayar dan laporan piutang, sehingga "Sisa
+ | Pembayaran" di sini sama dengan yang dianggap lunas oleh ERP.
  */
-$dpPaidAmount = 0;
-$dpPercentagePaid = 0;
-$fullTotalAmount = $calcGrandTotal;
-
-if ($isFinalPayment) {
-    $invoiceDP = $invoice->parent_invoice_id ? $invoice->parentInvoice : null;
-
-    if ($invoiceDP) {
-        $dpPercentagePaid = (int) str_replace('dp_', '', (string) $invoiceDP->type_payment);
-        $fullTotalAmount = (float) $invoiceDP->grand_total;
-        $dpPaidAmount = $dpPercentagePaid > 0
-            ? $fullTotalAmount * ($dpPercentagePaid / 100)
-            : (float) $invoiceDP->paid;
-    } elseif (preg_match('/DP[:\s]*(\d+)%\s*[-–:]*\s*[Rr]p\s*([\d.,]+)/i', trim((string) $invoice->notes), $matches)) {
-        // Cadangan untuk invoice lama: "DP: 50% - Rp 20.000.000"
-        $dpPercentagePaid = (int) $matches[1];
-        $dpPaidAmount = (float) str_replace('.', '', $matches[2]);
-
-        if ($dpPercentagePaid > 0 && $dpPaidAmount > 0) {
-            $fullTotalAmount = $dpPaidAmount / ($dpPercentagePaid / 100);
-        }
-    }
-}
+$settledDp = $isFinalPayment ? $invoice->settledDp() : null;
+$dpPaidAmount = $settledDp['amount'] ?? 0;
+$dpPercentagePaid = $settledDp['percent'] ?? 0;
+$fullTotalAmount = $settledDp['full'] ?? $calcGrandTotal;
 
 foreach ($invoiceItems as $item) {
     $price = (float) ($item->price ?? 0);
