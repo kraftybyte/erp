@@ -51,6 +51,26 @@ class RealisasiPageTest extends TestCase
             ->assertSee('Sisa Rp 1.300.000 belum direalisasi');
     }
 
+    public function test_keterangan_panjang_tidak_jadi_judul_halaman(): void
+    {
+        $this->actingAs($this->user('Finance'));
+        $project = Project::create(['nama_project' => 'Signage Akrilik', 'nama_perusahaan' => 'Hollywing Group', 'nama_pic' => 'Sajjad', 'status' => 'in_progress']);
+        $advance = $this->advance($this->user('Staff'), 3_000_000, $project);
+        $long    = 'SIGNAGE 01 (Warna lampu warmwhite 3000k, body plat galvanis 1mm cat duco hitam, penutup akrilik putih susu 5mm + oracal 8500) SIGNAGE 02 (reposisi signage H LIVE SIZE 3525 x 2350 CM)';
+        $advance->update(['keterangan_advance' => $long]);
+
+        $realisasi = Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()]);
+        $this->assertSame('Sajjad - Hollywing Group | Signage Akrilik', $realisasi->instance()->getSubheading());
+        // Keperluan tetap bisa dibaca di halaman realisasi, satu baris dulu.
+        $realisasi->assertSee('Keperluan')->assertSee($long)->assertSee('Selengkapnya');
+
+        $view = Livewire::test(ViewAdvance::class, ['record' => $advance->getRouteKey()]);
+        $this->assertSame('Sajjad - Hollywing Group | Signage Akrilik', $view->instance()->getSubheading());
+
+        $advance->update(['project_id' => null]);
+        $this->assertSame('Tanpa project', Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])->instance()->getSubheading());
+    }
+
     public function test_tombol_simpan_di_footer_modal_terhubung_ke_formnya(): void
     {
         $this->actingAs($this->user('Finance'));
@@ -68,7 +88,7 @@ class RealisasiPageTest extends TestCase
         foreach (['Simpan batch' => 'batchForm', 'Simpan pengembalian' => 'returnForm'] as $label => $form) {
             $button = $xpath->query("//button[contains(normalize-space(.), '{$label}')]")->item(0);
 
-            $this->assertNotNull($button, $label);
+            $this->assertInstanceOf(\DOMElement::class, $button, $label);
             $this->assertSame('submit', $button->getAttribute('type'), $label);
             $this->assertSame($form, $button->getAttribute('form'), $label);
             $this->assertSame(1, $xpath->query("//form[@id='{$form}']")->length, $label);

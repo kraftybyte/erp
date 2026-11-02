@@ -112,11 +112,13 @@ class RealisasiAdvance extends Page
         return true;
     }
 
+    /**
+     * Klien dan project saja; keterangan advance bisa sangat panjang (spesifikasi
+     * lengkap pekerjaan), jadi tidak ditaruh di judul halaman.
+     */
     public function getSubheading(): ?string
     {
-        return collect([$this->record->keterangan_advance, $this->record->project ? ClientLabel::project($this->record->project) : null])
-            ->filter()
-            ->implode(' · ');
+        return $this->record->project ? ClientLabel::project($this->record->project) : 'Tanpa project';
     }
 
     protected function getHeaderActions(): array

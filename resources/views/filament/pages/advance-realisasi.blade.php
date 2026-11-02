@@ -43,6 +43,18 @@
                     </span>
                 </div>
 
+                {{-- Keperluan bisa berupa spesifikasi panjang: satu baris dulu, lengkapnya bila diminta. --}}
+                @if(filled($record->keterangan_advance))
+                    @php $long = mb_strlen($record->keterangan_advance) > 120; @endphp
+                    <div class="rl-purpose" x-data="{ open: false }">
+                        <span class="rl-purpose-label">Keperluan</span>
+                        <p x-bind:class="{ 'is-open': open }">{{ $record->keterangan_advance }}</p>
+                        @if($long)
+                            <x-filament::link tag="button" type="button" size="sm" x-on:click="open = ! open" x-text="open ? 'Ringkas' : 'Selengkapnya'">Selengkapnya</x-filament::link>
+                        @endif
+                    </div>
+                @endif
+
                 @if($statusNote)
                     <div class="rl-note" data-color="{{ $statusNote['color'] }}" role="status">
                         <strong>{{ $statusNote['title'] }}</strong>

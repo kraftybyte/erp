@@ -24,6 +24,15 @@
     .dark .rl-meta { color: rgb(var(--gray-300)); }
     .dark .rl-meta strong { color: #fff; }
 
+    /* Di layar sempit teksnya turun ke baris sendiri supaya satu barisnya tetap terbaca. */
+    .rl-purpose { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; font-size: .875rem; color: rgb(var(--gray-700)); }
+    .rl-purpose-label { flex: none; color: rgb(var(--gray-500)); }
+    .rl-purpose p { flex: 1 1 18rem; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+    .rl-purpose p.is-open { display: block; }
+    .rl-purpose .fi-link { flex: none; }
+    .dark .rl-purpose { color: rgb(var(--gray-200)); }
+    .dark .rl-purpose-label { color: rgb(var(--gray-300)); }
+
     .rl-note { border-radius: .75rem; padding: .875rem 1rem; font-size: .875rem; border: 1px solid; }
     .rl-note strong { display: block; font-weight: 600; }
     .rl-note p { margin-top: .125rem; }
