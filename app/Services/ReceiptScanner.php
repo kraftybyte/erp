@@ -9,14 +9,16 @@ use Illuminate\Support\Str;
 /**
  * Foto struk/nota dibuat seperti hasil scan (ala CamScanner), otomatis:
  * 1. rotasi EXIF dari HP diterapkan;
- * 2. kertas struk dicari (bagian terang terbesar di foto; bila gagal dan
- *    Gemini aktif, keempat sudutnya ditanyakan ke Gemini) lalu diluruskan
- *    dari perspektif miring;
- * 3. bayangan diratakan, kertas dibuat putih, tulisan dipertegas.
+ * 2. kertas struk dicari dari warnanya (terang dan tidak berwarna; kayu,
+ *    kulit, dan benda berwarna tidak ikut), baris demi baris, lalu tepinya
+ *    ditarik garis lurus. Bila gagal dan Gemini aktif, Gemini hanya dimintai
+ *    keempat sudutnya. Kertasnya lalu dipotong dan diluruskan;
+ * 3. kertas diputihkan dan bayangan diangkat dengan lembut, warna tetap.
  *
- * Pikselnya tetap dari foto asli, tidak digambar ulang AI, dan foto aslinya
- * ikut disimpan di sebelahnya dengan akhiran "-asli". PDF tidak diubah.
- * Hanya GD (pasti ada di hosting), tanpa Imagick.
+ * Bila kertasnya tidak ketemu, foto disimpan apa adanya: lebih baik foto asli
+ * daripada hasil olahan yang rusak. Pikselnya tetap dari foto asli (tidak
+ * digambar ulang AI), dan foto aslinya ikut disimpan dengan akhiran "-asli".
+ * PDF tidak diubah. Hanya GD (pasti ada di hosting), tanpa Imagick.
  */
 class ReceiptScanner
 {
@@ -31,8 +33,12 @@ class ReceiptScanner
     private const MAX_SIDE  = 1600;
     private const WORK_SIDE = 2400;
 
-    // Ukuran kerja untuk mencari kertas.
-    private const DETECT_SIDE = 400;
+    // Ukuran kerja untuk mencari kertas: cukup kecil supaya tulisan melebur.
+    private const DETECT_SIDE = 240;
+
+    // Piksel "kertas": cukup terang dan hampir tidak berwarna.
+    private const PAPER_MIN_GRAY       = 105;
+    private const PAPER_MAX_SATURATION = 0.18;
 
     public function __construct(private GeminiService $gemini) {}
 
@@ -85,7 +91,8 @@ class ReceiptScanner
     }
 
     /**
-     * Hasil scan sebagai JPG, atau null bila bukan foto yang bisa dibaca.
+     * Hasil scan sebagai JPG, atau null bila bukan foto atau kertasnya tidak
+     * ketemu (disimpan apa adanya).
      */
     public function scan(string $data): ?string
     {
@@ -107,16 +114,20 @@ class ReceiptScanner
         // Dikecilkan dulu baru diputar: memutar foto penuh menggandakan memorinya.
         $image = $this->orient($this->workingCopy($image), $data);
 
-        if (imagesx($image) < 200 || imagesy($image) < 200) {
+        if (imagesx($image) < 150 || imagesy($image) < 150) {
             return null;
         }
 
-        $quad = $this->findPaper($image) ?? $this->askCorners($image);
-        $gray = $quad ? $this->warp($image, $quad) : $this->resizeGray($image);
-        $out  = $this->clean($gray);
+        $paper = $this->findPaper($image) ?? $this->askCorners($image);
+
+        if ($paper === null) {
+            return null;
+        }
+
+        $out = $this->clean($paper === 'full' ? $this->fit($image, self::MAX_SIDE, always: true) : $this->warp($image, $paper));
 
         ob_start();
-        imagejpeg($out, null, 82);
+        imagejpeg($out, null, 85);
 
         return (string) ob_get_clean();
     }
@@ -149,60 +160,385 @@ class ReceiptScanner
     }
 
     /**
-     * Kertas = bagian terang terbesar yang berbentuk segi empat. Null bila
-     * tidak ketemu, atau kertasnya sudah memenuhi foto.
+     * Cari kertas baris demi baris: di tiap baris, bentangan "kertas" (terang,
+     * tidak berwarna) terpanjang. Baris yang lebarnya jauh dari lebar umum
+     * (dinding di atas struk, baris yang tertutup jari) dibuang, lalu tepi
+     * kiri, kanan, atas, dan bawah ditarik garis lurus.
      *
-     * @return array{0: array{float, float}, 1: array{float, float}, 2: array{float, float}, 3: array{float, float}}|null
+     * @return array<int, array{float, float}>|'full'|null  empat sudut, 'full' bila kertas memenuhi foto, null bila tidak ketemu
      */
-    private function findPaper(GdImage $image): ?array
+    private function findPaper(GdImage $image): array|string|null
     {
         $small = $this->fit($image, self::DETECT_SIDE, always: true);
         $w     = imagesx($small);
         $h     = imagesy($small);
-        $gray  = [];
-        $hist  = array_fill(0, 256, 0);
+        [$paper, $gray, $colored] = $this->paperMask($small, $w, $h);
+
+        // Bentangan terpanjang per baris; celah pendek (tulisan tebal, logo) disambung.
+        $gap  = max(2, (int) round($w * 0.05));
+        $rows = [];
+        for ($y = 0; $y < $h; $y++) {
+            $rows[$y] = $this->longestRun($paper, $y * $w, $w, $gap);
+        }
+
+        $widths = array_filter(array_map(fn ($run) => $run ? $run[1] - $run[0] + 1 : 0, $rows), fn ($width) => $width >= 0.12 * $w);
+
+        if (count($widths) < 0.25 * $h) {
+            return null;
+        }
+
+        // Hampir seluruh foto "kertas": kertas memenuhi foto (dirapikan tanpa
+        // dipotong), kecuali pinggiran foto jelas beda terang dengan tengahnya,
+        // misalnya kertas abu-abu di meja putih. Itu diserahkan ke cadangan.
+        if ($this->median(array_values($widths)) >= 0.9 * $w && count($widths) >= 0.8 * $h) {
+            return abs($this->borderGray($small, $w, $h, true) - $this->borderGray($small, $w, $h, false)) <= 25 ? 'full' : null;
+        }
+
+        // Baris yang terang dari ujung ke ujung (dinding/meja terang di samping
+        // kertas) tidak dipakai untuk menentukan lebar kertas.
+        $widths = array_filter($widths, fn ($width) => $width < 0.95 * $w);
+
+        if (count($widths) < 0.2 * $h) {
+            return null;
+        }
+
+        $width  = $this->median(array_values($widths));
+        $center = $this->median(array_map(fn ($y) => ($rows[$y][0] + $rows[$y][1]) / 2, array_keys($widths)));
+
+        $kept = [];
+        foreach ($widths as $y => $rowWidth) {
+            $rowCenter = ($rows[$y][0] + $rows[$y][1]) / 2;
+
+            if (abs($rowWidth - $width) <= 0.2 * $width && abs($rowCenter - $center) <= 0.15 * $width) {
+                $kept[$y] = $rows[$y];
+            }
+        }
+
+        $block = $this->longestBlock(array_keys($kept), max(3, (int) round($h * 0.04)));
+
+        if (count($block) < 0.2 * $h) {
+            return null;
+        }
+
+        $left  = $this->fitLine(array_map(fn ($y) => [$y, $kept[$y][0]], $block));
+        $right = $this->fitLine(array_map(fn ($y) => [$y, $kept[$y][1] + 1], $block));
+
+        // Kertas bisa berlanjut ke baris yang lebarnya menyimpang (latar terang
+        // di sampingnya, jari di pinggir): diperpanjang selama pita di antara
+        // kedua tepi masih kertas. Paruh kiri dan kanan terpisah, supaya tepi
+        // atas/bawah yang miring (perspektif) ikut tertangkap.
+        // Paruh yang berhenti karena tertutup benda berwarna (jari memegang
+        // pojok struk) mengikuti paruh lainnya.
+        [$topLeft, $topRight]       = $this->ends($paper, $gray, $colored, $w, $h, $left, $right, $block, -1);
+        [$bottomLeft, $bottomRight] = $this->ends($paper, $gray, $colored, $w, $h, $left, $right, $block, 1);
+        $at                         = fn (array $line, float $y) => [$line[0] * $y + $line[1], $y];
+
+        // Ujung diukur di tengah tiap paruh (27,5% dan 72,5% lebar); tepi yang
+        // miring diteruskan sampai ke sudut kertas.
+        $reach = 0.275 / 0.45;
+        [$topLeft, $topRight]       = [$topLeft - ($topRight - $topLeft) * $reach, $topRight + ($topRight - $topLeft) * $reach];
+        [$bottomLeft, $bottomRight] = [$bottomLeft - ($bottomRight - $bottomLeft) * $reach, $bottomRight + ($bottomRight - $bottomLeft) * $reach];
+
+        $quad = [$at($left, $topLeft), $at($right, $topRight), $at($right, $bottomRight), $at($left, $bottomLeft)];
+
+        if (! $this->convex($quad) || $this->area($quad) < 0.08 * $w * $h) {
+            return null;
+        }
+
+        // Sedikit ke dalam, supaya pinggiran meja tidak ikut jadi garis abu-abu.
+        $quad  = $this->inset($quad, 0.012);
+        $scale = imagesx($image) / $w;
+
+        return array_map(fn (array $p) => [
+            max(0, min(imagesx($image) - 1, $p[0] * $scale)),
+            max(0, min(imagesy($image) - 1, $p[1] * $scale)),
+        ], $quad);
+    }
+
+    /**
+     * Baris terjauh ke arah $step (−1 atas, 1 bawah) dari ujung $block yang
+     * bagian tengahnya (antara tepi kiri dan kanan) masih kertas: sebagian
+     * besar "kertas" dan terangnya tidak berubah tiba-tiba (dinding atau meja
+     * terang di ujung struk). Perubahan bertahap (pencahayaan) tetap diikuti.
+     *
+     * $from–$to: bagian lebar kertas yang diperiksa (0 = tepi kiri, 1 = kanan).
+     * Piksel berwarna (jari di atas kertas) tidak dihitung; bila berhenti
+     * karena didominasi warna, kembaliannya ditandai tertutup.
+     *
+     * @return array{int, bool}  [baris, berhenti karena tertutup]
+     */
+    private function extend(array $paper, array $gray, array $colored, int $w, int $h, array $left, array $right, array $block, int $step, float $from, float $to): array
+    {
+        $band = function (int $y) use ($paper, $gray, $colored, $w, $left, $right, $from, $to): ?array {
+            $x0 = $left[0] * $y + $left[1];
+            $x1 = $right[0] * $y + $right[1];
+            $a  = (int) max(0, ceil($x0 + $from * ($x1 - $x0)));
+            $b  = (int) min($w - 1, floor($x0 + $to * ($x1 - $x0)));
+
+            if ($b <= $a) {
+                return null;
+            }
+
+            $on     = 0;
+            $color  = 0;
+            $ink    = 0;
+            $values = [];
+            for ($x = $a; $x <= $b; $x++) {
+                $i = $y * $w + $x;
+
+                if ($colored[$i]) {
+                    $color++;
+
+                    continue;
+                }
+
+                $values[] = $gray[$i];
+
+                // Tulisan dan logo gelap di atas kertas tidak dihitung.
+                if ($gray[$i] < self::PAPER_MIN_GRAY) {
+                    $ink++;
+                } elseif ($paper[$i]) {
+                    $on++;
+                }
+            }
+
+            $total = $b - $a + 1;
+
+            if ($color > 0.6 * $total) {
+                return [0.0, 0.0, true];
+            }
+
+            // Hampir seluruhnya gelap: bukan tulisan lagi, tapi benda gelap (printer).
+            if ($ink > 0.7 * $total) {
+                return [0.0, 0.0, false];
+            }
+
+            // Bagian terang (persentil 80) = kertasnya, juga di baris tulisan padat.
+            sort($values);
+
+            return [$on / max(1, $total - $color - $ink), $values[(int) floor(0.8 * (count($values) - 1))], false];
+        };
+
+        $edge = $step < 0 ? $block[0] : end($block);
+        $near = $step < 0 ? array_slice($block, 0, 8) : array_slice($block, -8);
+        $ref  = $this->median(array_filter(array_map(fn ($y) => ($row = $band($y)) && ! $row[2] ? $row[1] : null, $near), fn ($v) => $v !== null));
+
+
+        // Beberapa baris janggal berturut-turut (garis putus-putus, noda) masih
+        // ditoleransi; baru berhenti bila berlanjut.
+        $patience = max(2, (int) round($h * 0.02));
+        $bad      = 0;
+        $occluded = false;
+
+        for ($y = $edge + $step; $y >= 0 && $y < $h; $y += $step) {
+            $row = $band($y);
+
+            if (! $row || $row[2] || $row[0] < 0.75 || abs($row[1] - $ref) > 16) {
+                $occluded = (bool) ($row[2] ?? false);
+
+                if (++$bad > $patience) {
+                    break;
+                }
+
+                continue;
+            }
+
+            $bad  = 0;
+            $ref  = 0.8 * $ref + 0.2 * $row[1];
+            $edge = $y;
+        }
+
+        return [$edge, $occluded];
+    }
+
+    /**
+     * Ujung atas ($step −1) atau bawah (1) untuk paruh kiri dan kanan kertas.
+     *
+     * @return array{int, int}  [kiri, kanan]; ujung bawah sudah +1 (batas luar)
+     */
+    private function ends(array $paper, array $gray, array $colored, int $w, int $h, array $left, array $right, array $block, int $step): array
+    {
+        [$a, $aCovered] = $this->extend($paper, $gray, $colored, $w, $h, $left, $right, $block, $step, 0.1, 0.45);
+        [$b, $bCovered] = $this->extend($paper, $gray, $colored, $w, $h, $left, $right, $block, $step, 0.55, 0.9);
+
+        if ($aCovered && ! $bCovered) {
+            $a = $b;
+        } elseif ($bCovered && ! $aCovered) {
+            $b = $a;
+        }
+
+        return $step > 0 ? [$a + 1, $b + 1] : [$a, $b];
+    }
+
+    /**
+     * Median terang pinggiran foto (5% tepi) atau bagian tengahnya (50% tengah).
+     */
+    private function borderGray(GdImage $small, int $w, int $h, bool $border): float
+    {
+        $values = [];
+        $edge   = max(1, (int) round(min($w, $h) * 0.05));
+
+        for ($y = 0; $y < $h; $y += 2) {
+            for ($x = 0; $x < $w; $x += 2) {
+                $isBorder = $x < $edge || $y < $edge || $x >= $w - $edge || $y >= $h - $edge;
+                $isCenter = $x >= $w / 4 && $x < $w * 3 / 4 && $y >= $h / 4 && $y < $h * 3 / 4;
+
+                if ($border ? $isBorder : $isCenter) {
+                    $rgb      = imagecolorat($small, $x, $y);
+                    $values[] = (($rgb >> 16) & 0xFF) * 0.299 + (($rgb >> 8) & 0xFF) * 0.587 + ($rgb & 0xFF) * 0.114;
+                }
+            }
+        }
+
+        return $this->median($values);
+    }
+
+    /**
+     * @return array{0: array<int, bool>, 1: array<int, float>, 2: array<int, bool>}  [kertas?, terang, berwarna?] per piksel (y * w + x)
+     */
+    private function paperMask(GdImage $small, int $w, int $h): array
+    {
+        $mask    = [];
+        $gray    = [];
+        $colored = [];
 
         for ($y = 0; $y < $h; $y++) {
             for ($x = 0; $x < $w; $x++) {
                 $rgb = imagecolorat($small, $x, $y);
-                $g   = (int) ((($rgb >> 16) & 0xFF) * 0.299 + (($rgb >> 8) & 0xFF) * 0.587 + ($rgb & 0xFF) * 0.114);
-                $gray[] = $g;
-                $hist[$g]++;
+                $r   = ($rgb >> 16) & 0xFF;
+                $g   = ($rgb >> 8) & 0xFF;
+                $b   = $rgb & 0xFF;
+                $max = max($r, $g, $b);
+                $lum = $r * 0.299 + $g * 0.587 + $b * 0.114;
+
+                $sat = $max ? ($max - min($r, $g, $b)) / $max : 0;
+
+                $gray[]    = $lum;
+                $mask[]    = $lum >= self::PAPER_MIN_GRAY && $sat <= self::PAPER_MAX_SATURATION;
+                $colored[] = $lum >= 70 && $sat > 0.25;
             }
         }
 
-        $threshold = $this->otsu($hist, $w * $h);
-        $component = $this->largestBright($gray, $w, $h, $threshold);
-        $area      = count($component);
+        return [$mask, $gray, $colored];
+    }
 
-        // Terlalu kecil, atau hampir seluruh foto (kertas sudah memenuhi foto / latar terang).
-        if ($area < 0.08 * $w * $h || $area > 0.92 * $w * $h) {
+    /**
+     * @return array{int, int}|null  [x awal, x akhir] bentangan terpanjang
+     */
+    private function longestRun(array $mask, int $offset, int $w, int $gap): ?array
+    {
+        $best  = null;
+        $start = null;
+        $end   = null;
+
+        for ($x = 0; $x <= $w; $x++) {
+            $on = $x < $w && $mask[$offset + $x];
+
+            if ($on) {
+                if ($start !== null && $x - $end - 1 <= $gap) {
+                    $end = $x;
+                } else {
+                    if ($start !== null && (! $best || $end - $start > $best[1] - $best[0])) {
+                        $best = [$start, $end];
+                    }
+                    [$start, $end] = [$x, $x];
+                }
+            }
+        }
+
+        if ($start !== null && (! $best || $end - $start > $best[1] - $best[0])) {
+            $best = [$start, $end];
+        }
+
+        return $best;
+    }
+
+    /**
+     * Rangkaian baris berurutan terpanjang (celah sampai $gap baris dianggap menyambung).
+     *
+     * @param  array<int, int>  $ys  urut naik
+     * @return array<int, int>
+     */
+    private function longestBlock(array $ys, int $gap): array
+    {
+        $best    = [];
+        $current = [];
+
+        foreach ($ys as $y) {
+            if ($current && $y - end($current) > $gap) {
+                $best    = count($current) > count($best) ? $current : $best;
+                $current = [];
+            }
+            $current[] = $y;
+        }
+
+        return count($current) > count($best) ? $current : $best;
+    }
+
+    /**
+     * Garis b = m·a + c lewat titik [a, b], dengan titik yang menyimpang jauh
+     * (jari, sobekan) dibuang lalu dihitung ulang.
+     *
+     * @param  array<int, array{float|int, float|int}>  $points
+     * @return array{float, float}  [m, c]
+     */
+    private function fitLine(array $points): array
+    {
+        for ($round = 0; $round < 3; $round++) {
+            $n  = count($points);
+            $sa = $sb = $saa = $sab = 0.0;
+
+            foreach ($points as [$a, $b]) {
+                $sa  += $a;
+                $sb  += $b;
+                $saa += $a * $a;
+                $sab += $a * $b;
+            }
+
+            $den = $n * $saa - $sa * $sa;
+            $m   = abs($den) < 1e-9 ? 0.0 : ($n * $sab - $sa * $sb) / $den;
+            $c   = ($sb - $m * $sa) / max(1, $n);
+
+            $residuals = array_map(fn ($p) => abs($p[1] - ($m * $p[0] + $c)), $points);
+            $limit     = max(1.5, 2.5 * $this->median($residuals));
+            $inliers   = array_values(array_filter($points, fn ($p, $i) => $residuals[$i] <= $limit, ARRAY_FILTER_USE_BOTH));
+
+            if (count($inliers) === $n || count($inliers) < 5) {
+                break;
+            }
+
+            $points = $inliers;
+        }
+
+        return [$m, $c];
+    }
+
+    /**
+     * Titik potong garis tepi samping x = m·y + c dengan garis tepi atas/bawah y = m·x + c.
+     *
+     * @return array{float, float}|null
+     */
+    private function intersect(array $side, array $edge): ?array
+    {
+        [$ms, $cs] = $side;
+        [$me, $ce] = $edge;
+        $den       = 1 - $ms * $me;
+
+        if (abs($den) < 1e-9) {
             return null;
         }
 
-        // Sudut = titik terjauh ke arah tiap pojok.
-        $tl = $tr = $br = $bl = null;
-        foreach ($component as $index) {
-            $x = $index % $w;
-            $y = intdiv($index, $w);
+        $y = ($me * $cs + $ce) / $den;
 
-            $tl = ! $tl || $x + $y < $tl[0] + $tl[1] ? [$x, $y] : $tl;
-            $br = ! $br || $x + $y > $br[0] + $br[1] ? [$x, $y] : $br;
-            $tr = ! $tr || $x - $y > $tr[0] - $tr[1] ? [$x, $y] : $tr;
-            $bl = ! $bl || $x - $y < $bl[0] - $bl[1] ? [$x, $y] : $bl;
-        }
+        return [$ms * $y + $cs, $y];
+    }
 
-        $quad = [$tl, $tr, $br, $bl];
+    private function inset(array $quad, float $ratio): array
+    {
+        $cx = array_sum(array_column($quad, 0)) / 4;
+        $cy = array_sum(array_column($quad, 1)) / 4;
 
-        // Bentuknya harus segi empat yang terisi penuh oleh bagian terang tadi.
-        $quadArea = $this->area($quad);
-        if (! $this->convex($quad) || $quadArea < 0.08 * $w * $h || $area / $quadArea < 0.85) {
-            return null;
-        }
-
-        $scale = imagesx($image) / $w;
-
-        return array_map(fn (array $p) => [($p[0] + 0.5) * $scale, ($p[1] + 0.5) * $scale], $quad);
+        return array_map(fn (array $p) => [$p[0] + ($cx - $p[0]) * $ratio * 2, $p[1] + ($cy - $p[1]) * $ratio], $quad);
     }
 
     /**
@@ -244,7 +580,7 @@ class ReceiptScanner
                 return null;
             }
 
-            $quad[] = [max(0, min(1000, (float) $p[0])) / 1000 * imagesx($image), max(0, min(1000, (float) $p[1])) / 1000 * imagesy($image)];
+            $quad[] = [max(0, min(1000, (float) $p[0])) / 1000 * (imagesx($image) - 1), max(0, min(1000, (float) $p[1])) / 1000 * (imagesy($image) - 1)];
         }
 
         return $this->convex($quad) && $this->area($quad) >= 0.08 * imagesx($image) * imagesy($image) ? $quad : null;
@@ -252,7 +588,7 @@ class ReceiptScanner
 
     /**
      * Luruskan segi empat $quad (kiri atas, kanan atas, kanan bawah, kiri
-     * bawah) menjadi persegi panjang abu-abu.
+     * bawah) menjadi persegi panjang, warnanya tetap.
      */
     private function warp(GdImage $image, array $quad): GdImage
     {
@@ -274,60 +610,92 @@ class ReceiptScanner
         for ($v = 0; $v < $h; $v++) {
             for ($u = 0; $u < $w; $u++) {
                 $d = $m[6] * $u + $m[7] * $v + 1;
-                $x = (int) (($m[0] * $u + $m[1] * $v + $m[2]) / $d);
-                $y = (int) (($m[3] * $u + $m[4] * $v + $m[5]) / $d);
+                $x = (int) round(($m[0] * $u + $m[1] * $v + $m[2]) / $d);
+                $y = (int) round(($m[3] * $u + $m[4] * $v + $m[5]) / $d);
 
-                $rgb = imagecolorat($image, max(0, min($sw, $x)), max(0, min($sh, $y)));
-                $g   = (int) ((($rgb >> 16) & 0xFF) * 0.299 + (($rgb >> 8) & 0xFF) * 0.587 + ($rgb & 0xFF) * 0.114);
-
-                imagesetpixel($out, $u, $v, $g * 0x010101);
+                imagesetpixel($out, $u, $v, imagecolorat($image, max(0, min($sw, $x)), max(0, min($sh, $y))));
             }
         }
-
-        return $out;
-    }
-
-    private function resizeGray(GdImage $image): GdImage
-    {
-        $out = $this->fit($image, self::MAX_SIDE, always: true);
-        imagefilter($out, IMG_FILTER_GRAYSCALE);
 
         return $out;
     }
 
     /**
-     * Ratakan bayangan (bagi dengan latar yang dikaburkan), kertas jadi putih,
-     * tulisan dipertegas.
+     * Kertas diputihkan dan bayangan diangkat: tiap piksel dikalikan supaya
+     * latar kertas di sekitarnya menjadi putih. Penguatannya dibatasi dan
+     * tidak ada kontras ekstrem, jadi hasilnya tetap alami dan berwarna.
      */
-    private function clean(GdImage $gray): GdImage
+    private function clean(GdImage $image): GdImage
     {
-        $w = imagesx($gray);
-        $h = imagesy($gray);
+        $w = imagesx($image);
+        $h = imagesy($image);
 
-        // Latar: dikecilkan lalu dibesarkan lagi, tulisan tipis ikut hilang.
-        $small = imagecreatetruecolor(max(1, intdiv($w, 24)), max(1, intdiv($h, 24)));
-        imagecopyresampled($small, $gray, 0, 0, 0, 0, imagesx($small), imagesy($small), $w, $h);
+        // Latar kertas: versi kecil, tulisan dihapus dengan filter maksimum,
+        // lalu dibesarkan lagi dengan halus.
+        $sw    = max(4, intdiv($w, 6));
+        $sh    = max(4, intdiv($h, 6));
+        $small = imagecreatetruecolor($sw, $sh);
+        imagecopyresampled($small, $image, 0, 0, 0, 0, $sw, $sh, $w, $h);
+
+        $level = [];
+        for ($y = 0; $y < $sh; $y++) {
+            for ($x = 0; $x < $sw; $x++) {
+                $rgb = imagecolorat($small, $x, $y);
+                $level[$y][$x] = max(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF);
+            }
+        }
+
+        for ($pass = 0; $pass < 1; $pass++) {
+            $next = $level;
+            for ($y = 0; $y < $sh; $y++) {
+                for ($x = 0; $x < $sw; $x++) {
+                    $max = $level[$y][$x];
+                    for ($dy = -1; $dy <= 1; $dy++) {
+                        for ($dx = -1; $dx <= 1; $dx++) {
+                            $max = max($max, $level[$y + $dy][$x + $dx] ?? 0);
+                        }
+                    }
+                    $next[$y][$x] = $max;
+                }
+            }
+            $level = $next;
+        }
+
+        for ($y = 0; $y < $sh; $y++) {
+            for ($x = 0; $x < $sw; $x++) {
+                imagesetpixel($small, $x, $y, $level[$y][$x] * 0x010101);
+            }
+        }
+
         $background = imagecreatetruecolor($w, $h);
-        imagecopyresampled($background, $small, 0, 0, 0, 0, $w, $h, imagesx($small), imagesy($small));
+        imagecopyresampled($background, $small, 0, 0, 0, 0, $w, $h, $sw, $sh);
+        imagefilter($background, IMG_FILTER_GAUSSIAN_BLUR);
 
         $out = imagecreatetruecolor($w, $h);
 
         for ($y = 0; $y < $h; $y++) {
             for ($x = 0; $x < $w; $x++) {
-                $g  = imagecolorat($gray, $x, $y) & 0xFF;
-                $bg = max(1, imagecolorat($background, $x, $y) & 0xFF);
+                $rgb  = imagecolorat($image, $x, $y);
+                $gain = min(1.9, max(1.0, 245 / max(1, imagecolorat($background, $x, $y) & 0xFF)));
 
-                // Kertas mendekati 1; tulisan diperpekat sedikit (kurva gamma).
-                $ratio = min(1, $g / $bg * 1.08);
-                $value = (int) (255 * $ratio * $ratio);
+                // Penguatan lalu titik hitam sedikit diturunkan, per kanal (warna tetap).
+                $r = $this->tone((($rgb >> 16) & 0xFF) * $gain);
+                $g = $this->tone((($rgb >> 8) & 0xFF) * $gain);
+                $b = $this->tone(($rgb & 0xFF) * $gain);
 
-                imagesetpixel($out, $x, $y, $value * 0x010101);
+                imagesetpixel($out, $x, $y, ($r << 16) | ($g << 8) | $b);
             }
         }
 
-        imageconvolution($out, [[0, -1, 0], [-1, 5, -1], [0, -1, 0]], 1, 0);
+        // Pertajam tipis saja: penajaman kuat memunculkan kotak-kotak JPEG.
+        imageconvolution($out, [[0, -0.25, 0], [-0.25, 2, -0.25], [0, -0.25, 0]], 1, 0);
 
         return $out;
+    }
+
+    private function tone(float $value): int
+    {
+        return (int) max(0, min(255, ($value - 20) * 255 / 235));
     }
 
     // =================================================================
@@ -371,72 +739,16 @@ class ReceiptScanner
         return $out;
     }
 
-    private function otsu(array $hist, int $total): int
+    private function median(array $values): float
     {
-        $sum = 0;
-        foreach ($hist as $value => $count) {
-            $sum += $value * $count;
+        if (! $values) {
+            return 0.0;
         }
 
-        [$sumB, $weightB, $best, $threshold] = [0, 0, 0.0, 128];
+        sort($values);
+        $n = count($values);
 
-        foreach ($hist as $value => $count) {
-            $weightB += $count;
-            $weightF  = $total - $weightB;
-
-            if ($weightB === 0 || $weightF === 0) {
-                continue;
-            }
-
-            $sumB    += $value * $count;
-            $between  = $weightB * $weightF * (($sumB / $weightB) - (($sum - $sumB) / $weightF)) ** 2;
-
-            if ($between > $best) {
-                [$best, $threshold] = [$between, $value];
-            }
-        }
-
-        return $threshold;
-    }
-
-    /**
-     * Piksel bagian terang terbesar (indeks y * w + x), 4 arah.
-     *
-     * @return array<int, int>
-     */
-    private function largestBright(array $gray, int $w, int $h, int $threshold): array
-    {
-        $seen = [];
-        $best = [];
-
-        foreach ($gray as $start => $value) {
-            if ($value <= $threshold || isset($seen[$start])) {
-                continue;
-            }
-
-            $seen[$start] = true;
-            $queue        = [$start];
-            $component    = [];
-
-            while ($queue) {
-                $index       = array_pop($queue);
-                $component[] = $index;
-                $x           = $index % $w;
-
-                foreach ([$x > 0 ? $index - 1 : -1, $x < $w - 1 ? $index + 1 : -1, $index - $w, $index + $w] as $next) {
-                    if ($next >= 0 && $next < $w * $h && ! isset($seen[$next]) && $gray[$next] > $threshold) {
-                        $seen[$next] = true;
-                        $queue[]     = $next;
-                    }
-                }
-            }
-
-            if (count($component) > count($best)) {
-                $best = $component;
-            }
-        }
-
-        return $best;
+        return $n % 2 ? (float) $values[intdiv($n, 2)] : ($values[$n / 2 - 1] + $values[$n / 2]) / 2;
     }
 
     /**
