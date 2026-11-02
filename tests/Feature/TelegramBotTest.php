@@ -627,6 +627,66 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Draft Realisasi', $this->lastText());
     }
 
+    public function test_kata_advance_untuk_project_dengan_advance_cair_ditanyakan_dulu(): void
+    {
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        // Dulu langsung jadi draft advance baru karena ada kata "advance".
+        $this->send($this->textUpdate('advance belamy 200rb beli kabel'));
+
+        $this->assertStringContainsString('minta advance baru?', $this->lastText());
+        $this->assertStringContainsString('Advance Booth Pameran — sisa Rp 2.000.000', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:type:realisasi"));
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertSame(1, Advance::where('user_id', $user->id)->count(), 'Tidak ada advance baru.');
+        $this->assertEquals(200_000, Realisasi::where('advance_id', $advance->id)->sole()->items->sum('price'));
+    }
+
+    public function test_advance_baru_tetap_bisa_dipilih_walau_ada_advance_cair(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('advance belamy 3jt beli material booth tahap 2'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:type:advance"));
+        $this->send($this->tap("{$draft->id}:category:0"));
+
+        $this->assertStringContainsString('Draft Advance', $this->lastText());
+        $this->assertStringContainsString('Jadikan realisasi advance', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertSame(2, Advance::where('user_id', $user->id)->count());
+    }
+
+    public function test_frasa_ke_advance_dibaca_sebagai_realisasi(): void
+    {
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        foreach (['masukkan ke advance belamy 150rb beli lakban', 'dibayar dari advance belamy 150rb beli lakban', 'pakai advance belamy 150rb lakban'] as $pesan) {
+            $this->send($this->textUpdate('/batal'));
+            $this->send($this->textUpdate($pesan));
+
+            $draft = Draft::load($this->chatId);
+            $this->assertSame('realisasi', $draft->type, $pesan);
+            $this->assertSame($advance->id, $draft->advanceId, $pesan);
+            $this->assertStringContainsString('Draft Realisasi', $this->lastText(), $pesan);
+            $this->assertStringNotContainsStringIgnoringCase('masukkan', $this->lastText(), $pesan);
+        }
+    }
+
     public function test_expense_untuk_project_yang_punya_advance_terbuka_ditanyakan_dulu(): void
     {
         $user    = $this->user();

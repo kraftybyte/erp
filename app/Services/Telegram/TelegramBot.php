@@ -663,6 +663,7 @@ class TelegramBot
             case 'type':
                 $draft->type          = array_key_exists($value, self::TYPES) ? $value : $draft->type;
                 $draft->typeConfirmed = true;
+                $draft->typePicked    = true;
                 break;
 
             case 'adv':
@@ -810,13 +811,14 @@ class TelegramBot
         }
 
         // Cegah klaim ganda: biaya untuk project yang masih punya advance
-        // terbuka bisa jadi sudah dibayar dari advance itu.
-        $openForProject = $draft->type === 'expense'
-            ? $this->advances->forUser($user)->where('project_id', $draft->projectId)->values()
-            : collect();
+        // terbuka bisa jadi sudah dibayar dari advance itu. Untuk advance,
+        // tetap ditanyakan walau kata "advance" ditulis sendiri (lihat
+        // Draft::$typePicked); hanya pilihan lewat tombol yang dianggap pasti.
+        $openForProject = $this->advances->forUser($user)->where('project_id', $draft->projectId)->values();
+        $sure           = $draft->type === 'advance' ? $draft->typePicked : $draft->typeConfirmed;
 
-        if ($openForProject->isNotEmpty() && ! $draft->typeConfirmed) {
-            $this->askExpenseOrRealisasi($chatId, $messageId, $draft, $openForProject);
+        if ($openForProject->isNotEmpty() && ! $sure) {
+            $this->askRealisasiOrNew($chatId, $messageId, $draft, $openForProject);
 
             return;
         }
@@ -829,9 +831,11 @@ class TelegramBot
 
         $draft->awaiting = null;
 
-        $advanceWarning = $openForProject->isNotEmpty()
-            ? "⚠️ Project ini masih punya advance terbuka. Bila biaya ini dibayar dari advance itu, pilih <b>Jadikan realisasi</b> supaya tidak tercatat dua kali.\n"
-            : '';
+        $advanceWarning = match (true) {
+            $openForProject->isEmpty()   => '',
+            $draft->type === 'advance'   => "⚠️ Project ini masih punya advance terbuka. Bila ini pemakaian dana advance itu, pilih <b>Jadikan realisasi advance</b>.\n",
+            default                      => "⚠️ Project ini masih punya advance terbuka. Bila biaya ini dibayar dari advance itu, pilih <b>Jadikan realisasi</b> supaya tidak tercatat dua kali.\n",
+        };
 
         if ($draft->isMulti() && $draft->type === 'expense') {
             $count = $draft->receiptCount();
@@ -950,7 +954,7 @@ class TelegramBot
             . " yang kamu tulis. Periksa nominal tiap struk.\n";
     }
 
-    private function askExpenseOrRealisasi(int|string $chatId, ?int $messageId, Draft $draft, Collection $open): void
+    private function askRealisasiOrNew(int|string $chatId, ?int $messageId, Draft $draft, Collection $open): void
     {
         $draft->save($chatId);
 
@@ -959,13 +963,17 @@ class TelegramBot
                 . ' — sisa ' . $this->rupiah($this->advances->remaining($advance)))
             ->implode("\n");
 
+        [$question, $new] = $draft->type === 'advance'
+            ? ['Ini laporan pemakaian advance tersebut, atau minta advance baru?', '💸 Bukan, minta advance baru']
+            : ['Apakah pengeluaran ini dibayar dari advance tersebut?', '💰 Bukan, expense baru'];
+
         $this->show(
             $chatId,
             $messageId,
-            "Kamu punya advance terbuka untuk project ini:\n{$list}\n\nApakah pengeluaran ini dibayar dari advance tersebut?",
+            "Kamu punya advance terbuka untuk project ini:\n{$list}\n\n{$question}",
             [
                 [$this->button('🧾 Ya, realisasi advance', $draft, 'type', 'realisasi')],
-                [$this->button('💰 Bukan, expense baru', $draft, 'type', 'expense')],
+                [$this->button($new, $draft, 'type', $draft->type)],
                 [$this->button('❌ Batal', $draft, 'cancel')],
             ]
         );
