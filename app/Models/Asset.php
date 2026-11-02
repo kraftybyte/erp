@@ -21,11 +21,16 @@ class Asset extends Model
         'bon_invoice',
         'harga_barang',
         'foto',
+        // Penyusutan (App\Services\AssetDepreciation).
+        'kelompok_harta',
+        'metode_penyusutan',
+        'tanggal_dilepas',
     ];
 
     protected $casts = [
         'tanggal_pembelian' => 'date',
         'maintenance_date'  => 'date',
+        'tanggal_dilepas'   => 'date',
         'harga_barang'      => 'decimal:2',
     ];
 
