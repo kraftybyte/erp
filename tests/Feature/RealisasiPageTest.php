@@ -51,6 +51,30 @@ class RealisasiPageTest extends TestCase
             ->assertSee('Sisa Rp 1.300.000 belum direalisasi');
     }
 
+    public function test_tombol_simpan_di_footer_modal_terhubung_ke_formnya(): void
+    {
+        $this->actingAs($this->user('Finance'));
+        $advance = $this->advance($this->user('Staff'), 1_500_000);
+
+        $html = Livewire::test(RealisasiAdvance::class, ['record' => $advance])->html();
+
+        // Tombol di footer modal ada di luar <form>; tanpa atribut form="…" klik
+        // Simpan tidak mengirim apa pun. Di <x-filament::button> atribut itu
+        // ditulis form-id; "form" ditelan komponennya (dulu terjadi di sini).
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html);
+        $xpath = new \DOMXPath($dom);
+
+        foreach (['Simpan batch' => 'batchForm', 'Simpan pengembalian' => 'returnForm'] as $label => $form) {
+            $button = $xpath->query("//button[contains(normalize-space(.), '{$label}')]")->item(0);
+
+            $this->assertNotNull($button, $label);
+            $this->assertSame('submit', $button->getAttribute('type'), $label);
+            $this->assertSame($form, $button->getAttribute('form'), $label);
+            $this->assertSame(1, $xpath->query("//form[@id='{$form}']")->length, $label);
+        }
+    }
+
     public function test_belum_ada_realisasi_tidak_disebut_menunggu_return(): void
     {
         $this->actingAs($this->user('Finance'));
