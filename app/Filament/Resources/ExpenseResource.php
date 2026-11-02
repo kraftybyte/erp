@@ -293,6 +293,13 @@ class ExpenseResource extends Resource
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
                             ->maxSize(5120) // 5MB
                             ->directory('expense/invoice/' . now()->format('Y/m/d'))
+                            // Foto nota dirapikan seperti hasil scan (aslinya ikut disimpan); PDF apa adanya.
+                            ->saveUploadedFileUsing(function (\Livewire\Features\SupportFileUploads\TemporaryUploadedFile $file) {
+                                $data = (string) $file->get();
+
+                                return app(\App\Services\ReceiptScanner::class)
+                                    ->store($data, (new \finfo(FILEINFO_MIME_TYPE))->buffer($data), 'expense/invoice/' . now()->format('Y/m/d'))['path'];
+                            })
                             ->required()
                             ->validationMessages([
                                 'required' => 'Bukti pembayaran harus diunggah.',

@@ -9,6 +9,7 @@ use App\Models\Realisasi;
 use App\Models\RealisasiItem;
 use App\Models\RealisasiFile;
 use App\Services\RealisasiService;
+use App\Services\ReceiptScanner;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
 use Filament\Notifications\Notification;
@@ -341,12 +342,15 @@ class RealisasiAdvance extends Page
             DB::transaction(function () use (&$stored) {
                 $files = [];
                 foreach ($this->uploadedFiles as $file) {
-                    $path = $stored[] = $file->store('realisasi/' . $this->record->id, 'public');
+                    // Foto struk dirapikan seperti hasil scan; aslinya ikut disimpan.
+                    $data = (string) $file->get();
+                    $kept = app(ReceiptScanner::class)->store($data, (new \finfo(FILEINFO_MIME_TYPE))->buffer($data), 'realisasi/' . $this->record->id);
+                    $stored[] = $kept['path'];
                     $files[] = [
                         'original_name' => $file->getClientOriginalName(),
-                        'filepath' => $path,
-                        'filesize' => $file->getSize(),
-                        'mime_type' => $file->getMimeType(),
+                        'filepath' => $kept['path'],
+                        'filesize' => $kept['size'],
+                        'mime_type' => $kept['mime'],
                     ];
                 }
 
@@ -381,7 +385,7 @@ class RealisasiAdvance extends Page
                 ->icon('heroicon-o-check-circle')
                 ->send();
         } catch (\Exception $e) {
-            Storage::disk('public')->delete($stored);
+            ReceiptScanner::delete($stored);
 
             Notification::make()
                 ->title('Batch gagal disimpan')

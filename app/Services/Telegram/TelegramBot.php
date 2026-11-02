@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\AutoApproval;
 use App\Services\GeminiService;
 use App\Services\RealisasiService;
+use App\Services\ReceiptScanner;
 use Illuminate\Database\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Illuminate\Support\Carbon;
@@ -66,6 +67,7 @@ class TelegramBot
         private GeminiService $gemini,
         private OpenAdvances $advances,
         private RealisasiService $realisasi,
+        private ReceiptScanner $scanner,
     ) {}
 
     public function handle(array $update): void
@@ -617,9 +619,7 @@ class TelegramBot
 
     private function deleteStored(array $files): void
     {
-        foreach ($files as $file) {
-            Storage::disk('public')->delete($file['path']);
-        }
+        ReceiptScanner::delete(array_column($files, 'path'));
     }
 
     private function receiptFailedMessage(int|string $chatId, int $number, int $total): void
@@ -720,12 +720,10 @@ class TelegramBot
             return null;
         }
 
-        $ext  = self::ATTACHMENT_TYPES[$mime];
-        $path = "{$folder}/" . Str::uuid() . ".{$ext}";
+        // Foto struk dirapikan seperti hasil scan; aslinya ikut disimpan.
+        $stored = $this->scanner->store($data, $mime, $folder);
 
-        Storage::disk('public')->put($path, $data);
-
-        return ['path' => $path, 'size' => strlen($data), 'mime' => $mime, 'ext' => $ext];
+        return ['path' => $stored['path'], 'size' => $stored['size'], 'mime' => $stored['mime'], 'ext' => pathinfo($stored['path'], PATHINFO_EXTENSION)];
     }
 
     private function answerPrompt(int|string $chatId, User $user, Draft $draft, string $text): void

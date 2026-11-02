@@ -565,8 +565,9 @@ class RealisasiService
             }
         });
 
-        // File bukti ada di disk public (link /storage), dihapus setelah transaksi berhasil.
-        Storage::disk('public')->delete($paths);
+        // File bukti ada di disk public (link /storage), dihapus setelah transaksi
+        // berhasil, beserta foto aslinya bila struknya hasil scan.
+        ReceiptScanner::delete($paths);
     }
 
     /**
@@ -657,7 +658,7 @@ class RealisasiService
     public function deleteFile(RealisasiFile $file): void
     {
         // Bukti realisasi disimpan di disk public, bukan disk default.
-        Storage::disk('public')->delete($file->filepath);
+        ReceiptScanner::delete($file->filepath);
         $file->delete();
     }
 
