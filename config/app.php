@@ -86,7 +86,9 @@ return [
     |
     */
 
-    'locale' => 'en',
+    // Antarmuka (Filament, validasi, tanggal) dalam bahasa Indonesia; teks yang
+    // belum punya terjemahan memakai fallback bahasa Inggris.
+    'locale' => 'id',
 
     /*
     |--------------------------------------------------------------------------
