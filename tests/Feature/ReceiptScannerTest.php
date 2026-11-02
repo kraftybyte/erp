@@ -73,7 +73,8 @@ class ReceiptScannerTest extends TestCase
 
         $out = $this->scan($this->jpeg($image));
 
-        $this->assertSame([900, 1200], [imagesx($out), imagesy($out)]);
+        // Tidak dipotong (perbandingan sisi sama), hanya diperbesar halus sampai 1600 px.
+        $this->assertSame([1200, 1600], [imagesx($out), imagesy($out)]);
         $this->assertGreaterThan(0.01, $this->darkShare($out));
     }
 

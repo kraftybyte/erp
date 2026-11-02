@@ -33,6 +33,10 @@ class ReceiptScanner
     private const MAX_SIDE  = 1600;
     private const WORK_SIDE = 2400;
 
+    // Foto kecil (mis. 400 px) diperbesar halus sampai sekian kali, supaya
+    // tulisannya tidak kotak-kotak saat dibuka di layar.
+    private const MAX_UPSCALE = 2.5;
+
     // Ukuran kerja untuk mencari kertas: cukup kecil supaya tulisan melebur.
     private const DETECT_SIDE = 240;
 
@@ -124,10 +128,10 @@ class ReceiptScanner
             return null;
         }
 
-        $out = $this->clean($paper === 'full' ? $this->fit($image, self::MAX_SIDE, always: true) : $this->warp($image, $paper));
+        $out = $paper === 'full' ? $this->clean($this->enlarge($image)) : $this->warp($image, $paper);
 
         ob_start();
-        imagejpeg($out, null, 85);
+        imagejpeg($out, null, 88);
 
         return (string) ob_get_clean();
     }
@@ -484,6 +488,8 @@ class ReceiptScanner
      */
     private function fitLine(array $points): array
     {
+        [$m, $c] = [0.0, 0.0];
+
         for ($round = 0; $round < 3; $round++) {
             $n  = count($points);
             $sa = $sb = $saa = $sab = 0.0;
@@ -501,7 +507,7 @@ class ReceiptScanner
 
             $residuals = array_map(fn ($p) => abs($p[1] - ($m * $p[0] + $c)), $points);
             $limit     = max(1.5, 2.5 * $this->median($residuals));
-            $inliers   = array_values(array_filter($points, fn ($p, $i) => $residuals[$i] <= $limit, ARRAY_FILTER_USE_BOTH));
+            $inliers   = array_values(array_filter($points, fn ($i) => $residuals[$i] <= $limit, ARRAY_FILTER_USE_KEY));
 
             if (count($inliers) === $n || count($inliers) < 5) {
                 break;
@@ -511,26 +517,6 @@ class ReceiptScanner
         }
 
         return [$m, $c];
-    }
-
-    /**
-     * Titik potong garis tepi samping x = m·y + c dengan garis tepi atas/bawah y = m·x + c.
-     *
-     * @return array{float, float}|null
-     */
-    private function intersect(array $side, array $edge): ?array
-    {
-        [$ms, $cs] = $side;
-        [$me, $ce] = $edge;
-        $den       = 1 - $ms * $me;
-
-        if (abs($den) < 1e-9) {
-            return null;
-        }
-
-        $y = ($me * $cs + $ce) / $den;
-
-        return [$ms * $y + $cs, $y];
     }
 
     private function inset(array $quad, float $ratio): array
@@ -588,7 +574,8 @@ class ReceiptScanner
 
     /**
      * Luruskan segi empat $quad (kiri atas, kanan atas, kanan bawah, kiri
-     * bawah) menjadi persegi panjang, warnanya tetap.
+     * bawah) menjadi persegi panjang, sekaligus dirapikan (lihat clean()):
+     * satu putaran per piksel, peta latar kertasnya dari versi kecil.
      */
     private function warp(GdImage $image, array $quad): GdImage
     {
@@ -596,24 +583,66 @@ class ReceiptScanner
 
         $width  = max($this->distance($tl, $tr), $this->distance($bl, $br));
         $height = max($this->distance($tl, $bl), $this->distance($tr, $br));
-        $scale  = min(1, self::MAX_SIDE / max($width, $height));
+        $scale  = $this->outputScale($width, $height);
         $w      = max(1, (int) round($width * $scale));
         $h      = max(1, (int) round($height * $scale));
+        $sw     = imagesx($image) - 1;
+        $sh     = imagesy($image) - 1;
+
+        // Peta latar dari versi kecil: foto dikecilkan dulu dengan perataan area
+        // (supaya noise JPEG tidak terbawa), baru diluruskan kasar.
+        $bw     = max(4, intdiv($w, 6));
+        $bh     = max(4, intdiv($h, 6));
+        $k      = min(1, $bw / max(1, $width));
+        $source = $k < 1 ? $this->fit($image, (int) max(1, round(max(imagesx($image), imagesy($image)) * $k)), always: true) : $image;
+        $kx     = imagesx($source) / imagesx($image);
+        $ms     = $this->homography([[0, 0], [$bw - 1, 0], [$bw - 1, $bh - 1], [0, $bh - 1]], array_map(fn ($p) => [$p[0] * $kx, $p[1] * $kx], $quad));
+        $small  = imagecreatetruecolor($bw, $bh);
+        $ssw    = imagesx($source) - 1;
+        $ssh    = imagesy($source) - 1;
+
+        for ($v = 0; $v < $bh; $v++) {
+            for ($u = 0; $u < $bw; $u++) {
+                $d = $ms[6] * $u + $ms[7] * $v + 1;
+                imagesetpixel($small, $u, $v, imagecolorat($source,
+                    (int) max(0, min($ssw, ($ms[0] * $u + $ms[1] * $v + $ms[2]) / $d)),
+                    (int) max(0, min($ssh, ($ms[3] * $u + $ms[4] * $v + $ms[5]) / $d))));
+            }
+        }
+
+        $background = $this->background($small, $w, $h);
+        $lut        = $this->toneTable();
 
         // Homografi dari titik hasil (u, v) ke titik di foto (x, y).
-        $m = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
-
-        $sw  = imagesx($image) - 1;
-        $sh  = imagesy($image) - 1;
+        $m   = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
         $out = imagecreatetruecolor($w, $h);
 
+        // Interpolasi bilinear: titik terdekat membuat tepi huruf bergerigi.
         for ($v = 0; $v < $h; $v++) {
             for ($u = 0; $u < $w; $u++) {
-                $d = $m[6] * $u + $m[7] * $v + 1;
-                $x = (int) round(($m[0] * $u + $m[1] * $v + $m[2]) / $d);
-                $y = (int) round(($m[3] * $u + $m[4] * $v + $m[5]) / $d);
+                $d  = $m[6] * $u + $m[7] * $v + 1;
+                $fx = max(0, min($sw, ($m[0] * $u + $m[1] * $v + $m[2]) / $d));
+                $fy = max(0, min($sh, ($m[3] * $u + $m[4] * $v + $m[5]) / $d));
+                $x0 = (int) $fx;
+                $y0 = (int) $fy;
+                $x1 = $x0 < $sw ? $x0 + 1 : $x0;
+                $y1 = $y0 < $sh ? $y0 + 1 : $y0;
+                $ax = $fx - $x0;
+                $ay = $fy - $y0;
+                $bx = 1 - $ax;
+                $by = 1 - $ay;
 
-                imagesetpixel($out, $u, $v, imagecolorat($image, max(0, min($sw, $x)), max(0, min($sh, $y))));
+                $c00 = imagecolorat($image, $x0, $y0);
+                $c10 = imagecolorat($image, $x1, $y0);
+                $c01 = imagecolorat($image, $x0, $y1);
+                $c11 = imagecolorat($image, $x1, $y1);
+                $row = $lut[imagecolorat($background, $u, $v) & 0xFF];
+
+                $r = (int) (((($c00 >> 16) & 0xFF) * $bx + (($c10 >> 16) & 0xFF) * $ax) * $by + ((($c01 >> 16) & 0xFF) * $bx + (($c11 >> 16) & 0xFF) * $ax) * $ay);
+                $g = (int) (((($c00 >> 8) & 0xFF) * $bx + (($c10 >> 8) & 0xFF) * $ax) * $by + ((($c01 >> 8) & 0xFF) * $bx + (($c11 >> 8) & 0xFF) * $ax) * $ay);
+                $b = (int) ((($c00 & 0xFF) * $bx + ($c10 & 0xFF) * $ax) * $by + (($c01 & 0xFF) * $bx + ($c11 & 0xFF) * $ax) * $ay);
+
+                imagesetpixel($out, $u, $v, ($row[$r] << 16) | ($row[$g] << 8) | $row[$b]);
             }
         }
 
@@ -621,23 +650,62 @@ class ReceiptScanner
     }
 
     /**
+     * Kertas memenuhi foto: tanpa dipotong, hanya disesuaikan ukurannya.
+     */
+    private function enlarge(GdImage $image): GdImage
+    {
+        $scale = $this->outputScale(imagesx($image), imagesy($image));
+        $out   = imagecreatetruecolor(max(1, (int) round(imagesx($image) * $scale)), max(1, (int) round(imagesy($image) * $scale)));
+        imagecopyresampled($out, $image, 0, 0, 0, 0, imagesx($out), imagesy($out), imagesx($image), imagesy($image));
+
+        return $out;
+    }
+
+    private function outputScale(float $width, float $height): float
+    {
+        return min(self::MAX_UPSCALE, self::MAX_SIDE / max(1, $width, $height));
+    }
+
+    /**
      * Kertas diputihkan dan bayangan diangkat: tiap piksel dikalikan supaya
      * latar kertas di sekitarnya menjadi putih. Penguatannya dibatasi dan
      * tidak ada kontras ekstrem, jadi hasilnya tetap alami dan berwarna.
+     * Tanpa pertajam: penajaman memunculkan lingkaran di sekitar huruf dan
+     * kotak-kotak JPEG.
      */
     private function clean(GdImage $image): GdImage
     {
-        $w = imagesx($image);
-        $h = imagesy($image);
+        $w     = imagesx($image);
+        $h     = imagesy($image);
+        $small = imagecreatetruecolor(max(4, intdiv($w, 6)), max(4, intdiv($h, 6)));
+        imagecopyresampled($small, $image, 0, 0, 0, 0, imagesx($small), imagesy($small), $w, $h);
 
-        // Latar kertas: versi kecil, tulisan dihapus dengan filter maksimum,
-        // lalu dibesarkan lagi dengan halus.
-        $sw    = max(4, intdiv($w, 6));
-        $sh    = max(4, intdiv($h, 6));
-        $small = imagecreatetruecolor($sw, $sh);
-        imagecopyresampled($small, $image, 0, 0, 0, 0, $sw, $sh, $w, $h);
+        $background = $this->background($small, $w, $h);
+        $lut        = $this->toneTable();
+        $out        = imagecreatetruecolor($w, $h);
 
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $rgb = imagecolorat($image, $x, $y);
+                $row = $lut[imagecolorat($background, $x, $y) & 0xFF];
+
+                imagesetpixel($out, $x, $y, ($row[($rgb >> 16) & 0xFF] << 16) | ($row[($rgb >> 8) & 0xFF] << 8) | $row[$rgb & 0xFF]);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Peta terang latar kertas seukuran hasil: dari versi kecil, tulisan
+     * dihapus dengan filter maksimum, lalu dibesarkan lagi dengan halus.
+     */
+    private function background(GdImage $small, int $w, int $h): GdImage
+    {
+        $sw    = imagesx($small);
+        $sh    = imagesy($small);
         $level = [];
+
         for ($y = 0; $y < $sh; $y++) {
             for ($x = 0; $x < $sw; $x++) {
                 $rgb = imagecolorat($small, $x, $y);
@@ -645,25 +713,15 @@ class ReceiptScanner
             }
         }
 
-        for ($pass = 0; $pass < 1; $pass++) {
-            $next = $level;
-            for ($y = 0; $y < $sh; $y++) {
-                for ($x = 0; $x < $sw; $x++) {
-                    $max = $level[$y][$x];
-                    for ($dy = -1; $dy <= 1; $dy++) {
-                        for ($dx = -1; $dx <= 1; $dx++) {
-                            $max = max($max, $level[$y + $dy][$x + $dx] ?? 0);
-                        }
-                    }
-                    $next[$y][$x] = $max;
-                }
-            }
-            $level = $next;
-        }
-
         for ($y = 0; $y < $sh; $y++) {
             for ($x = 0; $x < $sw; $x++) {
-                imagesetpixel($small, $x, $y, $level[$y][$x] * 0x010101);
+                $max = $level[$y][$x];
+                for ($dy = -1; $dy <= 1; $dy++) {
+                    for ($dx = -1; $dx <= 1; $dx++) {
+                        $max = max($max, $level[$y + $dy][$x + $dx] ?? 0);
+                    }
+                }
+                imagesetpixel($small, $x, $y, $max * 0x010101);
             }
         }
 
@@ -671,31 +729,29 @@ class ReceiptScanner
         imagecopyresampled($background, $small, 0, 0, 0, 0, $w, $h, $sw, $sh);
         imagefilter($background, IMG_FILTER_GAUSSIAN_BLUR);
 
-        $out = imagecreatetruecolor($w, $h);
+        return $background;
+    }
 
-        for ($y = 0; $y < $h; $y++) {
-            for ($x = 0; $x < $w; $x++) {
-                $rgb  = imagecolorat($image, $x, $y);
-                $gain = min(1.9, max(1.0, 245 / max(1, imagecolorat($background, $x, $y) & 0xFF)));
+    /**
+     * Tabel [terang latar][nilai kanal] → nilai hasil: dikalikan supaya latar
+     * kertas putih (penguatan 1–1,9×), titik hitam sedikit diturunkan, dan
+     * kertas yang sudah hampir putih jadi putih bersih (belang JPEG hilang).
+     *
+     * @return array<int, array<int, int>>
+     */
+    private function toneTable(): array
+    {
+        $table = [];
 
-                // Penguatan lalu titik hitam sedikit diturunkan, per kanal (warna tetap).
-                $r = $this->tone((($rgb >> 16) & 0xFF) * $gain);
-                $g = $this->tone((($rgb >> 8) & 0xFF) * $gain);
-                $b = $this->tone(($rgb & 0xFF) * $gain);
+        for ($bg = 0; $bg < 256; $bg++) {
+            $gain = min(1.9, max(1.0, 245 / max(1, $bg)));
 
-                imagesetpixel($out, $x, $y, ($r << 16) | ($g << 8) | $b);
+            for ($value = 0; $value < 256; $value++) {
+                $table[$bg][$value] = (int) max(0, min(255, ($value * $gain - 20) * 255 / 212));
             }
         }
 
-        // Pertajam tipis saja: penajaman kuat memunculkan kotak-kotak JPEG.
-        imageconvolution($out, [[0, -0.25, 0], [-0.25, 2, -0.25], [0, -0.25, 0]], 1, 0);
-
-        return $out;
-    }
-
-    private function tone(float $value): int
-    {
-        return (int) max(0, min(255, ($value - 20) * 255 / 235));
+        return $table;
     }
 
     // =================================================================
