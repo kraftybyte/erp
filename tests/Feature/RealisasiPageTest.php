@@ -6,10 +6,13 @@ use App\Filament\Resources\AdvanceResource\Pages\RealisasiAdvance;
 use App\Filament\Resources\AdvanceResource\Pages\ViewAdvance;
 use App\Models\Advance;
 use App\Models\Project;
+use App\Models\Realisasi;
+use App\Models\RealisasiItem;
 use App\Models\User;
 use App\Services\RealisasiService;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -156,6 +159,92 @@ class RealisasiPageTest extends TestCase
         $this->assertSame(1, $advance->realizasis()->count(), 'Batch advance yang sudah selesai tidak bisa dihapus.');
     }
 
+    public function test_finance_director_dan_super_admin_bisa_menghapus_batch(): void
+    {
+        foreach (['Finance', 'Director', 'super_admin'] as $role) {
+            $this->actingAs($this->user($role));
+            $advance = $this->advance($this->user('Staff'), 1_000_000);
+            $this->batch($advance, 400_000);
+
+            Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])
+                ->assertSeeHtml('wire:click="deleteBatch(')
+                ->call('deleteBatch', $advance->realizasis()->value('id'))
+                ->assertNotified('Batch dihapus');
+
+            $this->assertSame(0, $advance->realizasis()->count(), "{$role} bisa menghapus batch.");
+        }
+    }
+
+    public function test_batch_yang_melebihi_advance_bisa_dihapus(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->user('Finance'));
+        $owner   = $this->user('Staff');
+        $advance = $this->advance($owner, 1_000_000);
+        Storage::disk('public')->put('realisasi/tes/struk.jpg', 'jpg');
+
+        // Salah ketik nominal: 1,2 jt untuk advance 1 jt. Batch inilah yang
+        // paling perlu dihapus, dan dulu justru ditolak.
+        $batch = $this->batch($advance, 1_200_000, 'realisasi/tes/struk.jpg');
+
+        Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])
+            ->call('deleteBatch', $batch->id)
+            ->assertNotified('Batch dihapus');
+
+        $this->assertSame(0, $advance->realizasis()->count());
+        $this->assertEquals(0, app(RealisasiService::class)->getTotalRealisasi($advance));
+        Storage::disk('public')->assertMissing('realisasi/tes/struk.jpg');
+        $this->assertSame(0, RealisasiItem::where('realisasi_id', $batch->id)->count(), 'Item ikut terhapus.');
+
+        // Tanpa batch tersisa, advance kembali menunggu realisasi pertama;
+        // tanpa notifikasi "Advance Sudah Dibayarkan" palsu ke pemiliknya.
+        $this->assertSame(Advance::STATUS_DIBAYARKAN, $advance->fresh()->status);
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('notifications')
+            ->where('notifiable_id', $owner->id)->where('data', 'like', '%Sudah Dibayarkan%')->count());
+    }
+
+    public function test_menghapus_satu_dari_dua_batch(): void
+    {
+        $this->actingAs($this->user('Director'));
+        $advance = $this->advance($this->user('Staff'), 1_000_000);
+        $first   = $this->batch($advance, 300_000);
+        $this->batch($advance, 200_000);
+
+        Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])->call('deleteBatch', $first->id);
+
+        $this->assertSame(1, $advance->realizasis()->count());
+        $this->assertEquals(200_000, app(RealisasiService::class)->getTotalRealisasi($advance));
+        $this->assertSame(Advance::STATUS_REALIZED_USER, $advance->fresh()->status);
+    }
+
+    public function test_batch_advance_berstatus_lama_bisa_dihapus(): void
+    {
+        $this->actingAs($this->user('super_admin'));
+        $advance = $this->advance($this->user('Staff'), 1_000_000);
+        $this->batch($advance, 600_000);
+        $keep = $this->batch($advance, 400_000);
+        $advance->forceFill(['status' => Advance::STATUS_READY_TO_CLOSE])->saveQuietly();
+
+        Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])
+            ->call('deleteBatch', $advance->realizasis()->where('id', '!=', $keep->id)->value('id'))
+            ->assertNotified('Batch dihapus');
+
+        $this->assertSame([$keep->id], $advance->realizasis()->pluck('id')->all());
+        $this->assertSame(Advance::STATUS_REALIZED_USER, $advance->fresh()->status, 'Tidak lagi pas dengan advance.');
+    }
+
+    public function test_pemilik_advance_tidak_bisa_menghapus_batch(): void
+    {
+        $owner   = $this->user('Staff');
+        $advance = $this->advance($owner, 1_000_000);
+        $batch   = $this->batch($advance, 400_000);
+        $this->actingAs($owner);
+
+        Livewire::test(RealisasiAdvance::class, ['record' => $advance->fresh()])->call('deleteBatch', $batch->id);
+
+        $this->assertSame(1, $advance->realizasis()->count());
+    }
+
     public function test_pengembalian_ditolak_untuk_advance_yang_belum_dicairkan(): void
     {
         $this->actingAs($this->user('Finance'));
@@ -254,6 +343,15 @@ class RealisasiPageTest extends TestCase
             'paid'               => $status === Advance::STATUS_DISETUJUI ? 0 : $paid,
             'status'             => $status,
         ]);
+    }
+
+    private function batch(Advance $advance, int $price, ?string $file = null): Realisasi
+    {
+        return app(RealisasiService::class)->createBatch(
+            $advance->fresh(),
+            ['uploaded_by' => $advance->user_id],
+            [['name' => 'Material', 'quantity' => 1, 'price' => $price, 'files' => $file ? [['original_name' => 'struk.jpg', 'filepath' => $file, 'filesize' => 3, 'mime_type' => 'image/jpeg']] : []]]
+        );
     }
 
     private function user(string $role): User
