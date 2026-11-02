@@ -521,7 +521,12 @@ class RealisasiService
     }
 
     /**
-     * Delete a batch and all related items and files
+     * Hapus satu batch beserta item dan file buktinya.
+     *
+     * Boleh selama advance belum Selesai. Syaratnya sengaja bukan
+     * canRealisasi() (boleh menambah batch): batch yang membuat realisasi
+     * melebihi advance justru yang paling sering perlu dihapus, dan dulu
+     * penghapusannya ditolak.
      *
      * @param Realisasi $batch
      * @throws \InvalidArgumentException
@@ -530,26 +535,38 @@ class RealisasiService
     {
         $advance = $batch->advance;
 
-        // Validate advance can be modified
         if (!$advance->isEditable()) {
             throw new \InvalidArgumentException(self::ERROR_ADVANCE_COMPLETED);
         }
 
-        if (!$advance->canRealisasi()) {
-            throw new \InvalidArgumentException(self::ERROR_ADVANCE_NOT_PAYABLE);
-        }
+        $paths = [];
 
-        DB::transaction(function () use ($batch) {
-            // Delete files from storage
+        DB::transaction(function () use ($batch, $advance, &$paths) {
+            // Batch memakai soft delete, jadi cascade database tidak berjalan:
+            // item dan file-nya ikut ditandai terhapus di sini.
             foreach ($batch->items as $item) {
                 foreach ($item->files as $file) {
-                    Storage::delete($file->filepath);
+                    $paths[] = $file->filepath;
+                    $file->delete();
                 }
+
+                $item->delete();
             }
 
-            // Delete batch (cascade will delete items and files)
             $batch->delete();
+
+            // Status mengikuti batch yang tersisa. Tanpa batch, advance kembali
+            // menunggu realisasi pertama. Tanpa event: observer akan mengirim
+            // notifikasi "Advance Sudah Dibayarkan" yang keliru ke pemiliknya.
+            if (in_array($advance->status, [Advance::STATUS_REALIZED_USER, Advance::STATUS_REALIZING, Advance::STATUS_READY_TO_CLOSE], true)) {
+                $advance->updateQuietly([
+                    'status' => $advance->realizasis()->exists() ? Advance::STATUS_REALIZED_USER : Advance::STATUS_DIBAYARKAN,
+                ]);
+            }
         });
+
+        // File bukti ada di disk public (link /storage), dihapus setelah transaksi berhasil.
+        Storage::disk('public')->delete($paths);
     }
 
     /**
@@ -639,7 +656,8 @@ class RealisasiService
      */
     public function deleteFile(RealisasiFile $file): void
     {
-        Storage::delete($file->filepath);
+        // Bukti realisasi disimpan di disk public, bukan disk default.
+        Storage::disk('public')->delete($file->filepath);
         $file->delete();
     }
 
