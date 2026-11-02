@@ -825,6 +825,87 @@ class TelegramBotTest extends TestCase
         }
     }
 
+    public function test_finance_merealisasi_advance_karyawan_lewat_bot(): void
+    {
+        Storage::fake('public');
+        $budi    = $this->employee('Budi', 'Santoso');
+        $advance = $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $finance = $this->user();
+        $finance->assignRole('Finance');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi belamy 200rb beli kabel'));
+
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString('👤 Pengaju: Budi Santoso', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $batch = Realisasi::where('advance_id', $advance->id)->sole();
+        $this->assertSame($finance->id, $batch->uploaded_by, 'Tercatat siapa yang memasukkan.');
+        $this->assertSame($budi->id, $advance->fresh()->user_id, 'Advance tetap milik Budi.');
+        $this->assertStringContainsString('Pengaju: Budi Santoso', $this->lastText());
+    }
+
+    public function test_director_melihat_advance_karyawan_saat_kirim_foto(): void
+    {
+        $budi = $this->employee('Budi', 'Santoso');
+        $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->user()->assignRole('Director');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-dir'));
+
+        $this->assertContains('🧾 Realisasi: Advance Booth Pameran (Budi) · sisa Rp 2.000.000', $this->lastButtons());
+    }
+
+    public function test_finance_mencari_advance_yang_tidak_ada_di_daftar(): void
+    {
+        $budi = $this->employee('Budi', 'Santoso');
+        $sari = $this->employee('Sari', 'Dewi');
+        $langka = $this->openAdvance($sari, $this->project('PT Langka Sekali', 'Event Gathering'));
+
+        foreach (range(1, 8) as $n) {
+            $this->openAdvance($budi, $this->project("PT Klien {$n}", "Project {$n}"));
+        }
+
+        $this->user()->assignRole('Finance');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi 100rb parkir'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:advlist:"));
+
+        $this->assertStringContainsString('Baru 8 advance terbaru', $this->lastText());
+        $this->assertStringNotContainsString('PT Langka Sekali', $this->lastText());
+
+        $this->send($this->textUpdate('langka'));
+        $this->assertStringContainsString('PT Langka Sekali', $this->lastText());
+        $this->assertStringContainsString('👤 Sari Dewi', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:adv:{$langka->id}"));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($langka->id, $draft->advanceId);
+        $this->assertNull($draft->awaiting);
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_expense_finance_tidak_ditahan_advance_karyawan_lain(): void
+    {
+        $budi = $this->employee('Budi', 'Santoso');
+        $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->user()->assignRole('Finance');
+        $this->fakeApis(gemini: null);
+
+        // Cek klaim ganda hanya untuk advance milik pengaju sendiri.
+        $this->send($this->textUpdate('expense grab 150rb ke kantor klien belamy'));
+
+        $this->assertStringNotContainsString('dibayar dari advance', $this->lastText());
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+    }
+
     public function test_expense_untuk_project_yang_punya_advance_terbuka_ditanyakan_dulu(): void
     {
         $user    = $this->user();
@@ -1257,6 +1338,17 @@ class TelegramBotTest extends TestCase
         if ($permissions) {
             $user->givePermissionTo($permissions);
         }
+
+        return $user;
+    }
+
+    /**
+     * Karyawan lain pemilik advance; tidak terhubung ke chat tes.
+     */
+    private function employee(string $firstname, string $lastname): User
+    {
+        $user = $this->user(linked: false);
+        $user->forceFill(['firstname' => $firstname, 'lastname' => $lastname])->save();
 
         return $user;
     }
