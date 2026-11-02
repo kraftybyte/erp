@@ -189,7 +189,7 @@
         </form>
 
         <x-slot name="footerActions">
-            <x-filament::button type="submit" form="batchForm" wire:target="saveBatch">Simpan batch</x-filament::button>
+            <x-filament::button type="submit" form-id="batchForm" wire:target="saveBatch">Simpan batch</x-filament::button>
             <x-filament::button color="gray" wire:click="closeBatchModal">Batal</x-filament::button>
         </x-slot>
     </x-filament::modal>
@@ -233,7 +233,7 @@
         </form>
 
         <x-slot name="footerActions">
-            <x-filament::button type="submit" form="returnForm" wire:target="processReturn">Simpan pengembalian</x-filament::button>
+            <x-filament::button type="submit" form-id="returnForm" wire:target="processReturn">Simpan pengembalian</x-filament::button>
             <x-filament::button color="gray" wire:click="closeReturnModal">Batal</x-filament::button>
         </x-slot>
     </x-filament::modal>
