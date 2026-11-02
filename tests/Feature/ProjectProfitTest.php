@@ -162,6 +162,36 @@ class ProjectProfitTest extends TestCase
         $this->assertTrue(ProjectProfit::visibleTo(auth()->user()));
     }
 
+    public function test_pilihan_invoice_di_form_project_tanpa_nilai_untuk_role_lain(): void
+    {
+        $project = $this->project();
+        $invoice = $this->invoice(['grand_total' => 37_500_000]);
+
+        // Role lain yang diberi izin mengedit project tetap tidak melihat nilai invoice.
+        $staff = $this->user('Staff');
+        $staff->givePermissionTo(['view_any_project', 'view_project', 'update_project']);
+        $this->actingAs($staff);
+
+        $this->assertSame($invoice->uuid, $this->invoiceOptions($project)[$invoice->id]);
+
+        $this->actingAs($this->user('super_admin'));
+        $this->assertSame($invoice->uuid . ' · Rp 37.500.000', $this->invoiceOptions($project)[$invoice->id]);
+    }
+
+    /**
+     * Pilihan "Invoice" di form edit project (dropdown searchable baru dimuat saat dibuka).
+     *
+     * @return array<int, string>
+     */
+    private function invoiceOptions(Project $project): array
+    {
+        $form = Livewire::test(EditProject::class, ['record' => $project->getRouteKey()])->instance()->form;
+
+        return collect($form->getFlatComponents())
+            ->first(fn ($component) => $component instanceof \Filament\Forms\Components\Select && $component->getName() === 'invoice_id')
+            ->getOptions();
+    }
+
     public function test_tab_keuangan_merinci_invoice_expense_dan_advance(): void
     {
         $invoice = $this->invoice(['grand_total' => 15_000_000, 'paid' => 15_000_000, 'status' => 'paid']);
