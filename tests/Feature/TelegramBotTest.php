@@ -55,6 +55,9 @@ class TelegramBotTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // Salinan sementara struk (TelegramBot::receiptData) tidak boleh menumpuk di storage asli.
+        Storage::fake('local');
     }
 
     // =================================================================
@@ -474,6 +477,32 @@ class TelegramBotTest extends TestCase
         $this->assertSame(0, Expense::where('user_id', $user->id)->count());
         $this->assertSame([], Storage::disk('public')->allFiles());
         $this->assertNotNull(Draft::load($this->chatId), 'Draft disimpan supaya user bisa kirim ulang fotonya.');
+    }
+
+    public function test_struk_hanya_diunduh_sekali_dari_telegram(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: ['amount' => 50_000, 'name' => 'Bensin']);
+
+        // Struk album dibutuhkan beberapa kali: dibaca Gemini bersama caption,
+        // dibaca lagi per struk saat album bertambah, lalu disimpan saat Kirim.
+        $this->send($this->photoUpdate('s1', 'expense bensin nestory', album: 'g5'));
+        $this->send($this->photoUpdate('s2', album: 'g5'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $this->assertSame(2, Expense::where('user_id', $user->id)->count());
+
+        $unduhan = collect(Http::recorded())
+            ->filter(fn ($pair) => str_ends_with($pair[0]->url(), '/getFile'))
+            ->map(fn ($pair) => $pair[0]->data()['file_id'])
+            ->countBy()
+            ->all();
+        $this->assertSame(['s1' => 1, 's2' => 1], $unduhan);
+
+        $this->assertSame([], Storage::disk('local')->allFiles(), 'Salinan sementara dihapus setelah struk tersimpan.');
     }
 
     public function test_struk_ikut_dibaca_gemini_bila_aktif(): void

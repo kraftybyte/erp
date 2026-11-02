@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Settings\IntegrationSettings;
+use GuzzleHttp\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\Log;
 class GeminiService
 {
     private const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
+
+    /** @var callable|null handler cURL bersama: struk album dibaca berurutan, koneksinya dipakai ulang */
+    private static $handler = null;
 
     public function isConfigured(): bool
     {
@@ -116,7 +120,8 @@ class GeminiService
         }
 
         try {
-            $response = Http::timeout($timeout)
+            $response = Http::setHandler(self::$handler ??= Utils::chooseHandler())
+                ->timeout($timeout)
                 ->withHeaders(['X-goog-api-key' => IntegrationSettings::geminiApiKey()])
                 ->post(sprintf(self::ENDPOINT, IntegrationSettings::geminiModel()), $payload);
         } catch (ConnectionException $e) {

@@ -39,6 +39,9 @@ class TelegramBot
     // Sama dengan batas dan jenis file upload invoice di ERP.
     private const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
+    // Salinan sementara struk yang sudah diunduh, di disk lokal (bukan public).
+    private const RECEIPT_CACHE = 'telegram-struk';
+
     private const ATTACHMENT_TYPES = [
         'image/jpeg'      => 'jpg',
         'image/png'       => 'png',
@@ -361,7 +364,7 @@ class TelegramBot
             if (! $receipt['ai'] && $this->gemini->isConfigured()) {
                 $draft->receipts[$index]['ai'] = true;
 
-                $data = $this->telegram->download($receipt['file_id'], self::MAX_ATTACHMENT_BYTES);
+                $data = $this->receiptData($receipt);
                 $read = $data === null ? null : $this->parser->readReceipt(['mime' => $receipt['mime'], 'data' => $data]);
 
                 if ($read) {
@@ -423,7 +426,47 @@ class TelegramBot
             $files[] = $stored;
         }
 
+        foreach ($receipts as $receipt) {
+            Storage::disk('local')->delete($this->receiptCachePath($receipt));
+        }
+
         return ['files' => $files, 'failed' => null];
+    }
+
+    /**
+     * Isi file struk. Struk yang sama dibutuhkan beberapa kali: dibaca Gemini,
+     * dibaca lagi per struk saat album bertambah, lalu disimpan saat Kirim.
+     * Mengunduhnya ulang dari Telegram tiap kali (dua panggilan API per struk)
+     * membuat bot lambat, jadi salinan pertama disimpan sementara.
+     */
+    private function receiptData(array $receipt): ?string
+    {
+        $disk = Storage::disk('local');
+        $path = $this->receiptCachePath($receipt);
+
+        if ($disk->exists($path)) {
+            return $disk->get($path);
+        }
+
+        $data = $this->telegram->download($receipt['file_id'], self::MAX_ATTACHMENT_BYTES);
+
+        if ($data !== null) {
+            // Sisa draft yang dibatalkan atau kedaluwarsa.
+            foreach ($disk->files(self::RECEIPT_CACHE) as $old) {
+                if ($disk->lastModified($old) < now()->subDay()->getTimestamp()) {
+                    $disk->delete($old);
+                }
+            }
+
+            $disk->put($path, $data);
+        }
+
+        return $data;
+    }
+
+    private function receiptCachePath(array $receipt): string
+    {
+        return self::RECEIPT_CACHE . '/' . sha1($receipt['file_id']);
     }
 
     private function deleteStored(array $files): void
@@ -502,7 +545,7 @@ class TelegramBot
             return null;
         }
 
-        $data = $this->telegram->download($draft->attachment['file_id'], self::MAX_ATTACHMENT_BYTES);
+        $data = $this->receiptData($draft->attachment);
 
         return $data === null ? null : ['mime' => $draft->attachment['mime'], 'data' => $data];
     }
@@ -515,7 +558,7 @@ class TelegramBot
      */
     private function storeAttachment(array $receipt, string $folder): ?array
     {
-        $data = $this->telegram->download($receipt['file_id'], self::MAX_ATTACHMENT_BYTES);
+        $data = $this->receiptData($receipt);
 
         if ($data === null) {
             return null;
