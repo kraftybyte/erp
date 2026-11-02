@@ -3,7 +3,9 @@
 namespace App\Services\Telegram;
 
 use App\Settings\IntegrationSettings;
+use GuzzleHttp\Utils;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +21,21 @@ class TelegramClient
     /**
      * @param  \Closure(): ?string|null  $tokenResolver  token bot; default bot pengajuan
      */
+    /** @var callable|null handler cURL bersama, lihat http() */
+    private static $handler = null;
+
     public function __construct(private ?\Closure $tokenResolver = null) {}
+
+    /**
+     * Semua permintaan ke Telegram dalam satu proses memakai handler cURL yang
+     * sama, sehingga koneksi HTTPS dipakai ulang. Satu pesan ke bot memicu
+     * 3–7 panggilan berurutan; dengan koneksi baru tiap panggilan makan ±1
+     * detik, dengan koneksi yang dipakai ulang ±0,3 detik.
+     */
+    private function http(): PendingRequest
+    {
+        return Http::setHandler(self::$handler ??= Utils::chooseHandler());
+    }
 
     /**
      * Client untuk bot laporan keuangan (token terpisah dari bot pengajuan).
@@ -56,7 +72,7 @@ class TelegramClient
         $token = $this->token();
 
         try {
-            $response = Http::timeout(10)->post("https://api.telegram.org/bot{$token}/{$method}", $params);
+            $response = $this->http()->timeout(10)->post("https://api.telegram.org/bot{$token}/{$method}", $params);
         } catch (ConnectionException $e) {
             // Pesan error Guzzle menyertakan URL, dan token bot ada di URL itu.
             Log::warning('Telegram API tidak bisa dihubungi', [
@@ -152,7 +168,7 @@ class TelegramClient
         $token = $this->token();
 
         try {
-            $response = Http::timeout(30)->get("https://api.telegram.org/file/bot{$token}/{$file['file_path']}");
+            $response = $this->http()->timeout(30)->get("https://api.telegram.org/file/bot{$token}/{$file['file_path']}");
         } catch (ConnectionException $e) {
             Log::warning('Gagal mengunduh file Telegram', ['error' => str_replace($token, '***', $e->getMessage())]);
 
@@ -180,7 +196,7 @@ class TelegramClient
         $token = $this->token();
 
         try {
-            $response = Http::timeout(60)
+            $response = $this->http()->timeout(60)
                 ->attach('document', file_get_contents($path), $filename)
                 ->post("https://api.telegram.org/bot{$token}/sendDocument", [
                     'chat_id'    => $chatId,
