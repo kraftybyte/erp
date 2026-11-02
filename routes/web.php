@@ -10,6 +10,7 @@ use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
 use App\Http\Controllers\FakturController;
+use App\Http\Controllers\AssetDepreciationController;
 use App\Services\ItemImportTemplate;
 use Filament\Notifications\Notification;
 
@@ -93,6 +94,10 @@ Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
     Route::get('/faktur/{bulan}/zip', [FakturController::class, 'zip'])
         ->where('bulan', '\d{4}-(0[1-9]|1[0-2])')->name('faktur.zip');
 });
+
+// Daftar penyusutan aset satu tahun buku (Excel).
+Route::get('/aset/penyusutan/{tahun}', AssetDepreciationController::class)
+    ->whereNumber('tahun')->middleware(['auth', 'throttle:pdf-downloads'])->name('asset.depreciation');
 
 // WhatsApp Message Route
 Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');

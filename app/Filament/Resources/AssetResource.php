@@ -12,7 +12,10 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Filters\SelectFilter;
 use App\Models\User;
+use App\Helpers\Money;
+use App\Services\AssetDepreciation;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Get;
 
 
 class AssetResource extends Resource
@@ -113,6 +116,33 @@ class AssetResource extends Resource
                 ->numeric()
                 ->prefix('Rp')
                 ->required(),
+
+            Forms\Components\Section::make('Penyusutan')
+                ->description('Menurut kelompok harta pajak. Dihitung mulai bulan pembelian, tanpa nilai sisa.')
+                ->schema([
+                    Forms\Components\Select::make('kelompok_harta')
+                        ->label('Kelompok harta')
+                        ->options(AssetDepreciation::groupOptions())
+                        ->live()
+                        ->helperText(fn (Get $get) => isset(AssetDepreciation::GROUPS[$get('kelompok_harta')])
+                            ? 'Contoh: ' . AssetDepreciation::GROUPS[$get('kelompok_harta')]['hint'] . '.'
+                            : 'Komputer, laptop, monitor, kamera: Kelompok 1. Furnitur kantor, AC, kendaraan: Kelompok 2.'),
+
+                    Forms\Components\Select::make('metode_penyusutan')
+                        ->label('Metode')
+                        ->options(AssetDepreciation::METHODS)
+                        ->default('garis_lurus')
+                        ->selectablePlaceholder(false)
+                        ->required()
+                        ->helperText('Garis lurus: sama besar tiap tahun. Saldo menurun: besar di awal. Bangunan selalu garis lurus.'),
+
+                    Forms\Components\DatePicker::make('tanggal_dilepas')
+                        ->label('Dijual / dibuang pada')
+                        ->afterOrEqual('tanggal_pembelian')
+                        ->helperText('Kosongkan selama aset masih dimiliki. Penyusutan berhenti setelah bulan ini.'),
+                ])
+                ->columns(3)
+                ->columnSpanFull(),
         ]);
     }
 
@@ -141,6 +171,19 @@ class AssetResource extends Resource
                 ->searchable()
                 ->alignment('center'),
                 Tables\Columns\TextColumn::make('harga_barang')->label('Harga')->rupiah(),
+                Tables\Columns\TextColumn::make('kelompok_harta')
+                    ->label('Kelompok')
+                    ->formatStateUsing(fn (?string $state) => AssetDepreciation::GROUPS[$state]['label'] ?? 'Belum diisi')
+                    ->default('Belum diisi')
+                    ->badge()
+                    ->color(fn (?string $state) => isset(AssetDepreciation::GROUPS[$state]) ? 'gray' : 'warning')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('nilai_buku')
+                    ->label('Nilai buku')
+                    ->state(fn (Asset $record) => app(AssetDepreciation::class)->at($record)['book'])
+                    ->formatStateUsing(fn ($state) => Money::rupiah($state))
+                    ->description(fn (Asset $record) => self::depreciationNote(app(AssetDepreciation::class)->at($record)))
+                    ->alignEnd(),
             ])
             ->filters([
                 SelectFilter::make('pembelian_dari')
@@ -156,8 +199,31 @@ class AssetResource extends Resource
                         'Baru' => 'Baru',
                         'Bekas' => 'Bekas',
                     ]),
+
+                SelectFilter::make('kelompok_harta')
+                    ->label('Kelompok harta')
+                    ->options(AssetDepreciation::groupOptions()),
             ])
             ->actions([
+                Tables\Actions\Action::make('penyusutan')
+                    ->label('Penyusutan')
+                    ->icon('heroicon-o-calculator')
+                    ->color('gray')
+                    ->modalHeading(fn (Asset $record) => 'Penyusutan ' . $record->nama_barang)
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalContent(function (Asset $record) {
+                        $depreciation = app(AssetDepreciation::class);
+                        $state        = $depreciation->at($record);
+
+                        return view('filament.resources.asset-resource.schedule', [
+                            'state' => $state,
+                            'rows'  => $depreciation->yearly($record),
+                            'note'  => self::depreciationNote($state, long: true)
+                                . ' ' . (AssetDepreciation::GROUPS[$record->kelompok_harta]['label'] ?? '')
+                                . (isset(AssetDepreciation::GROUPS[$record->kelompok_harta]) ? ', ' . strtolower(AssetDepreciation::METHODS[$record->metode_penyusutan] ?? '') . '.' : ''),
+                        ]);
+                    }),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
@@ -165,6 +231,22 @@ class AssetResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Keterangan singkat di bawah nilai buku.
+     */
+    public static function depreciationNote(array $state, bool $long = false): string
+    {
+        return match ($state['status']) {
+            'tanpa_kelompok'   => $long ? 'Kelompok harta belum diisi, jadi penyusutannya belum dihitung. Isi lewat Edit.' : 'Isi kelompok harta',
+            'tidak_disusutkan' => 'Tidak disusutkan',
+            'belum_dibeli'     => 'Belum dibeli',
+            'dilepas'          => 'Sudah dijual / dibuang',
+            'habis'            => 'Sudah habis disusutkan',
+            default            => 'Susut ' . Money::rupiah($state['monthly']) . '/bulan'
+                . ($long ? ', sisa ' . $state['remaining_months'] . ' bulan.' : ''),
+        };
     }
 
     public static function getRelations(): array
