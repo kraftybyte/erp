@@ -76,9 +76,10 @@ class FakturCollector
      * Setiap file sudah diberi nama di dalam ZIP, supaya daftar Excel dan isi
      * ZIP-nya bisa dicocokkan.
      *
-     * 'record' = Expense, atau Advance untuk realisasi.
+     * 'record' = Expense, atau Advance untuk realisasi. 'target' = tujuan upload
+     * faktur: "expense:<id>" atau "realisasi:<id item>".
      *
-     * @return Collection<int, array{source: string, date: Carbon, user: string, project: string, description: string, amount: float, files: array<int, array{path: string, exists: bool, zip: ?string}>, record: Model}>
+     * @return Collection<int, array{source: string, date: Carbon, user: string, project: string, description: string, amount: float, files: array<int, array{path: string, exists: bool, zip: ?string}>, record: Model, target: string}>
      */
     public function masukan(ReportPeriod $period): Collection
     {
@@ -93,6 +94,7 @@ class FakturCollector
                 'amount'      => (float) $expense->amount,
                 'files'       => filled($expense->attachment) ? [$this->file($expense->attachment)] : [],
                 'record'      => $expense,
+                'target'      => "expense:{$expense->id}",
             ]);
 
         $items = $period->apply(
@@ -115,6 +117,7 @@ class FakturCollector
                 'amount'      => (float) $item->subtotal,
                 'files'       => $item->files->map(fn ($file) => $this->file($file->filepath))->all(),
                 'record'      => $item->realizasi->advance,
+                'target'      => "realisasi:{$item->id}",
             ]);
 
         return $this->nameZipEntries($expenses->concat($items)->sortBy(fn (array $row) => $row['date']->timestamp)->values());
