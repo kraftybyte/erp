@@ -30,7 +30,8 @@ final class Draft
         public array $projectCandidates = [],
         // Foto/berkas struk: hanya file_id Telegram. File-nya baru diunduh ke
         // ERP saat Kirim, supaya draft yang dibatalkan tidak meninggalkan file.
-        // @var array{file_id: string, mime: string, ext: string, group: ?string}|null
+        // Struk yang sudah dibaca Gemini membawa amount, name, dan items (rincian).
+        // @var array{file_id: string, mime: string, ext: string, group: ?string, items?: array}|null
         public ?array $attachment = null,
         // Realisasi: advance milik user yang dilaporkan pemakaiannya.
         public ?int $advanceId = null,
@@ -45,7 +46,7 @@ final class Draft
         // Dua struk atau lebih. Selama hanya satu struk, $attachment + $amount
         // yang dipakai; mulai struk kedua semuanya pindah ke sini, nominal per
         // struk, dan $amount menjadi total yang disebut user (untuk dicocokkan).
-        // @var array<int, array{file_id: string, unique: ?string, mime: string, ext: string, group: ?string, message_id: ?int, amount: ?int, name: ?string, ai: bool}>
+        // @var array<int, array{file_id: string, unique: ?string, mime: string, ext: string, group: ?string, message_id: ?int, amount: ?int, name: ?string, ai: bool, items: array<int, array{name: string, qty: int, price: int}>}>
         public array $receipts = [],
         // Pesan ringkasan terakhir, supaya bisa diperbarui di tempat saat
         // struk dari album yang sama masih berdatangan.
@@ -106,7 +107,7 @@ final class Draft
      */
     public function addReceipt(array $file, bool $sameAlbum): void
     {
-        $file += ['amount' => null, 'name' => null, 'ai' => false];
+        $file += ['amount' => null, 'name' => null, 'ai' => false, 'items' => []];
 
         if (! $this->attachment && ! $this->receipts) {
             $this->attachment = $file;
@@ -115,7 +116,7 @@ final class Draft
         }
 
         if ($this->attachment) {
-            $first = $this->attachment + ['amount' => null, 'name' => null, 'ai' => false];
+            $first = $this->attachment + ['amount' => null, 'name' => null, 'ai' => false, 'items' => []];
 
             // Foto susulan: nominal & keterangan yang sudah ditulis milik struk
             // pertama. Dalam satu album, nominal di caption adalah total album
@@ -132,6 +133,18 @@ final class Draft
         }
 
         $this->receipts[] = $file;
+    }
+
+    /**
+     * Rincian barang semua struk (dari Gemini), untuk item pengajuan.
+     *
+     * @return array<int, array{name: string, qty: int, price: int}>
+     */
+    public function lineItems(): array
+    {
+        return $this->isMulti()
+            ? array_merge(...array_map(fn (array $receipt) => $receipt['items'] ?? [], $this->receipts))
+            : ($this->attachment['items'] ?? []);
     }
 
     public function removeReceipt(int $index): void

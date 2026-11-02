@@ -7,6 +7,7 @@ use App\Enums\FinanceCategory;
 use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Expense;
+use App\Models\ItemAdvance;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\AutoApproval;
@@ -189,7 +190,8 @@ class TelegramBot
     {
         $draft = Draft::load($chatId);
 
-        if ($draft?->awaiting !== 'details') {
+        // 'target': struk sudah dibaca, tapi user memilih menulis keterangannya.
+        if (! in_array($draft?->awaiting, ['details', 'target'], true)) {
             return null;
         }
 
@@ -301,11 +303,144 @@ class TelegramBot
             return;
         }
 
-        // Struk lebih dulu: simpan, lalu tunggu keterangannya.
+        // Struk lebih dulu: dibaca Gemini, lalu user tinggal memilih masuk ke
+        // mana. Tanpa AI (atau struk tak terbaca) bot menunggu keterangannya.
         $draft = Draft::start();
         $draft->addReceipt($file, sameAlbum: false);
+
+        if ($this->readFirstReceipt($chatId, $draft)) {
+            $draft->awaiting = 'target';
+            $this->showDestinations($chatId, $user, $draft);
+
+            return;
+        }
+
         $draft->awaiting = 'details';
         $this->showDetailsPrompt($chatId, $draft);
+    }
+
+    /**
+     * Isi draft dari struk pertama yang dibaca Gemini. Hasilnya juga disimpan
+     * di struk itu sendiri, supaya tidak dibaca ulang saat album bertambah.
+     */
+    private function readFirstReceipt(int|string $chatId, Draft $draft): bool
+    {
+        if (! $this->gemini->isConfigured() || ! $draft->attachment) {
+            return false;
+        }
+
+        $this->telegram->typing($chatId);
+
+        $data = $this->receiptData($draft->attachment);
+        $read = $data === null ? null : $this->parser->readReceipt(['mime' => $draft->attachment['mime'], 'data' => $data]);
+
+        if (! $read) {
+            return false;
+        }
+
+        $draft->attachment['amount'] = $read['amount'];
+        $draft->attachment['name']   = $read['description'] ?? $read['name'];
+        $draft->attachment['items']  = $read['items'];
+        $draft->attachment['shop']   = $read['name'];
+        $draft->attachment['ai']     = true;
+
+        $draft->amount      = $read['amount'];
+        $draft->description = $read['description'] ?? $read['name'];
+        $draft->date        = $read['date'] ?? $draft->date;
+        $draft->category    = $read['category'];
+
+        return true;
+    }
+
+    /**
+     * Rincian struk yang terbaca, lalu tombol tujuan: realisasi salah satu
+     * advance terbuka, expense baru, atau advance baru.
+     */
+    private function showDestinations(int|string $chatId, User $user, Draft $draft): void
+    {
+        $open = $this->advances->forUser($user);
+
+        if ($draft->isMulti()) {
+            $count = $draft->receiptCount();
+            $text  = "📄 <b>{$count} struk terbaca</b>\n\n" . $this->receiptLines($draft, withItems: true)
+                . "\nTotal: <b>" . $this->rupiah($draft->total()) . '</b>';
+        } else {
+            $text = '📄 <b>Isi struk</b>'
+                . (! empty($draft->attachment['shop']) ? ' · ' . e($draft->attachment['shop']) : '')
+                . ($draft->date ? ' · ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') : '') . "\n"
+                . e((string) $draft->description) . "\n"
+                . $this->itemLines($draft->attachment['items'] ?? [], 12)
+                . 'Total: <b>' . $this->rupiah($draft->amount) . '</b>';
+        }
+
+        $rows = $open->take(4)->values()
+            ->map(fn (Advance $advance) => [$this->button(
+                '🧾 Realisasi: ' . Text::short($advance->keterangan_advance, 26) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
+                $draft,
+                'to',
+                "realisasi-{$advance->id}"
+            )])
+            ->all();
+
+        if ($open->count() > 4) {
+            $rows[] = [$this->button('🧾 Realisasi advance lain…', $draft, 'to', 'realisasi')];
+        }
+
+        $rows[] = [$this->button('💰 Expense baru — sudah bayar sendiri', $draft, 'to', 'expense')];
+        $rows[] = [$this->button('💸 Advance baru — minta dana', $draft, 'to', 'advance')];
+        $rows[] = [$this->button('❌ Batal', $draft, 'cancel')];
+
+        $this->showPanel(
+            $chatId,
+            $draft->panelMessageId,
+            $draft,
+            $text . "\n\n" . ($open->isNotEmpty()
+                ? 'Masukkan ke mana? Pilih advance bila dibayar dari advance yang sudah cair.'
+                : 'Masukkan ke mana?')
+                . "\nAtau tulis keterangannya sendiri, misalnya <i>expense grab ke klien nestory</i>.",
+            $rows
+        );
+    }
+
+    /**
+     * "  • Kabel HDMI — 2 × Rp125.000", paling banyak $limit baris.
+     *
+     * @param  array<int, array{name: string, qty: int, price: int}>  $items
+     */
+    private function itemLines(array $items, int $limit, string $indent = '  '): string
+    {
+        $lines = collect($items)->take($limit)
+            ->map(fn (array $item) => $indent . '• ' . e($item['name']) . ' — '
+                . ($item['qty'] > 1 ? $item['qty'] . ' × ' . $this->rupiah($item['price']) : $this->signedRupiah($item['price'])))
+            ->implode("\n");
+
+        if (count($items) > $limit) {
+            $lines .= "\n{$indent}… dan " . (count($items) - $limit) . ' item lain';
+        }
+
+        return $lines !== '' ? $lines . "\n" : '';
+    }
+
+    private function signedRupiah(int|float $amount): string
+    {
+        return ($amount < 0 ? '−' : '') . $this->rupiah(abs($amount));
+    }
+
+    /**
+     * "Kabel HDMI 2 × Rp125.000; Lakban Rp15.000": rincian sebagai teks, untuk
+     * item realisasi (satu struk = satu item dengan struknya sendiri).
+     *
+     * @param  array<int, array{name: string, qty: int, price: int}>  $items
+     */
+    private function itemsText(array $items): ?string
+    {
+        if (! $items) {
+            return null;
+        }
+
+        return Str::limit(collect($items)
+            ->map(fn (array $item) => $item['name'] . ' ' . ($item['qty'] > 1 ? $item['qty'] . ' × ' : '') . strip_tags($this->signedRupiah($item['price'])))
+            ->implode('; '), 1000);
     }
 
     /**
@@ -316,6 +451,16 @@ class TelegramBot
     {
         if ($draft->awaiting === 'details') {
             $this->showDetailsPrompt($chatId, $draft);
+
+            return;
+        }
+
+        // Struk album berikutnya saat bot menunggu tujuan: dibaca juga, lalu
+        // rinciannya diperbarui di pesan yang sama.
+        if ($draft->awaiting === 'target') {
+            if ($this->fillReceiptAmounts($chatId, $draft)) {
+                $this->showDestinations($chatId, $user, $draft);
+            }
 
             return;
         }
@@ -369,7 +514,8 @@ class TelegramBot
 
                 if ($read) {
                     $draft->receipts[$index]['amount'] = $read['amount'];
-                    $draft->receipts[$index]['name'] ??= $read['name'];
+                    $draft->receipts[$index]['name'] ??= $read['description'] ?? $read['name'];
+                    $draft->receipts[$index]['items']  = $read['items'];
 
                     continue;
                 }
@@ -603,7 +749,18 @@ class TelegramBot
 
             $draft->receipts[$index]['amount'] = $amount;
             $draft->receipts[$index]['name']   = mb_strlen($name) >= 3 ? Str::ucfirst(Str::limit($name, 100, '')) : $draft->receipts[$index]['name'];
+            // Nominal diketik ulang: rincian dari Gemini tidak lagi sesuai.
+            $draft->receipts[$index]['items']  = [];
             $draft->awaiting = null;
+
+            // Struk dikirim tanpa keterangan dan tujuannya belum dipilih.
+            if (! $draft->type && $draft->nextReceiptWithoutAmount() === null && collect($draft->receipts)->contains('ai', true)) {
+                $draft->awaiting = 'target';
+                $this->showDestinations($chatId, $user, $draft);
+
+                return;
+            }
+
             $this->proceed($chatId, $user, $draft);
 
             return;
@@ -669,6 +826,24 @@ class TelegramBot
             case 'adv':
                 $draft->advanceId         = $this->advances->find($user, (int) $value)?->id;
                 $draft->advanceCandidates = [];
+                break;
+
+            // Tujuan struk yang sudah dibaca: "realisasi-<id advance>", "realisasi", "expense", "advance".
+            case 'to':
+                $draft->awaiting      = null;
+                $draft->typeConfirmed = true;
+                $draft->typePicked    = true;
+                $draft->type          = str_starts_with($value, 'realisasi') ? 'realisasi' : (in_array($value, ['expense', 'advance'], true) ? $value : null);
+
+                if ($draft->type === 'realisasi') {
+                    $draft->advanceId         = $this->advances->find($user, (int) Str::after($value, 'realisasi-'))?->id;
+                    $draft->advanceCandidates = [];
+                }
+
+                // Advance: satu nominal untuk semua lampirannya.
+                if ($draft->type === 'advance' && $draft->isMulti()) {
+                    $draft->amount = $draft->total();
+                }
                 break;
 
             case 'advlist':
@@ -906,11 +1081,12 @@ class TelegramBot
     /**
      * Daftar struk bernomor beserta nominalnya.
      */
-    private function receiptLines(Draft $draft): string
+    private function receiptLines(Draft $draft, bool $withItems = false): string
     {
         return collect($draft->receipts)
             ->map(fn (array $receipt, int $index) => ($index + 1) . '. 📎 ' . e($this->receiptName($draft, $index))
-                . ' — ' . ($receipt['amount'] ? $this->rupiah($receipt['amount']) : '❓'))
+                . ' — ' . ($receipt['amount'] ? $this->rupiah($receipt['amount']) : '❓')
+                . ($withItems && ! empty($receipt['items']) ? "\n" . rtrim($this->itemLines($receipt['items'], 3, '     ')) : ''))
             ->implode("\n");
     }
 
@@ -1136,6 +1312,7 @@ class TelegramBot
             '💸 Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
             $advance->project ? '📁 Project: ' . $this->projectLines($advance->project) : null,
             '🗒 Item: ' . e($draft->description),
+            $draft->lineItems() ? "🧾 Rincian:\n" . rtrim($this->itemLines($draft->lineItems(), 12)) : null,
             '💰 Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             '📎 Lampiran: ' . $this->attachmentLabel($draft),
             '📉 Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($remaining - $draft->amount),
@@ -1178,17 +1355,18 @@ class TelegramBot
 
         // Satu struk = satu item dengan strukny sendiri, supaya Finance tahu
         // bukti mana untuk item mana.
+        // Rincian struk dari Gemini menjadi keterangan item tersebut.
         $items = $draft->isMulti()
             ? collect($draft->receipts)->map(fn (array $receipt, int $index) => [
                 'name'        => Str::limit($this->receiptName($draft, $index), 100, ''),
-                'description' => $draft->description,
+                'description' => $this->itemsText($receipt['items'] ?? []) ?? $draft->description,
                 'quantity'    => 1,
                 'price'       => $receipt['amount'],
                 'files'       => [$fileRow($files[$index])],
             ])->all()
             : [[
                 'name'        => Str::limit($draft->description, 100, ''),
-                'description' => $draft->description,
+                'description' => $this->itemsText($draft->lineItems()) ?? $draft->description,
                 'quantity'    => 1,
                 'price'       => $draft->amount,
                 'files'       => $files ? [$fileRow($files[0])] : [],
@@ -1449,12 +1627,14 @@ class TelegramBot
                 'description' => $this->receiptName($draft, $index),
                 'path'        => $files[$index]['path'],
                 'paths'       => [$files[$index]['path']],
+                'items'       => $receipt['items'] ?? [],
             ])->all()
             : [[
                 'amount'      => $draft->amount,
                 'description' => $draft->description,
                 'path'        => $files[0]['path'] ?? null,
                 'paths'       => array_column($files, 'path'),
+                'items'       => $draft->lineItems(),
             ]];
 
         try {
@@ -1472,11 +1652,18 @@ class TelegramBot
                     ];
 
                     if ($draft->type === 'advance') {
-                        $records[] = Advance::create($attributes + [
+                        $advance = Advance::create($attributes + [
                             'keterangan_advance' => $entry['description'],
                             'attachments'        => $entry['paths'] ?: null,
                             'status'             => Advance::STATUS_PENDING,
                         ]);
+
+                        // Rincian invoice/penawaran yang dibaca dari lampiran.
+                        foreach ($entry['items'] as $item) {
+                            ItemAdvance::create(['advance_id' => $advance->id] + $this->purchaseItem($item));
+                        }
+
+                        $records[] = $advance;
 
                         continue;
                     }
@@ -1484,8 +1671,13 @@ class TelegramBot
                     $expense = Expense::create($attributes + ['keterangan_expense' => $entry['description'], 'status' => ExpenseStatus::Pending->value]);
 
                     // Tombol "Upload Invoice Pembelian" di ERP — yang juga mengisi item
-                    // pembelian — hilang begitu lampiran ada, jadi itemnya dibuat di sini.
-                    if ($entry['path']) {
+                    // pembelian — hilang begitu lampiran ada, jadi itemnya dibuat di sini:
+                    // rincian struk bila terbaca, selain itu satu item senilai pengajuan.
+                    if ($entry['items']) {
+                        foreach ($entry['items'] as $item) {
+                            $expense->itemExpenses()->create($this->purchaseItem($item));
+                        }
+                    } elseif ($entry['path']) {
                         $expense->itemExpenses()->create([
                             'name'        => Str::limit($entry['description'], 100, ''),
                             'description' => $entry['description'],
@@ -1532,6 +1724,21 @@ class TelegramBot
                 : "✅ <b>{$type['label']} terkirim</b> {$next}\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
             $buttons
         );
+    }
+
+    /**
+     * Baris rincian struk sebagai item pembelian expense/advance.
+     *
+     * @param  array{name: string, qty: int, price: int}  $item
+     */
+    private function purchaseItem(array $item): array
+    {
+        return [
+            'name'        => $item['name'],
+            'description' => 'Dari struk (dibaca otomatis)',
+            'quantity'    => $item['qty'],
+            'price'       => $item['price'],
+        ];
     }
 
     private function cancel(int|string $chatId, ?int $messageId = null): void
@@ -1628,8 +1835,9 @@ class TelegramBot
     {
         return <<<'HTML'
         <b>Cara mengajukan</b>
-        1. Kirim <b>foto struk/invoice</b> (boleh dilewati).
-        2. Tulis keperluannya dalam satu pesan, misalnya:
+        Cukup kirim <b>foto struk/invoice</b>: bot membaca isi dan rinciannya, lalu kamu tinggal memilih masuk ke advance mana, expense baru, atau advance baru.
+
+        Atau tulis keperluannya dalam satu pesan (boleh dengan foto), misalnya:
         • <i>expense 150rb grab ke kantor klien nestory</i>
         • <i>advance 2jt beli properti shooting</i>
         • <i>realisasi 350rb sewa lighting nestory</i>
@@ -1690,6 +1898,7 @@ class TelegramBot
             '🏷 Kategori: ' . e($draft->category),
             '📁 Project: ' . ($project ? $this->projectLines($project) : '-'),
             '🗒 Keterangan: ' . e($draft->description),
+            ...($draft->lineItems() ? ["🧾 Rincian:\n" . rtrim($this->itemLines($draft->lineItems(), 12))] : []),
             '📎 Lampiran: ' . $this->attachmentLabel($draft),
         ]);
     }

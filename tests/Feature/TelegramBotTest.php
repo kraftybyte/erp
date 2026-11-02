@@ -522,6 +522,144 @@ class TelegramBotTest extends TestCase
         $this->assertSame(87_500, Draft::load($this->chatId)->amount, 'Nominal dari struk dipakai bila pesan tidak menyebutnya.');
     }
 
+    public function test_foto_tanpa_keterangan_dijabarkan_lalu_jadi_realisasi_advance(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-1'));
+
+        $this->assertStringContainsString('Isi struk</b> · Toko Jaya Elektrik', $this->lastText());
+        $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
+        $this->assertStringContainsString('Total: <b>Rp 265.000</b>', $this->lastText());
+        $this->assertContains('🧾 Realisasi: Advance Booth Pameran · sisa Rp 2.000.000', $this->lastButtons());
+        $this->assertContains('💰 Expense baru — sudah bayar sendiri', $this->lastButtons());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:to:realisasi-{$advance->id}"));
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString('Rincian', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $item = Realisasi::where('advance_id', $advance->id)->with('items.files')->sole()->items->sole();
+        $this->assertSame('Kabel HDMI dan lakban', $item->name);
+        $this->assertSame('Kabel HDMI 2 × Rp 125.000; Lakban Rp 15.000', $item->description, 'Rincian struk jadi keterangan item.');
+        $this->assertEquals(265_000, $item->price);
+        $this->assertCount(1, $item->files);
+        $this->assertSame(1, Advance::where('user_id', $user->id)->count(), 'Tidak ada advance baru.');
+    }
+
+    public function test_foto_tanpa_keterangan_jadi_expense_dengan_item_pembelian(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-2'));
+        $this->assertSame(
+            ['💰 Expense baru — sudah bayar sendiri', '💸 Advance baru — minta dana', '❌ Batal'],
+            $this->lastButtons(),
+            'Tanpa advance terbuka, tidak ada pilihan realisasi.'
+        );
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:to:expense"));
+        $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+
+        // Tanggal & kategori dari struk; tinggal Kirim.
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+        $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expense = Expense::where('user_id', $user->id)->sole();
+        $this->assertEquals(265_000, $expense->amount);
+        $this->assertSame('Kabel HDMI dan lakban', $expense->keterangan_expense);
+        $this->assertSame('Project Support', $expense->category);
+        $this->assertSame(today()->subDays(2)->toDateString(), $expense->submission_date->toDateString());
+        $this->assertSame(
+            [['Kabel HDMI', 2, 125_000.0], ['Lakban', 1, 15_000.0]],
+            $expense->itemExpenses()->orderBy('id')->get()->map(fn ($i) => [$i->name, (int) $i->quantity, (float) $i->price])->all()
+        );
+    }
+
+    public function test_invoice_vendor_jadi_advance_baru_dengan_rinciannya(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead(items: [['name' => 'Sewa lighting', 'qty' => 2, 'price' => 1_500_000], ['name' => 'Operator', 'qty' => 1, 'price' => 500_000]], amount: 3_500_000));
+
+        $this->send($this->photoUpdate('invoice-vendor'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:to:advance"));
+        $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $advance = Advance::where('user_id', $user->id)->sole();
+        $this->assertEquals(3_500_000, $advance->amount);
+        $this->assertSame(
+            [['Sewa lighting', 2, 1_500_000.0], ['Operator', 1, 500_000.0]],
+            \App\Models\ItemAdvance::where('advance_id', $advance->id)->orderBy('id')->get()->map(fn ($i) => [$i->name, (int) $i->quantity, (float) $i->price])->all()
+        );
+    }
+
+    public function test_rincian_yang_tidak_cocok_dengan_total_tidak_dipakai(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: $this->receiptRead(amount: 400_000));
+
+        $this->send($this->photoUpdate('nota-3'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame([], $draft->attachment['items']);
+        $this->assertSame(400_000, $draft->amount, 'Total struk tetap dipakai.');
+        $this->assertStringNotContainsString('Kabel HDMI —', $this->lastText());
+        $this->assertStringContainsString('Masukkan ke mana?', $this->lastText());
+    }
+
+    public function test_album_tanpa_keterangan_dibaca_per_struk(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('a1', album: 'g8'));
+        $this->send($this->photoUpdate('a2', album: 'g8'));
+
+        $this->assertStringContainsString('2 struk terbaca', $this->lastText());
+        $this->assertStringContainsString('Total: <b>Rp 530.000</b>', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:to:expense"));
+        $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expenses = Expense::where('user_id', $user->id)->withCount('itemExpenses')->get();
+        $this->assertCount(2, $expenses, 'Satu expense per struk.');
+        $this->assertSame([2, 2], $expenses->pluck('item_expenses_count')->all());
+    }
+
+    public function test_keterangan_tetap_bisa_diketik_setelah_struk_dibaca(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-4'));
+        $this->send($this->textUpdate('expense beli kabel untuk nestory'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame('expense', $draft->type);
+        $this->assertSame($project->id, $draft->projectId);
+        $this->assertSame(265_000, $draft->amount);
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+    }
+
     public function test_struk_advance_tersimpan_tanpa_item(): void
     {
         Storage::fake('public');
@@ -1234,6 +1372,38 @@ class TelegramBotTest extends TestCase
     /**
      * Teks terakhir yang dikirim atau diubah bot.
      */
+    /**
+     * Jawaban Gemini untuk satu struk (readReceipt). Juga dibaca parse() bila
+     * user mengetik: kunci yang tidak dikenalnya diabaikan.
+     */
+    private function receiptRead(?array $items = null, int $amount = 265_000): array
+    {
+        return [
+            'amount'      => $amount,
+            'name'        => 'Toko Jaya Elektrik',
+            'description' => 'Kabel HDMI dan lakban',
+            'date'        => today()->subDays(2)->toDateString(),
+            'category'    => 'Project Support',
+            'items'       => $items ?? [
+                ['name' => 'Kabel HDMI', 'qty' => 2, 'price' => 125_000],
+                ['name' => 'Lakban', 'qty' => 1, 'price' => 15_000],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int, string> teks tombol pesan terakhir
+     */
+    private function lastButtons(): array
+    {
+        $request = collect(Http::recorded())
+            ->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => preg_match('#/(sendMessage|editMessageText)$#', $request->url()))
+            ->last();
+
+        return collect($request?->data()['reply_markup']['inline_keyboard'] ?? [])->flatten(1)->pluck('text')->all();
+    }
+
     private function lastText(): string
     {
         return (string) collect(Http::recorded())
