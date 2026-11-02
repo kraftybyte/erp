@@ -37,6 +37,7 @@
         .fk-table tfoot td { font-weight: 600; }
         .fk-table .fk-faktur { width: 15rem; }
         .fk-missing { margin-top: .25rem; font-size: .75rem; font-weight: 500; color: rgb(var(--warning-700)); }
+        .fk-table a.fk-pdf { display: inline-block; margin-top: .25rem; font-size: .8125rem; }
         .fk-table tr.fk-note-row td { border-top: 0; padding-top: 0; }
         .fk-note { font-size: .8125rem; color: rgb(var(--warning-700)); }
         .fk-files { display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
@@ -84,7 +85,7 @@
                 <p class="fk-explain">
                     Invoice penjualan ber-PPN menurut tanggal invoice, tanpa proforma dan yang dibatalkan.
                     Invoice DP dan pelunasan dihitung dari porsi yang ditagih, jadi PPN satu pekerjaan tidak terhitung dua kali.
-                    Nomor faktur tersimpan begitu kolomnya ditinggalkan.
+                    Nomor faktur tersimpan begitu kolomnya ditinggalkan, atau upload PDF faktur pajaknya lewat <strong>Upload faktur</strong>: nomornya terisi sendiri.
                 </p>
             </x-filament::section>
 
@@ -125,6 +126,9 @@
                                             @unless ($row['faktur'])
                                                 <div class="fk-missing">Belum ada nomor faktur</div>
                                             @endunless
+                                            @if ($invoice->faktur_file)
+                                                <a class="fk-pdf" href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($invoice->faktur_file) }}" target="_blank" rel="noopener">Lihat file faktur pajak</a>
+                                            @endif
                                         </td>
                                     </tr>
                                     @if ($row['note'])

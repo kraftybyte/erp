@@ -5,27 +5,37 @@ namespace App\Filament\Pages;
 use App\Filament\Resources\AdvanceResource;
 use App\Filament\Resources\ExpenseResource;
 use App\Filament\Resources\InvoiceResource;
-use App\Enums\ExpenseStatus;
+use App\Helpers\Money;
 use App\Http\Controllers\FakturController;
 use App\Models\Expense;
 use App\Models\Invoice;
-use App\Models\RealisasiFile;
-use App\Models\RealisasiItem;
 use App\Services\FakturCollector;
+use App\Services\FakturMatcher;
+use App\Services\ReportPeriod;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Wizard\Step;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Illuminate\Http\UploadedFile;
+use Filament\Support\Enums\MaxWidth;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Pengepulan faktur sebulan: Keluaran (nomor faktur pajak invoice ber-PPN,
  * bisa diisi langsung di sini) dan Masukan (nota Expense dan struk Realisasi,
- * yang belum ada bisa di-upload langsung di sini).
+ * yang belum ada bisa di-upload langsung di sini). Tombol Upload faktur
+ * menerima beberapa file sekaligus dan mencarikan pasangannya (FakturMatcher).
  */
 class Faktur extends Page
 {
@@ -40,13 +50,6 @@ class Faktur extends Page
     protected static ?int $navigationSort = 6;
 
     protected static string $view = 'filament.pages.faktur';
-
-    private const FILE_TYPES = [
-        'image/jpeg'      => 'jpg',
-        'image/png'       => 'png',
-        'image/webp'      => 'webp',
-        'application/pdf' => 'pdf',
-    ];
 
     /** "2026-10" */
     #[Url]
@@ -136,98 +139,181 @@ class Faktur extends Page
                 FileUpload::make('file')
                     ->label('File faktur / nota')
                     ->helperText('JPG, PNG, WebP, atau PDF, maksimal 5 MB.')
-                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                    ->acceptedFileTypes(array_keys(FakturMatcher::FILE_TYPES))
                     ->maxSize(5120)
-                    // Disimpan sendiri di action: foldernya bergantung pada baris yang dipilih.
+                    // Disimpan sendiri: foldernya bergantung pada baris yang dipilih.
                     ->storeFiles(false)
                     ->required(),
             ])
             ->action(function (array $data, array $arguments) {
                 abort_unless(static::canAccess(), 403);
 
-                $file = is_array($data['file']) ? reset($data['file']) : $data['file'];
-                [$type, $id] = explode(':', (string) ($arguments['target'] ?? ''), 2) + [null, null];
+                $file   = is_array($data['file']) ? reset($data['file']) : $data['file'];
+                $result = app(FakturMatcher::class)->attach((string) ($arguments['target'] ?? ''), (string) $file->get(), $file->getClientOriginalName());
 
-                $saved = match ($type) {
-                    'expense'   => $this->uploadExpenseFile((int) $id, $file),
-                    'realisasi' => $this->uploadRealisasiFile((int) $id, $file),
-                    default     => abort(404),
-                };
-
-                if ($saved) {
-                    Notification::make()->success()->title('Faktur tersimpan')->body($arguments['label'] ?? null)->send();
-                }
+                $result['ok']
+                    ? Notification::make()->success()->title('Faktur tersimpan')->body($arguments['label'] ?? null)->send()
+                    : Notification::make()->danger()->title($result['message'])->send();
             });
     }
 
-    private function uploadExpenseFile(int $id, UploadedFile $file): bool
+    /**
+     * Beberapa file faktur sekaligus; tiap file dibaca lalu dicarikan
+     * pasangannya, dan user memastikannya sebelum disimpan.
+     */
+    protected function uploadFakturAction(): Action
     {
-        $expense = Expense::findOrFail($id);
+        return Action::make('uploadFaktur')
+            ->label('Upload faktur')
+            ->icon('heroicon-o-document-arrow-up')
+            ->color('gray')
+            ->modalHeading('Upload faktur')
+            ->modalDescription('Faktur pajak keluaran (PDF Coretax) dipasangkan ke invoice penjualan; faktur pembelian, nota, dan struk ke expense atau realisasi yang belum ada fakturnya.')
+            ->modalWidth(MaxWidth::FourExtraLarge)
+            ->modalSubmitActionLabel('Simpan')
+            ->steps([
+                Step::make('File')
+                    ->schema([
+                        FileUpload::make('files')
+                            ->label('File faktur')
+                            ->helperText('Sampai ' . FakturMatcher::MAX_FILES . ' file sekaligus. JPG, PNG, WebP, atau PDF, maksimal 5 MB per file.')
+                            ->multiple()
+                            ->maxFiles(FakturMatcher::MAX_FILES)
+                            ->acceptedFileTypes(array_keys(FakturMatcher::FILE_TYPES))
+                            ->maxSize(5120)
+                            ->storeFiles(false)
+                            ->required(),
+                    ])
+                    ->afterValidation(fn (Get $get, Set $set) => $set('rows', $this->matchUploads((array) $get('files')))),
 
-        if ($expense->status === ExpenseStatus::Ditolak->value) {
-            Notification::make()->danger()->title('Expense ini ditolak, fakturnya tidak dikumpulkan.')->send();
+                Step::make('Cocokkan')
+                    ->schema([
+                        Placeholder::make('hint')
+                            ->hiddenLabel()
+                            ->content('Pasangan yang nominalnya cocok sudah dipilihkan. Periksa, ganti bila keliru, atau kosongkan untuk melewati file.'),
+                        Repeater::make('rows')
+                            ->hiddenLabel()
+                            ->addable(false)
+                            ->reorderable(false)
+                            ->defaultItems(0)
+                            ->itemLabel(fn (array $state) => $state['name'] ?? null)
+                            ->schema([
+                                Hidden::make('path'),
+                                Hidden::make('name'),
+                                Hidden::make('nomor'),
+                                Hidden::make('doc'),
+                                Hidden::make('matched'),
+                                Hidden::make('options'),
+                                Placeholder::make('detail')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get) => $this->describe($get('doc'), (int) $get('matched'))),
+                                Select::make('target')
+                                    ->label('Pasangkan ke')
+                                    ->options(fn (Get $get) => $get('options') ?: [])
+                                    ->searchable()
+                                    ->placeholder('Lewati, jangan disimpan'),
+                            ]),
+                    ]),
+            ])
+            ->action(function (array $data) {
+                abort_unless(static::canAccess(), 403);
 
-            return false;
-        }
+                $matcher = app(FakturMatcher::class);
+                $saved   = 0;
+                $skipped = 0;
+                $notes   = [];
 
-        // Nota yang masih ada tidak ditimpa; yang tercatat tapi filenya hilang boleh diganti.
-        if (filled($expense->attachment) && Storage::disk('public')->exists($expense->attachment)) {
-            Notification::make()->warning()->title('Expense ini sudah punya nota.')->body('Ganti notanya dari menu Expense bila memang salah.')->send();
+                foreach ($data['rows'] ?? [] as $row) {
+                    if (! filled($row['target'] ?? null)) {
+                        $matcher->forget($row['path'] ?? null);
+                        $skipped++;
 
-            return false;
-        }
+                        continue;
+                    }
 
-        if (! $stored = $this->storeFile($file, 'expense/invoice/' . now()->format('Y/m/d'))) {
-            return false;
-        }
+                    $result = $matcher->attachKept((string) $row['target'], (string) ($row['path'] ?? ''), (string) ($row['name'] ?? 'faktur'), $row['nomor'] ?? null);
 
-        $expense->update(['attachment' => $stored['path']]);
+                    $result['ok'] ? $saved++ : null;
 
-        return true;
-    }
+                    if (! $result['ok'] || ($result['note'] ?? null)) {
+                        $notes[] = ($row['name'] ?? 'File') . ': ' . ($result['note'] ?? $result['message']);
+                    }
+                }
 
-    private function uploadRealisasiFile(int $id, UploadedFile $file): bool
-    {
-        $item = RealisasiItem::with('realizasi')->findOrFail($id);
-
-        abort_unless($item->realizasi, 404);
-
-        if (! $stored = $this->storeFile($file, 'realisasi/' . $item->realizasi->advance_id)) {
-            return false;
-        }
-
-        RealisasiFile::create([
-            'realisasi_item_id' => $item->id,
-            'original_name'     => Str::limit($file->getClientOriginalName(), 200, ''),
-            'filepath'          => $stored['path'],
-            'filesize'          => $file->getSize(),
-            'mime_type'         => $stored['mime'],
-        ]);
-
-        return true;
+                Notification::make()
+                    ->title("{$saved} faktur tersimpan" . ($skipped ? ", {$skipped} dilewati" : ''))
+                    ->body($notes ? implode("\n", $notes) : null)
+                    ->{$notes ? 'warning' : 'success'}()
+                    ->persistent($notes !== [])
+                    ->send();
+            });
     }
 
     /**
-     * Simpan ke disk public. File ini bisa dibuka lewat link /storage, jadi
-     * jenisnya diperiksa dari isinya dan ekstensinya ditentukan dari situ,
-     * bukan dari nama file (skrip bernama nota.jpg tidak boleh tersimpan).
+     * Baca dan cocokkan tiap file. Pilihan manual: yang belum ada fakturnya
+     * dari sebulan sebelum sampai sebulan sesudah bulan yang dibuka.
      *
-     * @return array{path: string, mime: string}|null
+     * @return array<string, array<string, mixed>>
      */
-    private function storeFile(UploadedFile $file, string $folder): ?array
+    private function matchUploads(array $files): array
     {
-        $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer((string) $file->get());
+        set_time_limit(300);
 
-        if (! isset(self::FILE_TYPES[$mime])) {
-            Notification::make()->danger()->title('File ini bukan gambar atau PDF.')->body('Upload foto (JPG, PNG, WebP) atau PDF fakturnya.')->send();
+        $matcher = app(FakturMatcher::class);
+        $month   = Carbon::createFromFormat('!Y-m', $this->bulan);
+        $manual  = $matcher->openTargets(ReportPeriod::between($month->copy()->subMonthNoOverflow()->startOfMonth(), $month->copy()->addMonthNoOverflow()->endOfMonth()));
+        $rows    = [];
 
-            return null;
+        foreach (array_slice(array_filter($files, fn ($file) => $file instanceof TemporaryUploadedFile), 0, FakturMatcher::MAX_FILES) as $file) {
+            $data = (string) $file->get();
+            $name = Str::limit($file->getClientOriginalName(), 120, '');
+
+            if (! $kept = $matcher->keep($data)) {
+                Notification::make()->warning()->title("{$name} bukan gambar atau PDF, dilewati.")->send();
+
+                continue;
+            }
+
+            $doc   = $matcher->read($data, $kept['mime']);
+            $match = $doc ? $matcher->candidates($doc) : [];
+
+            $rows[(string) Str::uuid()] = [
+                'path'    => $kept['path'],
+                'name'    => $name,
+                'nomor'   => $doc['nomor'] ?? null,
+                'doc'     => $doc,
+                'matched' => count($match),
+                'options' => array_filter(['Paling cocok' => $match] + array_map(fn (array $group) => array_diff_key($group, $match), $manual)),
+                'target'  => array_key_first($match),
+            ];
         }
 
-        return [
-            'path' => $file->storeAs($folder, Str::uuid() . '.' . self::FILE_TYPES[$mime], 'public'),
-            'mime' => $mime,
+        if (! $rows) {
+            throw new Halt();
+        }
+
+        return $rows;
+    }
+
+    private function describe(mixed $doc, int $matched): HtmlString
+    {
+        if (! is_array($doc)) {
+            return new HtmlString('Isi file tidak terbaca otomatis (Gemini tidak aktif atau saldonya habis). Pilih pasangannya sendiri.');
+        }
+
+        $date  = $doc['tanggal'] ? Carbon::parse($doc['tanggal'])->locale('id')->translatedFormat('j M Y') : null;
+        $lines = [
+            implode(' · ', array_filter([$doc['faktur_pajak'] ? 'Faktur pajak' : 'Faktur / nota pembelian', $doc['nomor'] ? 'No. ' . e($doc['nomor']) : null, $date])),
+            implode(' · ', array_filter([$doc['penjual'] ? 'Penjual: ' . e($doc['penjual']) : null, $doc['pembeli'] ? 'Pembeli: ' . e($doc['pembeli']) : null])),
+            implode(' · ', array_filter([
+                $doc['dpp'] ? 'DPP ' . Money::rupiah($doc['dpp']) : null,
+                $doc['ppn'] ? 'PPN ' . Money::rupiah($doc['ppn']) : null,
+                $doc['total'] ? 'Total ' . Money::rupiah($doc['total']) : null,
+            ])),
+            $matched ? null : '<strong>Tidak ada yang nominalnya cocok.</strong> Pilih sendiri atau lewati.',
         ];
+
+        return new HtmlString(implode('<br>', array_filter($lines)));
     }
 
     public function invoiceUrl(Invoice $invoice): string
@@ -248,6 +334,7 @@ class Faktur extends Page
     protected function getHeaderActions(): array
     {
         return [
+            $this->uploadFakturAction(),
             Action::make('excel')
                 ->label('Unduh Excel')
                 ->icon('heroicon-o-table-cells')

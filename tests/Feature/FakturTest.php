@@ -258,7 +258,7 @@ class FakturTest extends TestCase
 
         Livewire::test(Faktur::class)
             ->callAction('upload', data: ['file' => UploadedFile::fake()->image('nota-baru.jpg')], arguments: ['target' => "expense:{$ada->id}"])
-            ->assertNotified('Expense ini sudah punya nota.');
+            ->assertNotified('Expense ini sudah punya nota. Ganti dari menu Expense bila memang salah.');
         $this->assertSame('expense/nota-lama.jpg', $ada->fresh()->attachment);
     }
 
