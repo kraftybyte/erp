@@ -312,7 +312,7 @@ class FakturMatcher
         }
 
         // Kolom nota yang sama dengan tombol Upload Nota (syarat tombol Bayar).
-        $expense->update(['attachment' => $this->store($data, $mime, 'expense/invoice/' . now()->format('Y/m/d'))]);
+        $expense->update(['attachment' => app(ReceiptScanner::class)->store($data, $mime, 'expense/invoice/' . now()->format('Y/m/d'))['path']]);
 
         return ['ok' => true, 'message' => $expense->keterangan_expense];
     }
@@ -325,12 +325,15 @@ class FakturMatcher
             return ['ok' => false, 'message' => 'Item realisasi tidak ditemukan.'];
         }
 
+        // Foto struk dirapikan seperti hasil scan; aslinya ikut disimpan.
+        $stored = app(ReceiptScanner::class)->store($data, $mime, 'realisasi/' . $item->realizasi->advance_id);
+
         RealisasiFile::create([
             'realisasi_item_id' => $item->id,
             'original_name'     => Str::limit($originalName, 200, ''),
-            'filepath'          => $this->store($data, $mime, 'realisasi/' . $item->realizasi->advance_id),
-            'filesize'          => strlen($data),
-            'mime_type'         => $mime,
+            'filepath'          => $stored['path'],
+            'filesize'          => $stored['size'],
+            'mime_type'         => $stored['mime'],
         ]);
 
         return ['ok' => true, 'message' => $item->name];

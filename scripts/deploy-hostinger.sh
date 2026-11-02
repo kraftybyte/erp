@@ -123,6 +123,9 @@ plan() {
     echo "== Laravel: $(cd "$SITE" && "$PHP" artisan --version 2>&1 | head -1)"
     echo "== APP_URL: $(env_value APP_URL) | APP_ENV: $(env_value APP_ENV)"
     echo "== Alat: rsync=$(command -v rsync || echo TIDAK ADA) mysqldump=$(command -v mysqldump || echo TIDAK ADA)"
+    # Untuk scan struk (ReceiptScanner): GD bawaan PHP terkena memory_limit. Ini PHP CLI;
+    # memory_limit web diatur di hPanel > PHP Configuration.
+    echo "== Gambar (CLI): $("$PHP" -r 'echo extension_loaded("gd") ? "gd bundled=" . (int) (defined("GD_BUNDLED") && GD_BUNDLED) : "gd TIDAK ADA", " imagick=", extension_loaded("imagick") ? "ada" : "tidak", " memory_limit=", ini_get("memory_limit");')"
     if [ -L "$SITE/public/storage" ]; then
         echo "== public/storage: symlink -> $(readlink "$SITE/public/storage")"
     else

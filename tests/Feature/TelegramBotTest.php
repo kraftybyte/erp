@@ -402,6 +402,32 @@ class TelegramBotTest extends TestCase
         $this->assertEquals(150_000, $expense->itemExpenses()->first()->price);
     }
 
+    public function test_foto_struk_dari_bot_dirapikan_seperti_scan(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+
+        // Foto HP: kertas terang miring di atas meja gelap.
+        $photo = imagecreatetruecolor(900, 1200);
+        imagefill($photo, 0, 0, imagecolorallocate($photo, 60, 50, 45));
+        imagefilledpolygon($photo, [200, 150, 720, 210, 680, 1080, 170, 1030], imagecolorallocate($photo, 238, 236, 230));
+        ob_start();
+        imagejpeg($photo, null, 90);
+        $this->fakeApis(gemini: null, file: (string) ob_get_clean());
+
+        $this->send($this->photoUpdate('foto-hp', 'expense 150rb grab ke kantor klien nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expense = Expense::where('user_id', $user->id)->sole();
+        $scan    = imagecreatefromstring(Storage::disk('public')->get($expense->attachment));
+
+        $this->assertStringEndsWith('.jpg', $expense->attachment);
+        $this->assertLessThan(imagesx($photo), imagesx($scan), 'Meja di sekeliling struk terpotong.');
+        $this->assertNotNull(\App\Services\ReceiptScanner::original($expense->attachment), 'Foto asli ikut disimpan.');
+    }
+
     public function test_foto_dengan_caption_langsung_diproses(): void
     {
         Storage::fake('public');
