@@ -38,6 +38,10 @@ final class Draft
         // Jenis sudah dipastikan user (ditulis sendiri atau dipilih lewat tombol),
         // jadi bot tidak lagi bertanya "realisasi atau expense?".
         public bool $typeConfirmed = false,
+        // Jenis dipilih lewat tombol. Kata "advance" yang ditulis sendiri belum
+        // cukup: "advance belamy 200rb" sering berarti pemakaian advance Belamy
+        // yang sudah cair, bukan minta advance baru.
+        public bool $typePicked = false,
         // Dua struk atau lebih. Selama hanya satu struk, $attachment + $amount
         // yang dipakai; mulai struk kedua semuanya pindah ke sini, nominal per
         // struk, dan $amount menjadi total yang disebut user (untuk dicocokkan).

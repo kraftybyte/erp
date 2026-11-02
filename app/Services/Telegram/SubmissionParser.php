@@ -23,7 +23,9 @@ class SubmissionParser
 {
     // Urutan penting: "realisasi advance" adalah realisasi, bukan advance baru.
     private const TYPE_PATTERNS = [
-        'realisasi' => '/\b(realisasi|realisasikan|lpj|pertanggungjawaban)\b/iu',
+        // "masukkan ke advance belamy", "dibayar dari advance", "pakai advance":
+        // pemakaian advance yang sudah cair, bukan minta advance baru.
+        'realisasi' => '/\b(realisasi|realisasikan|lpj|pertanggungjawaban)\b|\b(ke|dari|pakai|pake|memakai|lapor|laporan)\s+(dana\s+)?(advance|adv|kasbon)\b/iu',
         'advance'   => '/\b(advance|adv|kasbon|uang muka|minta dana|butuh dana)\b/iu',
         'expense'   => '/\b(expense|reimburse|reimbursement|klaim)\b/iu',
     ];
@@ -188,7 +190,7 @@ class SubmissionParser
         // Sisa teks setelah nominal, jenis, nama kategori, dan kata waktu dibuang
         // dianggap keterangan. Nama klien sengaja tidak dibuang: ikut menjelaskan.
         $description = AmountParser::strip($text);
-        $description = preg_replace([...array_values(self::TYPE_PATTERNS), '/\b(kemarin|hari ini|kategori)\b/iu'], ' ', $description);
+        $description = preg_replace([...array_values(self::TYPE_PATTERNS), '/\b(kemarin|hari ini|kategori|masukkan|masukan|masukin)\b/iu'], ' ', $description);
         $description = $category ? str_ireplace($category, ' ', $description) : $description;
         $description = trim(preg_replace('/\s+/u', ' ', $description), " \t\n\r\0\x0B,.-:");
 
