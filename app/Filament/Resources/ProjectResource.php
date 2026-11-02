@@ -113,8 +113,11 @@ class ProjectResource extends Resource
                                         ->orWhere('id', $get('invoice_id') ?: 0))
                                     ->orderByDesc('date')
                                     ->get()
+                                    // Nilai invoice = pendapatan project: hanya untuk yang boleh melihat laba.
                                     ->mapWithKeys(fn (Invoice $invoice) => [
-                                        $invoice->id => $invoice->uuid . ' · ' . Money::rupiah($invoice->grand_total) . ($invoice->type === 'estimate' ? ' (proforma)' : ''),
+                                        $invoice->id => $invoice->uuid
+                                            . (ProjectProfit::visibleTo(auth()->user()) ? ' · ' . Money::rupiah($invoice->grand_total) : '')
+                                            . ($invoice->type === 'estimate' ? ' (proforma)' : ''),
                                     ]))
                                 ->searchable()
                                 ->placeholder('Semua invoice client ini')
