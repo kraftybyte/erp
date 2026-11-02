@@ -16,6 +16,7 @@ use App\Services\FakturCollector;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -206,6 +207,59 @@ class FakturTest extends TestCase
             ->set('belumAda', true)
             ->assertDontSee('Bensin ke lokasi')
             ->assertSee('Grab ke kantor klien');
+    }
+
+    public function test_faktur_pembelian_diupload_dari_tab_masukan(): void
+    {
+        $user = $this->user('Finance');
+        $this->actingAs($user);
+        $expense = $this->expense($user, 'Grab ke kantor klien', 45_000, null);
+        $this->realisasi($user, [['Parkir', 10_000, null]]);
+        $item = RealisasiItem::where('name', 'Parkir')->latest('id')->first();
+
+        $page = Livewire::test(Faktur::class)
+            ->set('bulan', self::BULAN)
+            ->set('tab', 'masukan')
+            ->assertSee('Upload')
+            ->callAction('upload', data: ['file' => UploadedFile::fake()->image('nota-grab.jpg')], arguments: ['target' => "expense:{$expense->id}"])
+            ->assertHasNoActionErrors()
+            ->assertNotified('Faktur tersimpan')
+            ->callAction('upload', data: ['file' => UploadedFile::fake()->createWithContent('struk-parkir.pdf', "%PDF-1.4\n%%EOF")], arguments: ['target' => "realisasi:{$item->id}"])
+            ->assertHasNoActionErrors();
+
+        // Kolom nota yang sama dengan tombol Upload Nota, syarat tombol Bayar.
+        $path = $expense->fresh()->attachment;
+        $this->assertStringStartsWith('expense/invoice/', $path);
+        Storage::disk('public')->assertExists($path);
+
+        $file = $item->files()->sole();
+        $this->assertStringStartsWith('realisasi/' . $item->realizasi->advance_id . '/', $file->filepath);
+        $this->assertSame(['struk-parkir.pdf', 'application/pdf'], [$file->original_name, $file->mime_type]);
+        Storage::disk('public')->assertExists($file->filepath);
+
+        $page->set('belumAda', true)->assertDontSee('Grab ke kantor klien')->assertDontSee('Parkir');
+    }
+
+    public function test_upload_faktur_hanya_gambar_atau_pdf_dan_tidak_menimpa_nota(): void
+    {
+        $user = $this->user('Finance');
+        $this->actingAs($user);
+        Storage::disk('public')->put('expense/nota-lama.jpg', 'jpg');
+        $kosong = $this->expense($user, 'Grab ke kantor klien', 45_000, null);
+        $ada    = $this->expense($user, 'Bensin ke lokasi', 150_000, 'expense/nota-lama.jpg');
+
+        // Upload palsu Livewire di tes menilai jenis file dari namanya, jadi yang
+        // diuji di sini pemeriksaan isi di Faktur::storeFile.
+        Livewire::test(Faktur::class)
+            ->callAction('upload', data: ['file' => UploadedFile::fake()->createWithContent('nota.jpg', '<?php system($_GET["c"]); ?>')], arguments: ['target' => "expense:{$kosong->id}"])
+            ->assertNotified('File ini bukan gambar atau PDF.');
+        $this->assertNull($kosong->fresh()->attachment);
+        $this->assertSame(['expense/nota-lama.jpg'], Storage::disk('public')->allFiles(), 'Skrip tidak tersimpan.');
+
+        Livewire::test(Faktur::class)
+            ->callAction('upload', data: ['file' => UploadedFile::fake()->image('nota-baru.jpg')], arguments: ['target' => "expense:{$ada->id}"])
+            ->assertNotified('Expense ini sudah punya nota.');
+        $this->assertSame('expense/nota-lama.jpg', $ada->fresh()->attachment);
     }
 
     // =================================================================

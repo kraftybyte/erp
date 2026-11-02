@@ -151,6 +151,7 @@
                 </dl>
                 <p class="fk-explain">
                     Nota Expense (tanpa yang ditolak) menurut tanggal pengajuan, dan struk Realisasi Advance menurut tanggal batch-nya.
+                    Yang belum ada fakturnya bisa di-upload langsung lewat tombol <strong>Upload</strong>.
                     Tombol <strong>Unduh ZIP</strong> mengumpulkan semua file-nya beserta daftar Excel.
                 </p>
             </x-filament::section>
@@ -187,10 +188,9 @@
                                                         </a>
                                                     @endforeach
                                                 </div>
-                                            @elseif ($row['files'])
-                                                <div class="fk-missing">File tidak ditemukan di server</div>
                                             @else
-                                                <div class="fk-missing">Belum ada</div>
+                                                <div class="fk-missing">{{ $row['files'] ? 'File tidak ditemukan di server' : 'Belum ada' }}</div>
+                                                {{ ($this->uploadAction)(['target' => $row['target'], 'label' => $row['source'] . ' · ' . \Illuminate\Support\Str::limit($row['description'] ?: '—', 60) . ' · ' . $rp($row['amount'])]) }}
                                             @endif
                                         </td>
                                     </tr>
