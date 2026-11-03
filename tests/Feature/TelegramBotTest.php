@@ -916,6 +916,68 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Pengaju: Budi Santoso', $this->lastText());
     }
 
+    public function test_kata_advance_dari_director_ditanyakan_realisasi_advance_karyawan(): void
+    {
+        Storage::fake('public');
+        $budi     = $this->employee('Budi', 'Santoso');
+        $advance  = $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $director = $this->user();
+        $director->assignRole('Director');
+        $this->fakeApis(gemini: null);
+
+        // Dulu langsung jadi draft advance baru milik Director: yang dicek hanya advance miliknya sendiri.
+        $this->send($this->textUpdate('advance belamy 200rb beli kabel'));
+
+        $this->assertStringContainsString('Project ini punya advance terbuka', $this->lastText());
+        $this->assertStringContainsString('Advance Booth Pameran (Budi Santoso)', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:type:realisasi"));
+        $this->assertStringContainsString('👤 Pengaju: Budi Santoso', $this->lastText());
+
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->assertSame(0, Advance::where('user_id', $director->id)->count(), 'Tidak ada advance baru.');
+        $this->assertEquals(200_000, Realisasi::where('advance_id', $advance->id)->sole()->items->sum('price'));
+    }
+
+    public function test_pesan_tanpa_jenis_dari_finance_ditanyakan_realisasi_advance_karyawan(): void
+    {
+        $budi = $this->employee('Budi', 'Santoso');
+        $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->user()->assignRole('Finance');
+        $this->fakeApis(gemini: null);
+
+        // Jenisnya tebakan (expense); bisa jadi realisasi advance Budi.
+        $this->send($this->textUpdate('belamy 200rb makan tim'));
+
+        $this->assertStringContainsString('Advance Booth Pameran (Budi Santoso)', $this->lastText());
+        $this->assertStringContainsString('dibayar dari advance tersebut', $this->lastText());
+    }
+
+    public function test_berbagai_cara_menulis_realisasi_dikenali(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        foreach ([
+            'pakai uang advance belamy 200rb makan', 'realisasiin advance belamy 200rb makan', 'relisasi belamy 200rb makan',
+            'advance belamy kepake 200rb makan tim', 'lapor pemakaian advance belamy 200rb makan',
+            'penggunaan advance belamy 200rb makan', 'masuk advance belamy 200rb makan',
+        ] as $text) {
+            Draft::forget($this->chatId);
+            $this->send($this->textUpdate($text));
+
+            $this->assertSame('realisasi', Draft::load($this->chatId)?->type, $text);
+        }
+
+        // Minta advance baru tetap advance.
+        Draft::forget($this->chatId);
+        $this->send($this->textUpdate('minta advance 2jt untuk shooting, nanti dipakai sewa alat'));
+        $this->assertSame('advance', Draft::load($this->chatId)?->type);
+    }
+
     public function test_director_melihat_advance_karyawan_saat_kirim_foto(): void
     {
         $budi = $this->employee('Budi', 'Santoso');

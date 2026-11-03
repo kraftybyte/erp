@@ -1046,11 +1046,18 @@ class TelegramBot
         // terbuka bisa jadi sudah dibayar dari advance itu. Untuk advance,
         // tetap ditanyakan walau kata "advance" ditulis sendiri (lihat
         // Draft::$typePicked); hanya pilihan lewat tombol yang dianggap pasti.
-        $openForProject = $this->advances->forUser($user)->where('project_id', $draft->projectId)->values();
+        // Untuk advance, atau jenis yang masih tebakan, Finance/Director juga
+        // melihat advance karyawan: "advance belamy 200rb" dari mereka
+        // biasanya realisasi advance karyawan, bukan minta advance untuk diri
+        // sendiri. Expense yang mereka tulis sendiri tidak ditahan advance
+        // karyawan lain.
+        $openForProject = ($draft->type === 'advance' || ! $draft->typeConfirmed ? $this->advances->realizableBy($user) : $this->advances->forUser($user))
+            ->where('project_id', $draft->projectId)
+            ->values();
         $sure           = $draft->type === 'advance' ? $draft->typePicked : $draft->typeConfirmed;
 
         if ($openForProject->isNotEmpty() && ! $sure) {
-            $this->askRealisasiOrNew($chatId, $messageId, $draft, $openForProject);
+            $this->askRealisasiOrNew($chatId, $messageId, $draft, $openForProject, $user);
 
             return;
         }
@@ -1187,14 +1194,18 @@ class TelegramBot
             . " yang kamu tulis. Periksa nominal tiap struk.\n";
     }
 
-    private function askRealisasiOrNew(int|string $chatId, ?int $messageId, Draft $draft, Collection $open): void
+    private function askRealisasiOrNew(int|string $chatId, ?int $messageId, Draft $draft, Collection $open, User $user): void
     {
         $draft->save($chatId);
 
         $list = $open
             ->map(fn (Advance $advance) => '• ' . e(Text::short($advance->keterangan_advance, 60))
+                . ($advance->user_id !== $user->id && $advance->user ? ' (' . e($this->name($advance->user)) . ')' : '')
                 . ' — sisa ' . $this->rupiah($this->advances->remaining($advance)))
             ->implode("\n");
+        $intro = $open->every(fn (Advance $advance) => $advance->user_id === $user->id)
+            ? 'Kamu punya advance terbuka untuk project ini:'
+            : 'Project ini punya advance terbuka:';
 
         [$question, $new] = $draft->type === 'advance'
             ? ['Ini laporan pemakaian advance tersebut, atau minta advance baru?', '💸 Bukan, minta advance baru']
@@ -1203,7 +1214,7 @@ class TelegramBot
         $this->show(
             $chatId,
             $messageId,
-            "Kamu punya advance terbuka untuk project ini:\n{$list}\n\n{$question}",
+            "{$intro}\n{$list}\n\n{$question}",
             [
                 [$this->button('🧾 Ya, realisasi advance', $draft, 'type', 'realisasi')],
                 [$this->button($new, $draft, 'type', $draft->type)],
