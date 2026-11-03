@@ -550,6 +550,17 @@ class TelegramBotTest extends TestCase
         $this->assertSame(87_500, Draft::load($this->chatId)->amount, 'Nominal dari struk dipakai bila pesan tidak menyebutnya.');
     }
 
+    public function test_tanggal_slip_bca_bulan_hari_tidak_terbalik(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::create(2026, 11, 5, 10));
+        $this->user();
+        $this->fakeApis(gemini: ['date_text' => '11/03/26 14:22', 'date' => '2026-03-11'] + $this->receiptRead());
+
+        $this->send($this->photoUpdate('slip-bca'));
+
+        $this->assertSame('2026-11-03', Draft::load($this->chatId)->date);
+    }
+
     public function test_foto_tanpa_keterangan_dijabarkan_lalu_jadi_realisasi_advance(): void
     {
         Storage::fake('public');
