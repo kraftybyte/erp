@@ -30,7 +30,7 @@ class OpenAdvances
      */
     public function forUser(User $user): Collection
     {
-        return Advance::with('project.deal')
+        return Advance::with('project.deal', 'itemAdvance')
             ->where('user_id', $user->id)
             ->whereIn('status', self::OPEN_STATUSES)
             ->latest('id')
@@ -54,7 +54,7 @@ class OpenAdvances
             return $this->forUser($user);
         }
 
-        return Advance::with('project.deal', 'user')
+        return Advance::with('project.deal', 'user', 'itemAdvance')
             ->whereIn('status', self::OPEN_STATUSES)
             ->orderByRaw('user_id = ? desc', [$user->id])
             ->latest('id')
