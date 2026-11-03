@@ -1130,6 +1130,58 @@ class TelegramBotTest extends TestCase
         $this->assertSame(1, Expense::where('user_id', $user->id)->count());
     }
 
+    public function test_satu_struk_boleh_untuk_realisasi_beberapa_advance(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $nestory = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $belamy  = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-bersama', 'realisasi 300rb konsumsi shooting nestory'));
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        // Struk yang sama untuk advance lain: boleh.
+        $this->send($this->photoUpdate('struk-bersama', 'realisasi 200rb konsumsi shooting belamy'));
+        $this->assertSame($belamy->id, Draft::load($this->chatId)->advanceId);
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->assertStringContainsString('Realisasi terkirim', $this->lastText());
+        $this->assertEquals(300_000, Realisasi::where('advance_id', $nestory->id)->first()->items->sum('price'));
+        $this->assertEquals(200_000, Realisasi::where('advance_id', $belamy->id)->first()->items->sum('price'));
+
+        // Untuk advance yang sama lagi: ditolak.
+        $this->send($this->photoUpdate('struk-bersama', 'realisasi 50rb konsumsi shooting belamy'));
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->assertStringContainsString('sudah pernah dikirim', $this->lastText());
+        $this->assertSame(1, Realisasi::where('advance_id', $belamy->id)->count());
+
+        // Sebagai expense: ditolak, supaya tidak tercatat dua kali.
+        Draft::forget($this->chatId);
+        $this->send($this->photoUpdate('struk-bersama', 'expense 150rb grab ke kantor klien nestory'));
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->assertStringContainsString('sudah pernah dikirim', $this->lastText());
+        $this->assertSame(0, Expense::where('user_id', $user->id)->count());
+    }
+
+    public function test_struk_expense_tidak_bisa_dipakai_untuk_realisasi(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-expense', 'expense 150rb grab ke kantor klien nestory'));
+        $this->send($this->tap(Draft::load($this->chatId)->id . ':submit:'));
+
+        $this->send($this->photoUpdate('struk-expense', 'realisasi 150rb grab nestory'));
+
+        $this->assertStringContainsString('sudah pernah dikirim', $this->lastText());
+        $this->assertSame(0, Realisasi::where('advance_id', $advance->id)->count());
+    }
+
     public function test_foto_susulan_jadi_struk_kedua_dan_nominal_struk_pertama_tetap(): void
     {
         $user = $this->user();

@@ -44,6 +44,9 @@ class TelegramBot
     // Salinan sementara struk yang sudah diunduh, di disk lokal (bukan public).
     private const RECEIPT_CACHE = 'telegram-struk';
 
+    // telegram_receipts.scope untuk struk expense/advance; realisasi memakai "realisasi:{advance_id}".
+    private const RECEIPT_SCOPE = 'pengajuan';
+
     private const ATTACHMENT_TYPES = [
         'image/jpeg'      => 'jpg',
         'image/png'       => 'png',
@@ -645,6 +648,7 @@ class TelegramBot
 
             DB::table('telegram_receipts')->insert([
                 'file_unique_id' => $receipt['unique'],
+                'scope'          => $this->receiptScope($draft),
                 'user_id'        => $user->id,
                 'reference'      => $reference,
                 'created_at'     => now(),
@@ -653,15 +657,32 @@ class TelegramBot
     }
 
     /**
-     * Keterangan singkat pengajuan yang sudah memakai struk ini, atau null.
+     * Struk expense/advance tidak boleh dipakai lagi di mana pun. Struk
+     * realisasi boleh dipakai lagi untuk realisasi advance lain (satu struk
+     * untuk beberapa advance), tapi tidak untuk advance yang sama.
      */
-    private function submittedReceipt(?string $unique): ?string
+    private function receiptScope(Draft $draft): string
+    {
+        return $draft->type === 'realisasi' ? "realisasi:{$draft->advanceId}" : self::RECEIPT_SCOPE;
+    }
+
+    /**
+     * Keterangan singkat pengajuan yang sudah memakai struk ini, atau null bila
+     * struk ini masih boleh dipakai untuk $scope. Tanpa $scope (struk baru
+     * diterima, jenis pengajuannya belum diketahui) hanya struk expense/advance
+     * yang ditolak.
+     */
+    private function submittedReceipt(?string $unique, ?string $scope = null): ?string
     {
         if (! $unique) {
             return null;
         }
 
-        $row = DB::table('telegram_receipts')->where('file_unique_id', $unique)->first();
+        $row = DB::table('telegram_receipts')
+            ->where('file_unique_id', $unique)
+            ->when($scope !== self::RECEIPT_SCOPE, fn ($query) => $query->whereIn('scope', array_filter([self::RECEIPT_SCOPE, $scope])))
+            ->orderBy('id')
+            ->first();
 
         return $row
             ? $row->reference . ', ' . Carbon::parse($row->created_at)->locale('id')->translatedFormat('j M Y')
@@ -673,7 +694,7 @@ class TelegramBot
         $receipts = $draft->isMulti() ? $draft->receipts : array_filter([$draft->attachment]);
 
         foreach ($receipts as $receipt) {
-            if ($previous = $this->submittedReceipt($receipt['unique'] ?? null)) {
+            if ($previous = $this->submittedReceipt($receipt['unique'] ?? null, $this->receiptScope($draft))) {
                 return $previous;
             }
         }
