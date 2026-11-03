@@ -550,6 +550,35 @@ class TelegramBotTest extends TestCase
         $this->assertSame(87_500, Draft::load($this->chatId)->amount, 'Nominal dari struk dipakai bila pesan tidak menyebutnya.');
     }
 
+    public function test_tanggal_bisa_diubah_lewat_tombol(): void
+    {
+        Storage::fake('public');
+        $this->travelTo(\Illuminate\Support\Carbon::create(2026, 11, 3, 10));
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('expense 150rb grab ke kantor klien nestory'));
+        $this->assertContains('✏️ Tanggal', $this->lastButtons());
+
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:edit:date"));
+        $this->assertStringContainsString('Tanggal sekarang: <b>3 Nov 2026</b>', $this->lastText());
+
+        $this->send($this->textUpdate('10/11'));
+        $this->assertStringContainsString('tidak boleh setelah hari ini', $this->lastText());
+
+        $this->send($this->textUpdate('tanggal berapa ya'));
+        $this->assertStringContainsString('belum terbaca', $this->lastText());
+        $this->assertSame('2026-11-03', Draft::load($this->chatId)->date, 'Tanggal lama berlaku sampai dijawab.');
+
+        $this->send($this->textUpdate('1/11'));
+        $this->assertStringContainsString('📅 Tanggal: 1 Nov 2026', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+        $this->assertSame('2026-11-01', Expense::where('user_id', $user->id)->sole()->submission_date->toDateString());
+    }
+
     public function test_tanggal_slip_bca_bulan_hari_tidak_terbalik(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::create(2026, 11, 5, 10));

@@ -802,6 +802,23 @@ class TelegramBot
                 $draft->description = Str::limit($text, 500, '');
                 break;
 
+            case 'date':
+                $date = DateParser::parse($text);
+
+                if (! $date || $date > today()->toDateString()) {
+                    $this->telegram->sendMessage(
+                        $chatId,
+                        $date
+                            ? 'Tanggal pengajuan tidak boleh setelah hari ini. Tulis tanggal transaksinya.'
+                            : 'Tanggalnya belum terbaca. Tulis misalnya <i>3/11</i>, <i>3 Nov 2026</i>, atau <i>kemarin</i>.'
+                    );
+
+                    return;
+                }
+
+                $draft->date = $date;
+                break;
+
             case 'project':
                 $this->showProjectSearch($chatId, $user, $draft, $text);
 
@@ -917,6 +934,20 @@ class TelegramBot
                 break;
 
             case 'edit':
+                // Tanggal tidak dikosongkan dulu: selama belum dijawab, tanggal lama tetap berlaku.
+                if ($value === 'date') {
+                    $this->ask(
+                        $chatId,
+                        $messageId,
+                        $draft,
+                        'date',
+                        'Tanggal sekarang: <b>' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') . "</b>.\n"
+                            . 'Tulis tanggal yang benar, misalnya <i>3/11</i> (3 November), <i>3 Nov</i>, atau <i>kemarin</i>.'
+                    );
+
+                    return;
+                }
+
                 match ($value) {
                     'amount'      => $draft->amount = null,
                     'description' => $draft->description = null,
@@ -1045,7 +1076,7 @@ class TelegramBot
                 [$this->button("✅ Kirim {$count} struk", $draft, 'submit')],
                 ...$this->receiptButtons($draft),
                 [$this->button('📁 Project', $draft, 'edit', 'project'), $this->button('🏷 Kategori', $draft, 'edit', 'category')],
-                [$this->button('✏️ Keterangan', $draft, 'edit', 'description'), $this->button('❌ Batal', $draft, 'cancel')],
+                [$this->button('✏️ Keterangan', $draft, 'edit', 'description'), $this->button('✏️ Tanggal', $draft, 'edit', 'date'), $this->button('❌ Batal', $draft, 'cancel')],
             ];
 
             if ($openForProject->isNotEmpty()) {
@@ -1078,7 +1109,7 @@ class TelegramBot
 
         $rows = [
             [$this->button('✅ Kirim', $draft, 'submit')],
-            [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description')],
+            [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description'), $this->button('✏️ Tanggal', $draft, 'edit', 'date')],
             [$this->button('📁 Project', $draft, 'edit', 'project'), $this->button('🏷 Kategori', $draft, 'edit', 'category')],
             [$this->button('🔁 Jadikan ' . self::TYPES[$other]['label'], $draft, 'type', $other), $this->button('❌ Batal', $draft, 'cancel')],
         ];
