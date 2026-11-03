@@ -378,9 +378,16 @@ class TelegramBot
                 . 'Total: <b>' . $this->rupiah($draft->amount) . '</b>';
         }
 
-        $rows = $open->take(4)->values()
-            ->map(fn (Advance $advance) => [$this->button(
-                '🧾 Realisasi: ' . Text::short($advance->keterangan_advance, 26) . $this->ownerTag($advance, $user) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
+        // Tombol hanya muat nama pendek; nama lengkap dan penandanya di pesan, bernomor sama.
+        $shown = $open->take(4)->values();
+
+        if ($shown->isNotEmpty()) {
+            $text .= "\n\n🧾 <b>Advance terbuka</b>\n" . $this->advanceList($shown, $user);
+        }
+
+        $rows = $shown
+            ->map(fn (Advance $advance, int $index) => [$this->button(
+                '🧾 ' . $this->advanceButtonLabel($advance, $user, $index + 1),
                 $draft,
                 'to',
                 "realisasi-{$advance->id}"
@@ -400,7 +407,7 @@ class TelegramBot
             $draft->panelMessageId,
             $draft,
             $text . "\n\n" . ($open->isNotEmpty()
-                ? 'Masukkan ke mana? Pilih advance bila dibayar dari advance yang sudah cair.'
+                ? 'Masukkan ke mana? Pilih nomor advance bila dibayar dari advance tersebut.'
                 : 'Masukkan ke mana?')
                 . "\nAtau tulis keterangannya sendiri, misalnya <i>expense grab ke klien nestory</i>.",
             $rows
@@ -1198,14 +1205,13 @@ class TelegramBot
     {
         $draft->save($chatId);
 
-        $list = $open
-            ->map(fn (Advance $advance) => '• ' . e(Text::short($advance->keterangan_advance, 60))
-                . ($advance->user_id !== $user->id && $advance->user ? ' (' . e($this->name($advance->user)) . ')' : '')
-                . ' — sisa ' . $this->rupiah($this->advances->remaining($advance)))
-            ->implode("\n");
-        $intro = $open->every(fn (Advance $advance) => $advance->user_id === $user->id)
+        // Semua advance di sini satu project dengan pengajuan: project-nya cukup disebut sekali.
+        $project = $open->first()?->project;
+        $intro   = ($open->every(fn (Advance $advance) => $advance->user_id === $user->id)
             ? 'Kamu punya advance terbuka untuk project ini:'
-            : 'Project ini punya advance terbuka:';
+            : 'Project ini punya advance terbuka:')
+            . ($project ? "\n📁 " . $this->projectLines($project, '    ') : '');
+        $list = $this->advanceList($open, $user, withProject: false);
 
         [$question, $new] = $draft->type === 'advance'
             ? ['Ini laporan pemakaian advance tersebut, atau minta advance baru?', '💸 Bukan, minta advance baru']
@@ -1214,7 +1220,7 @@ class TelegramBot
         $this->show(
             $chatId,
             $messageId,
-            "{$intro}\n{$list}\n\n{$question}",
+            "{$intro}\n\n{$list}\n\n{$question}",
             [
                 [$this->button('🧾 Ya, realisasi advance', $draft, 'type', 'realisasi')],
                 [$this->button($new, $draft, 'type', $draft->type)],
@@ -1273,7 +1279,7 @@ class TelegramBot
                 $messageId,
                 $draft,
                 "🧾 <b>Draft Realisasi — {$count} struk</b>\nMenjadi 1 batch dengan {$count} item, masing-masing dengan struknya sendiri.\n\n"
-                    . '💸 Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
+                    . '💸 Advance: <b>' . $this->advanceName($advance) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
                     . ($advance->user_id !== $user->id ? '👤 Pengaju: ' . e($this->name($advance->user)) . "\n" : '')
                     . ($advance->project ? '📁 Project: ' . $this->projectLines($advance->project) . "\n" : '')
                     . "\n" . $this->receiptLines($draft) . "\n"
@@ -1340,13 +1346,11 @@ class TelegramBot
         $more    = $choices->count() > 8;
         $choices = $choices->take(8)->values();
 
-        $lines = $choices
-            ->map(fn (Advance $advance, int $index) => ($index + 1) . '. ' . $this->advanceSummary($advance, $user))
-            ->implode("\n\n");
+        $lines = $this->advanceList($choices, $user);
 
         $rows = $choices
             ->map(fn (Advance $advance, int $index) => [$this->button(
-                ($index + 1) . '. ' . Text::short($advance->keterangan_advance, 30) . $this->ownerTag($advance, $user) . ' · sisa ' . $this->rupiah($this->advances->remaining($advance)),
+                $this->advanceButtonLabel($advance, $user, $index + 1),
                 $draft,
                 'adv',
                 $advance->id
@@ -1378,19 +1382,64 @@ class TelegramBot
         return $advance->user_id !== $user->id && $advance->user ? ' (' . Text::short($advance->user->firstname ?: $this->name($advance->user), 12) . ')' : '';
     }
 
-    private function advanceSummary(Advance $advance, User $user): string
+    /**
+     * Keterangan advance utuh. Batas 150 karakter hanya menjaga 8 advance
+     * tetap muat dalam satu pesan Telegram (maks. 4096 karakter).
+     */
+    private function advanceName(Advance $advance): string
     {
-        $lines = ['<b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid)];
+        return e(Text::short($advance->keterangan_advance, 150));
+    }
 
-        if ($advance->user_id !== $user->id && $advance->user) {
-            $lines[] = '   👤 ' . e($this->name($advance->user));
-        }
+    /**
+     * "1. Advance Booth Pameran (Budi)": nomornya sama dengan daftar di pesan.
+     */
+    private function advanceButtonLabel(Advance $advance, User $user, int $number): string
+    {
+        return "{$number}. " . Text::short($advance->keterangan_advance, 30) . $this->ownerTag($advance, $user);
+    }
 
-        if ($advance->project) {
+    /**
+     * @param  Collection<int, Advance>  $advances
+     */
+    private function advanceList(Collection $advances, User $user, bool $withProject = true): string
+    {
+        return $advances->values()
+            ->map(fn (Advance $advance, int $index) => ($index + 1) . '. ' . $this->advanceSummary($advance, $user, $withProject))
+            ->implode("\n\n");
+    }
+
+    /**
+     * Nama lengkap advance dan penandanya (project, kategori, tanggal, pengaju,
+     * rincian) supaya advance yang namanya mirip bisa dibedakan.
+     */
+    private function advanceSummary(Advance $advance, User $user, bool $withProject = true): string
+    {
+        $lines = ['<b>' . $this->advanceName($advance) . '</b>'];
+
+        if ($withProject && $advance->project) {
             $lines[] = '   📁 ' . $this->projectLines($advance->project, '       ');
         }
 
-        $lines[] = '   Sisa: ' . $this->rupiah($this->advances->remaining($advance));
+        $lines[] = '   ' . implode(' · ', array_filter([
+            $advance->category ? '🏷 ' . e($advance->category) : null,
+            '🗓 ' . Carbon::parse($advance->submission_date ?? $advance->created_at)->locale('id')->translatedFormat('j M Y'),
+            $advance->user_id !== $user->id && $advance->user ? '👤 ' . e($this->name($advance->user)) : null,
+        ]));
+
+        // Rincian yang sama dengan nama advance tidak menambah penanda.
+        $items = $advance->itemAdvance
+            ->map(fn ($item) => trim((string) $item->name))
+            ->filter(fn (string $name) => $name !== '' && mb_strtolower($name) !== mb_strtolower(trim((string) $advance->keterangan_advance)))
+            ->unique()
+            ->values();
+
+        if ($items->isNotEmpty()) {
+            $lines[] = '   📝 Rincian: ' . e(Text::short($items->take(3)->implode(', '), 60))
+                . ($items->count() > 3 ? ' +' . ($items->count() - 3) . ' lainnya' : '');
+        }
+
+        $lines[] = '   💸 Cair ' . $this->rupiah($advance->paid) . ' · sisa <b>' . $this->rupiah($this->advances->remaining($advance)) . '</b>';
 
         return implode("\n", $lines);
     }
@@ -1398,7 +1447,7 @@ class TelegramBot
     private function realisasiDetails(Draft $draft, Advance $advance, float $remaining, User $user): string
     {
         return implode("\n", array_filter([
-            '💸 Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . '</b> — ' . $this->rupiah($advance->paid),
+            '💸 Advance: <b>' . $this->advanceName($advance) . '</b> — ' . $this->rupiah($advance->paid),
             $advance->user_id !== $user->id ? '👤 Pengaju: ' . e($this->name($advance->user)) : null,
             $advance->project ? '📁 Project: ' . $this->projectLines($advance->project) : null,
             '🗒 Item: ' . e($draft->description),
@@ -1506,7 +1555,7 @@ class TelegramBot
             $chatId,
             $messageId,
             "✅ <b>Realisasi terkirim</b>\n\n"
-                . 'Advance: <b>' . e(Text::short($advance->keterangan_advance, 80)) . "</b>\n"
+                . 'Advance: <b>' . $this->advanceName($advance) . "</b>\n"
                 . ($advance->user_id !== $user->id ? 'Pengaju: ' . e($this->name($advance->user)) . "\n" : '')
                 . ($draft->isMulti()
                     ? $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\n"
@@ -1901,7 +1950,8 @@ class TelegramBot
                 $realized = $this->advances->realized($advance);
                 $percent  = (float) $advance->paid > 0 ? round($realized / (float) $advance->paid * 100) : 0;
 
-                return '🧾 ' . e(Text::short($advance->keterangan_advance, 60)) . "\n"
+                return '🧾 ' . $this->advanceName($advance) . "\n"
+                    . ($advance->project ? '📁 ' . e($this->projectLabel($advance->project)) . "\n" : '')
                     . 'Terealisasi ' . $this->rupiah($realized) . ' dari ' . $this->rupiah($advance->paid) . " ({$percent}%)";
             });
 

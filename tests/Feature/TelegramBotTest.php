@@ -602,7 +602,8 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Isi struk</b> · Toko Jaya Elektrik', $this->lastText());
         $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
         $this->assertStringContainsString('Total: <b>Rp 265.000</b>', $this->lastText());
-        $this->assertContains('🧾 Realisasi: Advance Booth Pameran · sisa Rp 2.000.000', $this->lastButtons());
+        $this->assertContains('🧾 1. Advance Booth Pameran', $this->lastButtons());
+        $this->assertStringContainsString("🧾 <b>Advance terbuka</b>\n1. <b>Advance Booth Pameran</b>", $this->lastText());
         $this->assertContains('💰 Expense baru — sudah bayar sendiri', $this->lastButtons());
 
         $draft = Draft::load($this->chatId);
@@ -843,7 +844,9 @@ class TelegramBotTest extends TestCase
         $this->send($this->textUpdate('advance belamy 200rb beli kabel'));
 
         $this->assertStringContainsString('minta advance baru?', $this->lastText());
-        $this->assertStringContainsString('Advance Booth Pameran — sisa Rp 2.000.000', $this->lastText());
+        $this->assertStringContainsString('📁 PT Belamy Indonesia', $this->lastText());
+        $this->assertStringContainsString('1. <b>Advance Booth Pameran</b>', $this->lastText());
+        $this->assertStringContainsString('sisa <b>Rp 2.000.000</b>', $this->lastText());
 
         $draft = Draft::load($this->chatId);
         $this->send($this->tap("{$draft->id}:type:realisasi"));
@@ -929,7 +932,8 @@ class TelegramBotTest extends TestCase
         $this->send($this->textUpdate('advance belamy 200rb beli kabel'));
 
         $this->assertStringContainsString('Project ini punya advance terbuka', $this->lastText());
-        $this->assertStringContainsString('Advance Booth Pameran (Budi Santoso)', $this->lastText());
+        $this->assertStringContainsString('<b>Advance Booth Pameran</b>', $this->lastText());
+        $this->assertStringContainsString('👤 Budi Santoso', $this->lastText());
 
         $draft = Draft::load($this->chatId);
         $this->send($this->tap("{$draft->id}:type:realisasi"));
@@ -951,7 +955,8 @@ class TelegramBotTest extends TestCase
         // Jenisnya tebakan (expense); bisa jadi realisasi advance Budi.
         $this->send($this->textUpdate('belamy 200rb makan tim'));
 
-        $this->assertStringContainsString('Advance Booth Pameran (Budi Santoso)', $this->lastText());
+        $this->assertStringContainsString('<b>Advance Booth Pameran</b>', $this->lastText());
+        $this->assertStringContainsString('👤 Budi Santoso', $this->lastText());
         $this->assertStringContainsString('dibayar dari advance tersebut', $this->lastText());
     }
 
@@ -987,7 +992,28 @@ class TelegramBotTest extends TestCase
 
         $this->send($this->photoUpdate('nota-dir'));
 
-        $this->assertContains('🧾 Realisasi: Advance Booth Pameran (Budi) · sisa Rp 2.000.000', $this->lastButtons());
+        $this->assertContains('🧾 1. Advance Booth Pameran (Budi)', $this->lastButtons());
+        $this->assertStringContainsString('👤 Budi Santoso', $this->lastText());
+    }
+
+    public function test_daftar_advance_menampilkan_nama_lengkap_dan_penandanya(): void
+    {
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $advance->update(['keterangan_advance' => 'Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport']);
+        \App\Models\ItemAdvance::create(['advance_id' => $advance->id, 'name' => 'Sewa lighting', 'description' => '-', 'quantity' => 1, 'price' => 1_500_000]);
+        \App\Models\ItemAdvance::create(['advance_id' => $advance->id, 'name' => 'Konsumsi kru', 'description' => '-', 'quantity' => 1, 'price' => 500_000]);
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-lengkap'));
+
+        $text = $this->lastText();
+        $this->assertStringContainsString('1. <b>Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport</b>', $text);
+        $this->assertStringContainsString('Booth Pameran', $text);
+        $this->assertStringContainsString('🏷 Project Support · 🗓 ' . today()->locale('id')->translatedFormat('j M Y'), $text);
+        $this->assertStringContainsString('📝 Rincian: Sewa lighting, Konsumsi kru', $text);
+        $this->assertStringContainsString('💸 Cair Rp 2.000.000 · sisa <b>Rp 2.000.000</b>', $text);
+        $this->assertContains('🧾 1. Advance produksi booth…', $this->lastButtons());
     }
 
     public function test_finance_mencari_advance_yang_tidak_ada_di_daftar(): void
