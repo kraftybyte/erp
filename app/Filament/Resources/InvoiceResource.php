@@ -2417,6 +2417,10 @@ class InvoiceResource extends BaseInvoiceResource
                                 'uuid' =>
                                     $newUuid,
 
+                                // Nomor PI tetap tercatat supaya tidak diberikan ke proforma lain.
+                                'proforma_uuid' =>
+                                    $record->uuid,
+
                                 'faktur' =>
                                     $data[
                                         'faktur'

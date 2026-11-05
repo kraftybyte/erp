@@ -587,7 +587,7 @@ class QuotationResource extends Resource
 
                         Notification::make()
                             ->title('Konversi dibatalkan')
-                            ->body(($deleted->isEmpty() ? '' : 'Proforma ' . $deleted->pluck('uuid')->implode(', ') . ' dihapus. ')
+                            ->body(($deleted->isEmpty() ? '' : 'Proforma ' . $deleted->implode(', ') . ' dihapus. ')
                                 . "Status quotation sekarang {$data['status']}.")
                             ->success()
                             ->send();

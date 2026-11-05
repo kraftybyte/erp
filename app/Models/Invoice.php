@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
 
 /**
@@ -12,6 +13,33 @@ use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
  */
 class Invoice extends BaseInvoice
 {
+    /**
+     * Akhiran uuid proforma yang dihapus: "#PI/0132611/00002-BATAL-15". Nomor
+     * aslinya lepas dari unique index sehingga bisa dipakai proforma berikutnya.
+     */
+    public const TANDA_BATAL = '-BATAL-';
+
+    protected static function booted(): void
+    {
+        // Proforma dihapus: nomornya dilepas supaya nomor proforma tidak melompat.
+        // Invoice #SC tetap memegang nomornya (sudah dikirim ke klien).
+        static::deleted(function (Invoice $invoice) {
+            if ($invoice->type === 'estimate' && ! $invoice->isForceDeleting() && ! str_contains($invoice->uuid, self::TANDA_BATAL)) {
+                $invoice->forceFill(['uuid' => $invoice->uuid . self::TANDA_BATAL . $invoice->getKey()])->saveQuietly();
+            }
+        });
+
+        // Dipulihkan: kembali ke nomor lamanya, atau nomor baru bila sudah dipakai lagi.
+        static::restoring(function (Invoice $invoice) {
+            if (! str_contains($invoice->uuid, self::TANDA_BATAL)) {
+                return;
+            }
+
+            $nomor         = Str::before($invoice->uuid, self::TANDA_BATAL);
+            $invoice->uuid = static::nomorTerpakai($nomor) ? static::generateUuid('estimate') : $nomor;
+        });
+    }
+
     /**
      * Override the invoicesItems relationship to use custom model
      */
@@ -29,6 +57,9 @@ class Invoice extends BaseInvoice
 
         // === Rantai pembayaran: invoice DP -> invoice pelunasan ===
         'parent_invoice_id',
+
+        // === Nomor #PI sebelum proforma dikonversi menjadi invoice ===
+        'proforma_uuid',
 
         // === Bank fields ===
         'bank_account',
@@ -262,6 +293,10 @@ class Invoice extends BaseInvoice
      * dengan menarik seluruh invoice bulan berjalan ke memory. Nomor yang sudah
      * terpakai juga dilewati, sehingga pemanggilan bersamaan oleh dua pengguna
      * tidak menghasilkan nomor kembar yang ditolak unique constraint.
+     *
+     * Proforma memakai lebih dulu nomor proforma bulan ini yang dihapus, supaya
+     * nomornya tidak melompat. Invoice #SC tidak: nomor yang sudah dikirim ke
+     * klien tidak diberikan ke invoice lain.
      */
     public static function generateUuid(string $type = 'sale'): string
     {
@@ -274,17 +309,28 @@ class Invoice extends BaseInvoice
         // Format: 013YYMM (mis. 0132607 untuk Juli 2026)
         $awalan = '#' . $prefix . '/013' . now()->format('ym') . '/';
 
-        // Urutan tertinggi bulan ini, dihitung di sisi database.
-        $urutanTertinggi = (int) static::withTrashed()
-            ->where('uuid', 'like', $awalan . '%')
-            ->max(DB::raw('CAST(RIGHT(uuid, 5) AS UNSIGNED)'));
+        if ($prefix === 'PI' && ($dilepas = static::nomorProformaDilepas($awalan))) {
+            return $dilepas;
+        }
+
+        // Urutan tertinggi bulan ini, dihitung di sisi database. Proforma yang
+        // sudah menjadi invoice tetap memegang nomor PI-nya (proforma_uuid).
+        $urutanTertinggi = max(
+            (int) static::withTrashed()
+                ->where('uuid', 'like', $awalan . '%')
+                ->where('uuid', 'not like', '%' . self::TANDA_BATAL . '%')
+                ->max(DB::raw('CAST(RIGHT(uuid, 5) AS UNSIGNED)')),
+            (int) static::withTrashed()
+                ->where('proforma_uuid', 'like', $awalan . '%')
+                ->max(DB::raw('CAST(RIGHT(proforma_uuid, 5) AS UNSIGNED)')),
+        );
 
         // Lewati nomor yang sudah dipakai — melindungi dari dua permintaan yang
         // membaca urutan tertinggi yang sama sebelum salah satunya tersimpan.
         for ($i = $urutanTertinggi + 1; $i <= $urutanTertinggi + 100; $i++) {
             $kandidat = $awalan . str_pad((string) $i, 5, '0', STR_PAD_LEFT);
 
-            if (! static::withTrashed()->where('uuid', $kandidat)->exists()) {
+            if (! static::nomorTerpakai($kandidat)) {
                 return $kandidat;
             }
         }
@@ -292,5 +338,30 @@ class Invoice extends BaseInvoice
         // Sangat jarang: kembalikan nomor berikutnya dan biarkan unique constraint
         // yang memutuskan, daripada mengembalikan nomor yang pasti bentrok.
         return $awalan . str_pad((string) ($urutanTertinggi + 1), 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Nomor terkecil dari proforma bulan ini yang dihapus dan belum dipakai lagi.
+     */
+    private static function nomorProformaDilepas(string $awalan): ?string
+    {
+        return static::onlyTrashed()
+            ->where('uuid', 'like', $awalan . '%' . self::TANDA_BATAL . '%')
+            ->pluck('uuid')
+            ->map(fn (string $uuid) => Str::before($uuid, self::TANDA_BATAL))
+            ->unique()
+            ->sort()
+            ->first(fn (string $nomor) => ! static::nomorTerpakai($nomor));
+    }
+
+    /**
+     * Dipegang invoice mana pun, termasuk yang dihapus dan nomor PI dari
+     * proforma yang sudah menjadi invoice.
+     */
+    public static function nomorTerpakai(string $nomor): bool
+    {
+        return static::withTrashed()
+            ->where(fn ($query) => $query->where('uuid', $nomor)->orWhere('proforma_uuid', $nomor))
+            ->exists();
     }
 }
