@@ -37,4 +37,23 @@ class CreateInvoice extends BaseCreateInvoice
 
         return $data;
     }
+
+    /**
+     * Dibuka dari tab Invoice di halaman Deal (?deal=ID): client langsung terisi
+     * dan invoice tertaut ke Deal itu, sama seperti memilih "Ambil dari Deal".
+     */
+    protected function afterFill(): void
+    {
+        $deal = Deal::find(request()->query('deal'));
+
+        if (! $deal) {
+            return;
+        }
+
+        $this->data['_deal_id']        = $deal->id;
+        $this->data['nama_perusahaan'] = $deal->nama_perusahaan;
+        $this->data['nama_pic']        = $deal->nama_pic;
+        $this->data['telephone']       = $deal->telephone ?? '';
+        $this->data['alamat']          = $deal->alamat ?? '';
+    }
 }

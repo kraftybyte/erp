@@ -2,7 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\DealResource\Pages\EditDeal;
+use App\Filament\Resources\DealResource\RelationManagers\InvoicesRelationManager;
+use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\InvoiceResource\Pages\CreateInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
+use App\Models\Deal;
 use App\Models\Invoice;
 use App\Models\User;
 use Filament\Facades\Filament;
@@ -110,6 +115,51 @@ class ProformaNumberTest extends TestCase
 
         $this->assertSame(self::SC . '00002', $second->fresh()->uuid);
         $this->assertSame(self::SC . '00003', $this->invoice('sale')->uuid);
+    }
+
+    public function test_tab_invoice_di_deal_memakai_nomor_yang_sama_dengan_menu_invoice(): void
+    {
+        $this->proforma();
+        $deal = Deal::forceCreate(['nama_perusahaan' => 'PT Nomor Deal', 'nama_pic' => 'Rina', 'alamat' => 'Jl. Tes']);
+
+        // Dulu tab ini punya form sendiri dengan seri #PI/0331/... dan #DG/0331/...
+        // (dan gagal menyimpan). Sekarang membuka form menu Invoice.
+        $existing = $this->proforma();
+        $existing->update(['deal_id' => $deal->id]);
+        Livewire::test(InvoicesRelationManager::class, ['ownerRecord' => $deal, 'pageClass' => EditDeal::class])
+            ->assertTableActionHasUrl('create', InvoiceResource::getUrl('create', ['deal' => $deal->id, 'type' => 'estimate']))
+            ->assertTableActionHasUrl('edit', InvoiceResource::getUrl('edit', ['record' => $existing]), $existing);
+
+        $form = Livewire::withQueryParams(['deal' => $deal->id, 'type' => 'estimate'])
+            ->test(CreateInvoice::class)
+            ->assertFormSet(['type' => 'estimate', 'uuid' => self::PI . '00003', '_deal_id' => $deal->id, 'nama_perusahaan' => 'PT Nomor Deal', 'nama_pic' => 'Rina']);
+        $key = array_key_first($form->get('data.invoicesItems'));
+
+        $form->set('data.type_payment', 'full_payment')
+            ->set("data.invoicesItems.{$key}.item", 'Booth 3x3')
+            ->set("data.invoicesItems.{$key}.qty", 1)
+            ->set("data.invoicesItems.{$key}.vat_percentage", 0)
+            ->set("data.invoicesItems.{$key}.price", 4_000_000)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $invoice = Invoice::where('uuid', self::PI . '00003')->firstOrFail();
+        $this->assertSame($deal->id, (int) $invoice->deal_id);
+        $this->assertSame('estimate', $invoice->type);
+        $this->assertSame(1, $invoice->invoicesItems()->count());
+    }
+
+    public function test_nomor_di_form_invoice_mengikuti_tipe(): void
+    {
+        $this->proforma();
+
+        // Dulu memilih Proforma Invoice tetap memberi nomor #SC.
+        Livewire::test(CreateInvoice::class)
+            ->assertFormSet(['type' => 'sale', 'uuid' => self::SC . '00001'])
+            ->set('data.type', 'estimate')
+            ->assertFormSet(['uuid' => self::PI . '00002'])
+            ->set('data.type', 'sale')
+            ->assertFormSet(['uuid' => self::SC . '00001']);
     }
 
     private function proforma(): Invoice
