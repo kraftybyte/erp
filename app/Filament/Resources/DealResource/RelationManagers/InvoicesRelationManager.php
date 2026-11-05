@@ -22,6 +22,7 @@ use TomatoPHP\FilamentLocations\Models\Currency;
 use App\Providers\Company;
 use App\Models\Invoice;
 use App\Filament\Forms\PaymentTypeFields;
+use App\Filament\Resources\InvoiceResource;
 
     class InvoicesRelationManager extends RelationManager
     {
@@ -45,26 +46,13 @@ use App\Filament\Forms\PaymentTypeFields;
                 ->unique(ignoreRecord: true)
                 ->disabled(fn(Invoice $invoice) => $invoice->exists)
                 ->label(trans('filament-invoices::messages.invoices.columns.uuid'))
-                ->default(function () {
-                    $prefix = request()->input('type', 'invoice') === 'sale' ? '#DG/' : '#PI/';
-                    $datePart = now()->format('my/');
-                    $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
-                    $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-                    return $prefix . $datePart . $newNumber;
-                })
+                // Satu penomoran dengan menu Invoice (#PI/013YYMM/..., #SC/013YYMM/...);
+                // dulu tab ini memakai seri sendiri (#PI/MMYY/..., #DG/MMYY/...).
+                ->default(fn () => Invoice::generateUuid('estimate'))
+                ->readOnly()
                 ->required()
                 ->columnSpanFull()
-                ->maxLength(255)
-                ->reactive()
-                ->afterStateUpdated(function (Forms\Set $set, $state) {
-                    $prefix = $state === 'sale' ? '#DG/' : '#PI/';
-                    $datePart = now()->format('my/');
-                    $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                    $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
-                    $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-                    $set('uuid', $prefix . $datePart . $newNumber);
-                }),
+                ->maxLength(255),
 
                 Forms\Components\Grid::make(['sm' => 1, 'lg' => 2])->schema([
 
@@ -114,14 +102,7 @@ use App\Filament\Forms\PaymentTypeFields;
                             ->searchable()
                             ->options($types->pluck('name', 'key')->toArray())
                             ->reactive()
-                            ->afterStateUpdated(function (Forms\Set $set, $state) {
-                                $prefix = $state === 'estimate' ? '#PI/' : '#DG/';
-                                $datePart = now()->format('my/');
-                                $lastInvoice = Invoice::where('uuid', 'like', $prefix . $datePart . '%')->latest('id')->first();
-                                $lastNumber = $lastInvoice ? intval(substr($lastInvoice->uuid, -5)) : 0;
-                                $newNumber = str_pad($lastNumber + 1, 5, '0', STR_PAD_LEFT);
-                                $set('uuid', $prefix . $datePart . $newNumber);
-                            }),
+                            ->afterStateUpdated(fn (Forms\Set $set, $state) => $set('uuid', Invoice::generateUuid((string) $state))),
                         Forms\Components\Select::make('status')
                             ->label(trans('filament-invoices::messages.invoices.sections.invoice_data.columns.status'))
                             ->required()
@@ -339,11 +320,16 @@ Forms\Components\Section::make(trans('filament-invoices::messages.invoices.secti
             ->filters([
                 //
             ])
+            // Buat dan edit memakai form menu Invoice: satu penomoran, item ikut
+            // tersimpan, dan invoice tertaut ke Deal ini. Form tab ini dulu gagal
+            // menyimpan (user_id kosong) dan tidak menyimpan itemnya.
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                Tables\Actions\CreateAction::make()
+                    ->url(fn () => InvoiceResource::getUrl('create', ['deal' => $this->getOwnerRecord()->getKey(), 'type' => 'estimate'])),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->url(fn (Invoice $record) => InvoiceResource::getUrl('edit', ['record' => $record])),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([

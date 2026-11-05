@@ -321,9 +321,12 @@ class InvoiceResource extends BaseInvoiceResource
                     )
                         ->label('Tipe Invoice')
                         ->required()
-                        ->default('sale')
+                        ->default(fn () => Request::input('type') === 'estimate' ? 'estimate' : 'sale')
                         ->searchable()
                         ->live()
+                        // Nomor mengikuti tipe saat membuat: Proforma #PI, Invoice #SC.
+                        // Dulu Proforma yang dibuat dari sini tetap bernomor #SC.
+                        ->afterStateUpdated(fn (Forms\Set $set, $state, ?Invoice $record) => $record ? null : $set('uuid', Invoice::generateUuid((string) $state)))
                         ->options([
 
                             'sale' =>

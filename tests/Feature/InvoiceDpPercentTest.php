@@ -108,11 +108,16 @@ class InvoiceDpPercentTest extends TestCase
     {
         $deal = Deal::forceCreate(['nama_perusahaan' => 'PT Deal DP', 'nama_pic' => 'Rina', 'alamat' => 'Jl. Tes']);
 
+        // Tab Invoice di Deal membuka form menu Invoice, dengan kolom persen yang sama.
         Livewire::test(InvoicesRelationManager::class, ['ownerRecord' => $deal, 'pageClass' => EditDeal::class])
-            ->mountTableAction('create')
-            ->setTableActionData(['type_payment' => 'dp', 'dp_persen' => 150])
-            ->callMountedTableAction()
-            ->assertHasTableActionErrors(['dp_persen' => 'max']);
+            ->assertTableActionHasUrl('create', \App\Filament\Resources\InvoiceResource::getUrl('create', ['deal' => $deal->id, 'type' => 'estimate']));
+
+        Livewire::withQueryParams(['deal' => $deal->id])
+            ->test(CreateInvoice::class)
+            ->set('data.type_payment', 'dp')
+            ->set('data.dp_persen', 150)
+            ->call('create')
+            ->assertHasFormErrors(['dp_persen' => 'max']);
     }
 
     private function createForm()
