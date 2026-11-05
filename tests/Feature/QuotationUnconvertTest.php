@@ -62,7 +62,9 @@ class QuotationUnconvertTest extends TestCase
             ->callTableAction('ConvertToEstimate', $quotation);
 
         $this->assertSame('Converted', $quotation->fresh()->status);
+        // Proforma baru memakai lagi nomor yang dihapus.
         $this->assertNotSame($proforma->id, $this->proformaOf($quotation)->id);
+        $this->assertSame($proforma->uuid, $this->proformaOf($quotation)->uuid);
     }
 
     public function test_proforma_yang_sudah_jadi_invoice_tidak_dihapus(): void

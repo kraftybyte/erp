@@ -58,7 +58,7 @@ class QuotationUnconvert
     }
 
     /**
-     * @return Collection<int, Invoice> proforma yang dihapus
+     * @return Collection<int, string> nomor proforma yang dihapus (sebelum diberi tanda BATAL)
      */
     public static function run(Quotation $quotation, string $status): Collection
     {
@@ -81,10 +81,11 @@ class QuotationUnconvert
                 throw new QuotationUnconvertException("Status {$status} tidak dikenal.");
             }
 
+            $numbers = $invoices->pluck('uuid');
             $invoices->each->delete();
             $quotation->update(['status' => $status]);
 
-            return $invoices;
+            return $numbers;
         });
     }
 }
