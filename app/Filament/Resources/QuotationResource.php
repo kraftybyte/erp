@@ -22,6 +22,8 @@ use Filament\Tables\Actions\Action;
 use Filament\Notifications\Notification;
 use App\Models\Invoice;
 use App\Models\InvoicesItem;
+use App\Exceptions\QuotationUnconvertException;
+use App\Services\QuotationUnconvert;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -536,6 +538,57 @@ class QuotationResource extends Resource
                         Notification::make()
                             ->title('Quotation Converted to Proforma Invoice')
                             ->body('Proforma Invoice successfully created!')
+                            ->success()
+                            ->send();
+                    }),
+
+                /*
+                | Batalkan konversi: proforma yang belum dibayar/dikonversi dihapus
+                | dan quotation bisa diedit lalu dikonversi ulang. Menghapus invoice,
+                | jadi hanya untuk yang boleh menghapus invoice.
+                */
+                Action::make('unconvert')
+                    ->tooltip('Batalkan konversi')
+                    ->icon('heroicon-m-arrow-uturn-left')
+                    ->iconButton()
+                    ->color('warning')
+                    ->visible(fn (Quotation $record) => $record->status === 'Converted' && auth()->user()?->can('delete_invoice'))
+                    ->modalHeading('Batalkan konversi quotation?')
+                    ->modalDescription(function (Quotation $record) {
+                        $invoices = QuotationUnconvert::invoices($record);
+
+                        if ($blockers = QuotationUnconvert::blockers($record, $invoices)) {
+                            return 'Tidak bisa dibatalkan: ' . implode(' ', $blockers);
+                        }
+
+                        return ($invoices->isEmpty()
+                            ? 'Proforma dari quotation ini sudah tidak ada.'
+                            : 'Proforma ' . $invoices->map(fn (Invoice $invoice) => $invoice->uuid . ' (' . \App\Helpers\Money::rupiah($invoice->grand_total) . ')')->implode(', ') . ' akan dihapus.')
+                            . ' Quotation bisa diedit lalu dikonversi ulang.';
+                    })
+                    ->form(fn (Quotation $record) => QuotationUnconvert::blockers($record) ? [] : [
+                        Forms\Components\Select::make('status')
+                            ->label('Status quotation menjadi')
+                            ->options(QuotationUnconvert::STATUSES)
+                            ->default('Approved')
+                            ->required()
+                            ->native(false),
+                    ])
+                    ->modalSubmitAction(fn ($action, Quotation $record) => QuotationUnconvert::blockers($record) ? false : $action->label('Batalkan konversi'))
+                    ->action(function (Quotation $record, array $data) {
+                        try {
+                            // Form kosong bila ada penghalang; run() lalu menolak dengan alasannya.
+                            $deleted = QuotationUnconvert::run($record, $data['status'] ?? '');
+                        } catch (QuotationUnconvertException $e) {
+                            Notification::make()->title('Konversi tidak bisa dibatalkan')->body($e->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Konversi dibatalkan')
+                            ->body(($deleted->isEmpty() ? '' : 'Proforma ' . $deleted->pluck('uuid')->implode(', ') . ' dihapus. ')
+                                . "Status quotation sekarang {$data['status']}.")
                             ->success()
                             ->send();
                     }),
