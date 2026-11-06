@@ -1366,6 +1366,45 @@ class TelegramBotTest extends TestCase
         $this->assertSame('expense', Draft::load($this->chatId)->type);
     }
 
+    public function test_struk_tidak_terbaca_karena_saldo_gemini_habis_diberi_tahu(): void
+    {
+        Storage::fake('public');
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('nota-saldo'));
+
+        $this->assertStringContainsString('📎 Struk diterima.', $this->lastText());
+        $this->assertStringContainsString('Baca struk otomatis sedang tidak tersedia: Saldo prabayar Gemini habis', $this->lastText());
+    }
+
+    public function test_struk_yang_isinya_tidak_terbaca_diberi_tahu(): void
+    {
+        Storage::fake('public');
+        $this->user();
+        $this->fakeApis(gemini: ['amount' => null, 'name' => null, 'description' => null, 'date_text' => null, 'date' => null, 'category' => null, 'items' => []]);
+
+        $this->send($this->photoUpdate('nota-buram'));
+
+        $this->assertStringContainsString('Isi struk tidak terbaca otomatis', $this->lastText());
+    }
+
+    public function test_foto_dengan_keterangan_tetap_dibaca_rinciannya(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        // Dulu hanya totalnya yang terbaca bila foto dikirim dengan keterangan.
+        $this->send($this->photoUpdate('nota-caption', "realisasi #{$advance->id}"));
+
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
+        $this->assertSame([['name' => 'Kabel HDMI', 'qty' => 2, 'price' => 125_000], ['name' => 'Lakban', 'qty' => 1, 'price' => 15_000]], Draft::load($this->chatId)->lineItems());
+    }
+
     public function test_upload_lalu_ketik_realisasi_langsung_ke_pilihan_advance(): void
     {
         Storage::fake('public');

@@ -343,10 +343,18 @@ class TelegramBot
             return;
         }
 
-        // Foto dengan caption: caption-nya keterangan pengajuan baru.
+        // Foto dengan caption: caption-nya keterangan pengajuan baru. Struknya
+        // tetap dibaca utuh (toko, rincian item) seperti foto tanpa caption;
+        // dulu hanya totalnya. Caption lebih dipercaya untuk jenis, project,
+        // nominal, dan keterangan.
         if ($text !== '') {
             $draft = Draft::start($type);
             $draft->addReceipt($file, sameAlbum: false);
+
+            if (! $this->readFirstReceipt($chatId, $draft) && $this->gemini->isConfigured() && GeminiService::lastError()) {
+                $this->telegram->sendMessage($chatId, $this->readFailureNote());
+            }
+
             $this->startDraft($chatId, $user, $type ? $argument : $text, $type, $draft);
 
             return;
@@ -377,7 +385,20 @@ class TelegramBot
         }
 
         $draft->awaiting = 'details';
-        $this->showDetailsPrompt($chatId, $draft);
+        $this->showDetailsPrompt($chatId, $draft, $this->gemini->isConfigured() ? $this->readFailureNote() : null);
+    }
+
+    /**
+     * Kenapa struk tidak terbaca otomatis. Dulu bot diam-diam meminta
+     * keterangan, sehingga saldo Gemini yang habis tidak ketahuan.
+     */
+    private function readFailureNote(): string
+    {
+        $reason = GeminiService::lastError();
+
+        return $reason
+            ? '⚠️ Baca struk otomatis sedang tidak tersedia: ' . e($reason) . ' Beri tahu admin.'
+            : '⚠️ Isi struk tidak terbaca otomatis. Foto ulang lebih jelas, atau tulis keterangannya.';
     }
 
     /**
@@ -563,7 +584,7 @@ class TelegramBot
         $this->proceed($chatId, $user, $draft, $draft->panelMessageId);
     }
 
-    private function showDetailsPrompt(int|string $chatId, Draft $draft): void
+    private function showDetailsPrompt(int|string $chatId, Draft $draft, ?string $readFailure = null): void
     {
         $count = $draft->receiptCount();
 
@@ -572,6 +593,7 @@ class TelegramBot
             $draft->panelMessageId,
             $draft,
             ($count > 1 ? "📎 {$count} struk diterima." : '📎 Struk diterima.')
+                . ($readFailure ? "\n{$readFailure}" : '')
                 . "\n\nSekarang tulis keterangannya, misalnya:\n• <i>expense 150rb grab ke kantor klien nestory</i>\n• <i>realisasi sewa alat shooting nestory</i>",
             [[$this->button('❌ Batal', $draft, 'cancel')]]
         );
