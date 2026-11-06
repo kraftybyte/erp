@@ -16,6 +16,14 @@ class GeminiService
     /** @var callable|null handler cURL bersama: struk album dibaca berurutan, koneksinya dipakai ulang */
     private static $handler = null;
 
+    /** Alasan permintaan terakhir gagal, untuk ditampilkan ke pengguna; null bila berhasil. */
+    private static ?string $lastError = null;
+
+    public static function lastError(): ?string
+    {
+        return self::$lastError;
+    }
+
     public function isConfigured(): bool
     {
         return filled(IntegrationSettings::geminiApiKey());
@@ -44,10 +52,14 @@ class GeminiService
             return 'Server Google tidak bisa dihubungi dari server ini.';
         }
 
+        return $response->successful() ? null : self::explain($response, $model);
+    }
+
+    private static function explain(Response $response, string $model): string
+    {
         $message = (string) $response->json('error.message');
 
         return match (true) {
-            $response->successful()        => null,
             $response->status() === 402    => 'Saldo prabayar Gemini habis. Isi ulang di AI Studio → Billing.',
             $response->status() === 404    => "Model {$model} tidak ditemukan atau tidak tersedia untuk key ini.",
             $response->status() === 429    => 'Batas pemakaian Gemini terlampaui. Coba lagi nanti, atau naikkan tier di AI Studio.',
@@ -102,8 +114,11 @@ class GeminiService
 
     private function generate(string $prompt, array $generationConfig = [], int $timeout = 30, array $files = []): ?Response
     {
+        self::$lastError = null;
+
         if (! $this->isConfigured()) {
             Log::warning('API key Gemini belum diisi (Settings → Integrasi)');
+            self::$lastError = 'API key Gemini belum diisi.';
 
             return null;
         }
@@ -126,6 +141,7 @@ class GeminiService
                 ->post(sprintf(self::ENDPOINT, IntegrationSettings::geminiModel()), $payload);
         } catch (ConnectionException $e) {
             Log::error('Gemini API tidak bisa dihubungi', ['error' => $e->getMessage()]);
+            self::$lastError = 'Server Google tidak bisa dihubungi dari server ini.';
 
             return null;
         }
@@ -135,6 +151,7 @@ class GeminiService
                 'status' => $response->status(),
                 'body'   => $response->body(),
             ]);
+            self::$lastError = self::explain($response, IntegrationSettings::geminiModel());
 
             return null;
         }
