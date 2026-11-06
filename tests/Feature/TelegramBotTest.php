@@ -597,20 +597,17 @@ class TelegramBotTest extends TestCase
         $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
         $this->fakeApis(gemini: $this->receiptRead());
 
+        // Satu-satunya advance terbuka: struk langsung jadi draft realisasinya.
         $this->send($this->photoUpdate('nota-1'));
 
-        $this->assertStringContainsString('Isi struk</b> · Toko Jaya Elektrik', $this->lastText());
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString("💸 Advance #{$advance->id}: <b>Advance Booth Pameran</b>", $this->lastText());
         $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
-        $this->assertStringContainsString('Total: <b>Rp 265.000</b>', $this->lastText());
-        $this->assertContains("🧾 #{$advance->id} · Advance Booth Pameran", $this->lastButtons());
-        $this->assertStringContainsString("🧾 <b>Advance terbuka</b>\n#{$advance->id} · <b>Advance Booth Pameran</b>", $this->lastText());
-        $this->assertContains('💰 Expense baru — sudah bayar sendiri', $this->lastButtons());
+        $this->assertStringContainsString('💰 Nominal: <b>Rp 265.000</b>', $this->lastText());
+        $this->assertStringContainsString('Struk/invoice dianggap realisasi advance', $this->lastText());
+        $this->assertContains('💰 Jadikan Expense', $this->lastButtons());
 
         $draft = Draft::load($this->chatId);
-        $this->send($this->tap("{$draft->id}:to:realisasi-{$advance->id}"));
-        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
-        $this->assertStringContainsString('Rincian', $this->lastText());
-
         $this->send($this->tap("{$draft->id}:submit:"));
 
         $item = Realisasi::where('advance_id', $advance->id)->with('items.files')->sole()->items->sole();
@@ -1003,11 +1000,15 @@ class TelegramBotTest extends TestCase
         $advance->update(['keterangan_advance' => 'Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport']);
         \App\Models\ItemAdvance::create(['advance_id' => $advance->id, 'name' => 'Sewa lighting', 'description' => '-', 'quantity' => 1, 'price' => 1_500_000]);
         \App\Models\ItemAdvance::create(['advance_id' => $advance->id, 'name' => 'Konsumsi kru', 'description' => '-', 'quantity' => 1, 'price' => 500_000]);
+        // Dua advance terbuka: bot menanyakan advance yang mana.
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
         $this->fakeApis(gemini: $this->receiptRead());
 
         $this->send($this->photoUpdate('nota-lengkap'));
 
         $text = $this->lastText();
+        $this->assertStringContainsString('Realisasi advance yang mana?', $text);
+        $this->assertContains('💰 Bukan realisasi — Expense baru', $this->lastButtons());
         $this->assertStringContainsString("#{$advance->id} · <b>Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport</b>", $text);
         $this->assertStringContainsString('Booth Pameran', $text);
         $this->assertStringContainsString('🏷 Project Support · 🗓 ' . today()->locale('id')->translatedFormat('j M Y'), $text);
@@ -1317,6 +1318,52 @@ class TelegramBotTest extends TestCase
 
         $this->assertStringContainsString('sudah pernah dikirim', $this->lastText());
         $this->assertSame(1, Expense::where('user_id', $user->id)->count());
+    }
+
+    public function test_foto_dengan_keterangan_tanpa_jenis_didahulukan_sebagai_realisasi(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $advance = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('nota-tanpa-jenis', 'sewa lighting 265rb belamy'));
+
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString("Advance #{$advance->id}", $this->lastText());
+        $this->assertStringContainsString('Struk/invoice dianggap realisasi advance', $this->lastText());
+
+        // Ternyata dibayar sendiri: satu tombol jadi expense.
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:type:expense"));
+        $this->assertSame('expense', Draft::load($this->chatId)->type);
+        $this->assertStringNotContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_foto_untuk_project_tanpa_advance_terbuka_tidak_dianggap_realisasi(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('nota-nestory', 'grab 50rb nestory'));
+
+        $this->assertNotSame('realisasi', Draft::load($this->chatId)->type);
+        $this->assertStringNotContainsString('Draft Realisasi', $this->lastText());
+    }
+
+    public function test_foto_dengan_kata_expense_tetap_expense_walau_ada_advance(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('nota-expense', 'expense grab 50rb belamy'));
+
+        $this->assertSame('expense', Draft::load($this->chatId)->type);
     }
 
     public function test_satu_struk_boleh_untuk_realisasi_beberapa_advance(): void

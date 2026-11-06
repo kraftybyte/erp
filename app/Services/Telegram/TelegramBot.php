@@ -191,7 +191,26 @@ class TelegramBot
             $draft->type = $type ?? $draft->type;
         }
 
+        // Struk/invoice yang diunggah hampir selalu laporan pemakaian advance.
+        // AI cenderung menebak expense (uangnya sudah keluar), jadi tanpa jenis
+        // yang ditulis user, realisasi didahulukan selama ada advance terbuka
+        // untuk project-nya. Expense tetap satu tombol di draft realisasi.
+        if (! $draft->typeConfirmed && $draft->type !== 'advance' && $draft->receiptCount() > 0 && $this->realisasiLikely($user, $draft)) {
+            $draft->type = 'realisasi';
+        }
+
         $this->proceed($chatId, $user, $draft);
+    }
+
+    /**
+     * Ada advance terbuka yang bisa jadi sumber dana struk ini: untuk project
+     * yang disebut, atau advance mana pun bila project-nya tidak disebut.
+     */
+    private function realisasiLikely(User $user, Draft $draft): bool
+    {
+        $open = $this->advances->realizableBy($user);
+
+        return $draft->projectId ? $open->contains('project_id', $draft->projectId) : $open->isNotEmpty();
     }
 
     private function draftAwaitingDetails(int|string $chatId): ?Draft
@@ -368,6 +387,18 @@ class TelegramBot
     {
         $open = $this->advances->realizableBy($user);
 
+        // Struk/invoice yang diunggah hampir selalu realisasi: satu-satunya
+        // advance terbuka langsung dipakai. Draft realisasinya tetap punya
+        // tombol "Jadikan Expense" dan "Advance lain", dan keterangan yang
+        // diketik sesudahnya masih masuk ke struk ini (awaiting tetap 'target').
+        if ($open->count() === 1 && ! $this->advances->blockedReason($open->first())) {
+            $draft->type      = 'realisasi';
+            $draft->advanceId = $open->first()->id;
+            $this->proceed($chatId, $user, $draft, $draft->panelMessageId);
+
+            return;
+        }
+
         if ($draft->isMulti()) {
             $count = $draft->receiptCount();
             $text  = "📄 <b>{$count} struk terbaca</b>\n\n" . $this->receiptLines($draft, withItems: true)
@@ -385,7 +416,7 @@ class TelegramBot
         $shown = $open->take(4)->values();
 
         if ($shown->isNotEmpty()) {
-            $text .= "\n\n🧾 <b>Advance terbuka</b>" . ($open->count() > 4 ? ' (4 terbaru dari ' . $open->count() . ')' : '')
+            $text .= "\n\n🧾 <b>Realisasi advance yang mana?</b>" . ($open->count() > 4 ? ' (4 terbaru dari ' . $open->count() . ')' : '')
                 . "\n" . $this->advanceList($shown, $user);
         }
 
@@ -402,7 +433,7 @@ class TelegramBot
             $rows[] = [$this->button('🧾 Advance lain (' . ($open->count() - 4) . ' lagi)…', $draft, 'to', 'realisasi')];
         }
 
-        $rows[] = [$this->button('💰 Expense baru — sudah bayar sendiri', $draft, 'to', 'expense')];
+        $rows[] = [$this->button(($open->isNotEmpty() ? '💰 Bukan realisasi — Expense baru' : '💰 Expense baru — sudah bayar sendiri'), $draft, 'to', 'expense')];
         $rows[] = [$this->button('💸 Advance baru — minta dana', $draft, 'to', 'advance')];
         $rows[] = [$this->button('❌ Batal', $draft, 'cancel')];
 
@@ -411,7 +442,7 @@ class TelegramBot
             $draft->panelMessageId,
             $draft,
             $text . "\n\n" . ($open->isNotEmpty()
-                ? 'Masukkan ke mana? Pilih nomor advance bila dibayar dari advance tersebut.'
+                ? 'Pilih advance yang dananya dipakai untuk struk ini. Bila dibayar sendiri, pilih <b>Expense baru</b>.'
                 : 'Masukkan ke mana?')
                 . "\nAtau tulis keterangannya sendiri, misalnya <i>expense grab ke klien nestory</i>.",
             $rows
@@ -878,7 +909,10 @@ class TelegramBot
             case 'adv':
                 $draft->advanceId         = $this->advances->find($user, (int) $value)?->id;
                 $draft->advanceCandidates = [];
-                // Pencarian advance (Finance/Director) selesai begitu salah satu dipilih.
+                // Memilih advance berarti realisasi, juga bila jenisnya tadi masih tebakan.
+                $draft->type          = 'realisasi';
+                $draft->typeConfirmed = true;
+                // Pencarian advance selesai begitu salah satu dipilih.
                 $draft->awaiting = $draft->awaiting === 'advance' ? null : $draft->awaiting;
                 break;
 
@@ -1314,6 +1348,7 @@ class TelegramBot
                     . ($after < -RealisasiService::EXACT_MATCH_TOLERANCE
                         ? '⚠️ Melebihi sisa advance ' . $this->rupiah(abs($after)) . ". Butuh persetujuan Finance, dan realisasi berikutnya ditahan sampai disetujui.\n"
                         : '')
+                    . $this->realisasiGuessNote($draft)
                     . 'Periksa nominal tiap struk, lalu tekan <b>Kirim</b>.',
                 [
                     [$this->button("✅ Kirim {$count} struk", $draft, 'submit')],
@@ -1350,6 +1385,7 @@ class TelegramBot
                     ? '⚠️ Melebihi sisa advance ' . $this->rupiah(abs($after)) . ". Butuh persetujuan Finance, dan realisasi berikutnya ditahan sampai disetujui.\n"
                     : '')
                 . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang sebagai bukti untuk Finance.\n")
+                . $this->realisasiGuessNote($draft)
                 . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             [
                 [$this->button('✅ Kirim', $draft, 'submit')],
@@ -1390,6 +1426,11 @@ class TelegramBot
 
         if ($mode !== 'all') {
             $rows[] = [$this->button('📋 Semua advance terbuka', $draft, 'advlist', 0)];
+        }
+
+        // Realisasi yang masih tebakan (struk diunggah tanpa kata "realisasi").
+        if (! $draft->typeConfirmed) {
+            $rows[] = [$this->button('💰 Bukan realisasi — Expense baru', $draft, 'type', 'expense')];
         }
         $rows[] = [$this->button('❌ Batal', $draft, 'cancel')];
 
@@ -1489,6 +1530,14 @@ class TelegramBot
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Draft realisasi yang jenisnya tebakan: struk diunggah tanpa kata "realisasi".
+     */
+    private function realisasiGuessNote(Draft $draft): string
+    {
+        return $draft->typeConfirmed ? '' : "ℹ️ Struk/invoice dianggap realisasi advance. Bila dibayar sendiri, pilih <b>💰 Jadikan Expense</b>.\n";
     }
 
     private function realisasiDetails(Draft $draft, Advance $advance, float $remaining, User $user): string
