@@ -1366,6 +1366,106 @@ class TelegramBotTest extends TestCase
         $this->assertSame('expense', Draft::load($this->chatId)->type);
     }
 
+    public function test_upload_lalu_ketik_realisasi_langsung_ke_pilihan_advance(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-lalu-ketik'));
+        $this->send($this->textUpdate('Realisasi'));
+
+        $this->assertSame('realisasi', Draft::load($this->chatId)->type);
+        $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
+        $this->assertStringContainsString('<b>Advance Booth Pameran</b>', $this->lastText());
+        $this->assertStringContainsString('<b>Advance Video Profile</b>', $this->lastText());
+    }
+
+    public function test_listadvance_menampilkan_advance_terbuka_dengan_id_per_halaman(): void
+    {
+        $user = $this->user();
+        $old  = $this->openAdvance($user, $this->project('PT Lama Sekali', 'Event Lama'));
+
+        foreach (range(1, 8) as $n) {
+            $this->openAdvance($user, $this->project("PT Klien {$n}", "Project {$n}"));
+        }
+
+        $other = $this->openAdvance($this->employee('Budi', 'Santoso'), $this->project('PT Orang Lain', 'Booth Lain'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('/listadvance'));
+
+        $this->assertStringContainsString('📋 <b>Advance terbuka milikmu</b> · 9 advance · halaman 1 dari 2', $this->lastText());
+        $this->assertStringContainsString('<b>Advance Project 8</b>', $this->lastText());
+        $this->assertStringContainsString('💸 Cair Rp 2.000.000 · sisa <b>Rp 2.000.000</b>', $this->lastText());
+        $this->assertStringNotContainsString('PT Orang Lain', $this->lastText());
+        $this->assertContains('Berikutnya ➡️', $this->lastButtons());
+
+        // Halaman berikutnya tanpa draft.
+        $this->send($this->tap('menu:advances:1'));
+        $this->assertStringContainsString("#{$old->id} · <b>Advance Event Lama</b>", $this->lastText());
+        $this->assertStringContainsString('halaman 2 dari 2', $this->lastText());
+
+        // Cari lewat kata atau ID; advance orang lain tetap tidak terlihat.
+        $this->send($this->textUpdate('/listadvance lama'));
+        $this->assertStringContainsString("#{$old->id} · <b>Advance Event Lama</b>", $this->lastText());
+        $this->assertStringContainsString('· 1 advance', $this->lastText());
+
+        $this->send($this->textUpdate("/listadvance {$other->id}"));
+        $this->assertStringContainsString('Tidak ada advance terbuka milikmu yang cocok', $this->lastText());
+    }
+
+    public function test_listadvance_finance_melihat_semua_advance(): void
+    {
+        $budi    = $this->employee('Budi', 'Santoso');
+        $advance = $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->user()->assignRole('Finance');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate("/listadvance {$advance->id}"));
+
+        $this->assertStringContainsString("#{$advance->id} · <b>Advance Booth Pameran</b>", $this->lastText());
+        $this->assertStringContainsString('👤 Budi Santoso', $this->lastText());
+    }
+
+    public function test_realisasi_dengan_id_advance_langsung_memilih_advance_itu(): void
+    {
+        Storage::fake('public');
+        $user   = $this->user();
+        $target = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        // Tanpa nama project pun: ID-nya langsung memilih advance, bukan daftar.
+        $this->send($this->photoUpdate('nota-id', "realisasi #{$target->id} parkir 50rb"));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame($target->id, $draft->advanceId);
+        $this->assertSame(50_000, $draft->amount, 'ID advance tidak terbaca sebagai nominal.');
+        $this->assertStringContainsString('Draft Realisasi', $this->lastText());
+        $this->assertStringContainsString("Advance #{$target->id}", $this->lastText());
+    }
+
+    public function test_id_advance_yang_tidak_ada_diberi_tahu(): void
+    {
+        $user = $this->user();
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->textUpdate('realisasi #999999999 parkir 50rb'));
+
+        $texts = collect(Http::recorded())
+            ->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => str_ends_with($request->url(), '/sendMessage'))
+            ->map(fn (Request $request) => $request->data()['text'])
+            ->implode("\n");
+        $this->assertStringContainsString('Advance #999999999 tidak ada di daftar advance terbuka milikmu', $texts);
+        $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
+    }
+
     public function test_satu_struk_boleh_untuk_realisasi_beberapa_advance(): void
     {
         Storage::fake('public');
