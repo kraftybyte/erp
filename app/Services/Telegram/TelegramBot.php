@@ -150,6 +150,7 @@ class TelegramBot
         match ($command) {
             'expense', 'advance', 'realisasi' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
             'status'             => $this->sendStatus($chatId, $user),
+            'listadvance', 'daftaradvance' => $this->sendAdvanceList($chatId, $user, query: $argument),
             'batal'              => $this->cancel($chatId),
             null                 => $this->handleText($chatId, $user, $text),
             default              => $this->sendHelp($chatId),
@@ -184,6 +185,8 @@ class TelegramBot
         // Perintah /expense, /advance, /realisasi adalah pilihan user sendiri.
         $draft->typeConfirmed = $draft->typeConfirmed || $type !== null;
 
+        [$text, $reference, $unknownId] = $this->advanceReference($user, $text);
+
         if ($text !== '') {
             $this->telegram->typing($chatId);
             $draft->fill($this->parser->parse($text, $this->projectChoices(), $this->receiptForAi($draft)));
@@ -199,7 +202,38 @@ class TelegramBot
             $draft->type = 'realisasi';
         }
 
+        // "realisasi #12": ID dari /listadvance langsung memilih advance itu.
+        // Jenis lain yang ditulis user sendiri ("expense ... #12") tetap dipakai.
+        if ($reference && (! $draft->typeConfirmed || $draft->type === 'realisasi')) {
+            $draft->type              = 'realisasi';
+            $draft->typeConfirmed     = true;
+            $draft->advanceId         = $reference->id;
+            $draft->advanceCandidates = [];
+        } elseif ($unknownId && $draft->type === 'realisasi') {
+            $this->telegram->sendMessage($chatId, "⚠️ Advance #{$unknownId} tidak ada di daftar advance terbuka" . (OpenAdvances::seesAll($user) ? '' : ' milikmu') . '. Pilih dari daftar, atau cek lewat /listadvance.');
+        }
+
         $this->proceed($chatId, $user, $draft);
+    }
+
+    /**
+     * "#12" di pesan: ID advance terbuka (dari /listadvance atau daftar pilihan).
+     * Dibuang dari teks supaya tidak terbaca sebagai nominal atau keterangan.
+     * ID yang bukan advance terbuka user ini dibiarkan di teks.
+     *
+     * @return array{0: string, 1: ?Advance, 2: ?int} teks, advance-nya, atau ID yang tidak ditemukan
+     */
+    private function advanceReference(User $user, string $text): array
+    {
+        if (! preg_match('/(?<![\w#])#(\d{1,9})\b/u', $text, $match)) {
+            return [$text, null, null];
+        }
+
+        $advance = $this->advances->find($user, (int) $match[1]);
+
+        return $advance
+            ? [trim(preg_replace('/\s+/u', ' ', str_replace($match[0], ' ', $text))), $advance, null]
+            : [$text, null, (int) $match[1]];
     }
 
     /**
@@ -886,6 +920,17 @@ class TelegramBot
         $messageId = $callback['message']['message_id'];
 
         [$draftId, $action, $value] = array_pad(explode(':', (string) ($callback['data'] ?? ''), 3), 3, '');
+
+        // Halaman /listadvance: tidak terikat draft.
+        if ($draftId === 'menu') {
+            $this->telegram->answerCallback($callback['id']);
+
+            if (($user = $this->userFor($chatId)) && $action === 'advances') {
+                $this->sendAdvanceList($chatId, $user, (int) $value, messageId: $messageId);
+            }
+
+            return;
+        }
 
         $user  = $this->userFor($chatId);
         $draft = Draft::load($chatId);
@@ -2014,6 +2059,54 @@ class TelegramBot
         $this->telegram->sendMessage($chatId, 'Halo, <b>' . e($this->name($user)) . "</b>!\n\n" . $this->helpText());
     }
 
+    /**
+     * /listadvance [kata kunci]: advance terbuka beserta ID-nya, per halaman.
+     * Karyawan melihat advance miliknya; Finance/Director/super_admin semua.
+     * ID-nya dipakai di pesan realisasi ("realisasi #12 ...").
+     */
+    private function sendAdvanceList(int|string $chatId, User $user, int $page = 0, string $query = '', ?int $messageId = null): void
+    {
+        $query = trim($query);
+        $all   = $query === '' ? $this->advances->realizableBy($user) : $this->advances->search($user, $query);
+        $mine  = OpenAdvances::seesAll($user) ? '' : ' milikmu';
+
+        if ($all->isEmpty()) {
+            $this->show($chatId, $messageId, $query === ''
+                ? "Belum ada advance terbuka{$mine}. Advance muncul di sini setelah berstatus <b>Dibayarkan</b>."
+                : 'Tidak ada advance terbuka' . $mine . ' yang cocok dengan <i>' . e($query) . '</i>. Ketik /listadvance untuk melihat semuanya.');
+
+            return;
+        }
+
+        $pages = (int) ceil($all->count() / self::ADVANCES_PER_PAGE);
+        $page  = min(max($page, 0), $pages - 1);
+        $shown = $all->slice($page * self::ADVANCES_PER_PAGE, self::ADVANCES_PER_PAGE)->values();
+
+        $heading = $query === ''
+            ? "📋 <b>Advance terbuka{$mine}</b> · {$all->count()} advance" . ($pages > 1 ? ' · halaman ' . ($page + 1) . " dari {$pages}" : '')
+            : '📋 <b>Advance yang cocok dengan <i>' . e($query) . "</i></b> · {$all->count()} advance";
+
+        // Hasil pencarian tidak diberi halaman: data tombol Telegram maks. 64 byte.
+        $buttons = $query === '' && $pages > 1
+            ? [array_values(array_filter([
+                $page > 0 ? ['text' => '⬅️ Sebelumnya', 'callback_data' => 'menu:advances:' . ($page - 1)] : null,
+                $page < $pages - 1 ? ['text' => 'Berikutnya ➡️', 'callback_data' => 'menu:advances:' . ($page + 1)] : null,
+            ]))]
+            : [];
+
+        $example = $shown->first()->id;
+
+        $this->show(
+            $chatId,
+            $messageId,
+            "{$heading}\n\n" . $this->advanceList($shown, $user)
+                . ($query !== '' && $all->count() > $shown->count() ? "\n\n" . $shown->count() . ' teratas ditampilkan; ketik kata yang lebih spesifik.' : '')
+                . "\n\nUntuk realisasi, kirim foto struk dengan keterangan <i>realisasi #{$example}</i>."
+                . "\nCari: <i>/listadvance belamy</i> atau <i>/listadvance {$example}</i>.",
+            $buttons
+        );
+    }
+
     private function sendStatus(int|string $chatId, User $user): void
     {
         $expenses = Expense::where('user_id', $user->id)->latest('id')->limit(5)->get()
@@ -2079,7 +2172,7 @@ class TelegramBot
         • <i>advance 2jt beli properti shooting</i>
         • <i>realisasi 350rb sewa lighting nestory</i>
 
-        <i>Realisasi</i> = laporan pemakaian advance yang sudah dibayarkan.
+        <i>Realisasi</i> = laporan pemakaian advance yang sudah dibayarkan. Tulis ID advance-nya untuk langsung memilihnya, misalnya <i>realisasi #12 sewa lighting</i>; ID ada di /listadvance.
 
         Bot mengenali kategori, project, dan advance-nya, lalu menanyakan yang kurang. Struk ikut tersimpan di ERP, jadi tidak perlu upload lagi.
         Belum ada yang tersimpan sampai kamu menekan <b>Kirim</b>.
@@ -2088,6 +2181,7 @@ class TelegramBot
         /expense – ajukan expense (reimburse)
         /advance – ajukan advance (uang muka)
         /realisasi – laporkan pemakaian advance
+        /listadvance – daftar advance terbuka & ID-nya
         /status – pengajuan terakhir & progres advance
         /batal – batalkan draft
         HTML;
