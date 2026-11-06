@@ -602,8 +602,8 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Isi struk</b> · Toko Jaya Elektrik', $this->lastText());
         $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
         $this->assertStringContainsString('Total: <b>Rp 265.000</b>', $this->lastText());
-        $this->assertContains('🧾 1. Advance Booth Pameran', $this->lastButtons());
-        $this->assertStringContainsString("🧾 <b>Advance terbuka</b>\n1. <b>Advance Booth Pameran</b>", $this->lastText());
+        $this->assertContains("🧾 #{$advance->id} · Advance Booth Pameran", $this->lastButtons());
+        $this->assertStringContainsString("🧾 <b>Advance terbuka</b>\n#{$advance->id} · <b>Advance Booth Pameran</b>", $this->lastText());
         $this->assertContains('💰 Expense baru — sudah bayar sendiri', $this->lastButtons());
 
         $draft = Draft::load($this->chatId);
@@ -845,7 +845,7 @@ class TelegramBotTest extends TestCase
 
         $this->assertStringContainsString('minta advance baru?', $this->lastText());
         $this->assertStringContainsString('📁 PT Belamy Indonesia', $this->lastText());
-        $this->assertStringContainsString('1. <b>Advance Booth Pameran</b>', $this->lastText());
+        $this->assertStringContainsString("#{$advance->id} · <b>Advance Booth Pameran</b>", $this->lastText());
         $this->assertStringContainsString('sisa <b>Rp 2.000.000</b>', $this->lastText());
 
         $draft = Draft::load($this->chatId);
@@ -986,13 +986,13 @@ class TelegramBotTest extends TestCase
     public function test_director_melihat_advance_karyawan_saat_kirim_foto(): void
     {
         $budi = $this->employee('Budi', 'Santoso');
-        $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $advance = $this->openAdvance($budi, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
         $this->user()->assignRole('Director');
         $this->fakeApis(gemini: $this->receiptRead());
 
         $this->send($this->photoUpdate('nota-dir'));
 
-        $this->assertContains('🧾 1. Advance Booth Pameran (Budi)', $this->lastButtons());
+        $this->assertContains("🧾 #{$advance->id} · Advance Booth Pameran (Budi)", $this->lastButtons());
         $this->assertStringContainsString('👤 Budi Santoso', $this->lastText());
     }
 
@@ -1008,12 +1008,12 @@ class TelegramBotTest extends TestCase
         $this->send($this->photoUpdate('nota-lengkap'));
 
         $text = $this->lastText();
-        $this->assertStringContainsString('1. <b>Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport</b>', $text);
+        $this->assertStringContainsString("#{$advance->id} · <b>Advance produksi booth pameran Jakarta Fair hari kedua beserta konsumsi kru dan transport</b>", $text);
         $this->assertStringContainsString('Booth Pameran', $text);
         $this->assertStringContainsString('🏷 Project Support · 🗓 ' . today()->locale('id')->translatedFormat('j M Y'), $text);
         $this->assertStringContainsString('📝 Rincian: Sewa lighting, Konsumsi kru', $text);
         $this->assertStringContainsString('💸 Cair Rp 2.000.000 · sisa <b>Rp 2.000.000</b>', $text);
-        $this->assertContains('🧾 1. Advance produksi booth…', $this->lastButtons());
+        $this->assertContains("🧾 #{$advance->id} · Advance produksi booth…", $this->lastButtons());
     }
 
     public function test_finance_mencari_advance_yang_tidak_ada_di_daftar(): void
@@ -1029,16 +1029,28 @@ class TelegramBotTest extends TestCase
         $this->user()->assignRole('Finance');
         $this->fakeApis(gemini: null);
 
+        // Tanpa project: semua advance terbuka, per halaman. Dulu hanya 8 terbaru.
         $this->send($this->textUpdate('realisasi 100rb parkir'));
         $draft = Draft::load($this->chatId);
-        $this->send($this->tap("{$draft->id}:advlist:"));
 
-        $this->assertStringContainsString('Baru 8 advance terbaru', $this->lastText());
+        $this->assertStringContainsString('advance terbuka</b>, halaman 1 dari ', $this->lastText());
         $this->assertStringNotContainsString('PT Langka Sekali', $this->lastText());
+        $this->assertContains('Berikutnya ➡️', $this->lastButtons());
 
+        $this->send($this->tap("{$draft->id}:advlist:1"));
+        $this->assertStringContainsString('halaman 2 dari ', $this->lastText());
+        $this->assertStringContainsString("#{$langka->id} · <b>Advance Event Gathering</b>", $this->lastText());
+        $this->assertContains("#{$langka->id} · Advance Event Gathering (Sari)", $this->lastButtons());
+        $this->assertContains('⬅️ Sebelumnya', $this->lastButtons());
+
+        // Cari lewat nama klien atau ID advance.
         $this->send($this->textUpdate('langka'));
         $this->assertStringContainsString('PT Langka Sekali', $this->lastText());
         $this->assertStringContainsString('👤 Sari Dewi', $this->lastText());
+
+        $this->send($this->textUpdate("#{$langka->id}"));
+        $this->assertStringContainsString('Ditemukan 1 advance', $this->lastText());
+        $this->assertStringContainsString('PT Langka Sekali', $this->lastText());
 
         $this->send($this->tap("{$draft->id}:adv:{$langka->id}"));
 
@@ -1140,11 +1152,60 @@ class TelegramBotTest extends TestCase
 
         $this->fakeApis(gemini: null);
         $this->send($this->textUpdate('realisasi 50rb parkir nestory'));
+
+        // Langsung diberi tahu, bukan setelah mengisi semua lalu menekan Kirim.
+        $this->assertStringContainsString("⛔ Advance #{$advance->id}", $this->lastText());
+        $this->assertStringContainsString('menyetujui overrun', $this->lastText());
+        $this->assertContains('💰 Jadikan Expense', $this->lastButtons());
+
+        // Tombol Kirim lama pun tetap ditolak RealisasiService.
         $draft = Draft::load($this->chatId);
         $this->send($this->tap("{$draft->id}:submit:"));
-
-        $this->assertStringContainsString('menyetujui overrun', $this->lastText());
         $this->assertSame(1, Realisasi::where('advance_id', $advance->id)->count());
+    }
+
+    public function test_daftar_advance_menandai_yang_belum_bisa_direalisasi(): void
+    {
+        $user    = $this->user();
+        $blocked = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'), 1_000_000);
+        $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+
+        app(RealisasiService::class)->createBatch(
+            $blocked,
+            ['uploaded_by' => $user->id],
+            [['name' => 'Sewa kamera', 'quantity' => 1, 'price' => 1_200_000]]
+        );
+
+        $this->fakeApis(gemini: null);
+        $this->send($this->textUpdate('realisasi 50rb parkir'));
+
+        $this->assertStringContainsString("#{$blocked->id} · <b>Advance Video Profile</b>", $this->lastText());
+        $this->assertStringContainsString('💸 Cair Rp 1.000.000 · melebihi <b>Rp 200.000</b>', $this->lastText());
+        $this->assertStringContainsString('⛔ Realisasi melebihi advance. Finance harus menyetujui overrun terlebih dahulu.', $this->lastText());
+    }
+
+    public function test_karyawan_dengan_banyak_advance_bisa_melihat_semua_dan_mencari_lewat_id(): void
+    {
+        $user = $this->user();
+        $old  = $this->openAdvance($user, $this->project('PT Lama Sekali', 'Event Lama'));
+
+        foreach (range(1, 9) as $n) {
+            $this->openAdvance($user, $this->project("PT Klien {$n}", "Project {$n}"));
+        }
+
+        $this->fakeApis(gemini: null);
+        $this->send($this->textUpdate('realisasi 100rb parkir'));
+        $draft = Draft::load($this->chatId);
+
+        $this->assertStringContainsString('<b>10 advance terbuka</b>, halaman 1 dari 2', $this->lastText());
+        $this->assertStringContainsString('Ketik ID advance', $this->lastText());
+        $this->assertStringNotContainsString('nama pengaju', $this->lastText());
+
+        $this->send($this->tap("{$draft->id}:advlist:1"));
+        $this->assertStringContainsString("#{$old->id} · <b>Advance Event Lama</b>", $this->lastText());
+
+        $this->send($this->textUpdate("id {$old->id}"));
+        $this->assertContains("#{$old->id} · Advance Event Lama", $this->lastButtons());
     }
 
     // =================================================================
