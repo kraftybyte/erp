@@ -35,6 +35,7 @@ class TelegramWebhookManager
         ['command' => 'periode',   'description' => 'Pilih periode tanggal laporan'],
         ['command' => 'excel',     'description' => 'Unduh data periode ini (Excel)'],
         ['command' => 'bayar',     'description' => 'Catat pembayaran invoice yang masuk'],
+        ['command' => 'mutasi',    'description' => 'Catat pembayaran dari file mutasi rekening'],
     ];
 
     /**

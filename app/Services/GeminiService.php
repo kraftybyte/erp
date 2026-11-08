@@ -86,14 +86,15 @@ class GeminiService
      * pemanggil bisa beralih ke jalur tanpa AI alih-alih ikut gagal.
      *
      * @param  array<int, array{mime: string, data: string}>  $files  gambar/PDF (isi mentah) yang ikut dibaca
+     * @param  int  $timeout  detik; 0 = 30 dengan file, 15 tanpa file (mutasi rekening panjang butuh lebih)
      */
-    public function extractJson(string $prompt, array $schema, array $files = []): ?array
+    public function extractJson(string $prompt, array $schema, array $files = [], int $timeout = 0): ?array
     {
         $response = $this->generate($prompt, [
             'temperature'        => 0,
             'responseMimeType'   => 'application/json',
             'responseJsonSchema' => $schema,
-        ], timeout: $files ? 30 : 15, files: $files);
+        ], timeout: $timeout ?: ($files ? 30 : 15), files: $files);
 
         if (! $response) {
             return null;
