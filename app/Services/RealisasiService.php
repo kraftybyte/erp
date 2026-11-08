@@ -60,7 +60,7 @@ class RealisasiService
         // Validate items
         $this->validateBatchItems($items);
 
-        return DB::transaction(function () use ($advance, $data, $items, $files) {
+        $batch = DB::transaction(function () use ($advance, $data, $items, $files) {
             // Calculate current total and new batch total
             $currentTotal = $this->getTotalRealisasi($advance);
             $newBatchTotal = $this->calculateItemsTotal($items);
@@ -114,6 +114,11 @@ class RealisasiService
 
             return $batch;
         });
+
+        // Telegram ke Director/Finance untuk setiap batch, termasuk realisasi lanjutan.
+        app(\App\Services\Telegram\ManagementAlerts::class)->realisasi($batch);
+
+        return $batch;
     }
 
     /**

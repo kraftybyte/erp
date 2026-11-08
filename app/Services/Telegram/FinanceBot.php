@@ -40,6 +40,8 @@ class FinanceBot
 
     private BankStatementFlow $statements;
 
+    private ApprovalFlow $approvals;
+
     // Overview untuk periode chat yang sedang dilayani; diisi render().
     private FinanceOverview $view;
 
@@ -53,6 +55,7 @@ class FinanceBot
             app(\App\Services\BankStatement\MutationMatcher::class),
             app(\App\Services\BankStatement\MutationRecorder::class),
         );
+        $this->approvals = new ApprovalFlow($this->telegram, app(\App\Services\SubmissionDecision::class), app(\App\Services\RealisasiService::class));
     }
 
     public function handle(array $update): void
@@ -102,6 +105,20 @@ class FinanceBot
         $command = Str::lower($match[1] ?? 'ringkasan');
         $args    = $match ? trim(Str::after($text, $match[0])) : '';
 
+        if (in_array($command, ['persetujuan', 'approval'], true)) {
+            $this->forgetInputs($chatId);
+            $this->approvals->pendingList($chatId);
+
+            return;
+        }
+
+        if ($command === 'verifikasi') {
+            $this->forgetInputs($chatId);
+            $this->approvals->verificationList($chatId);
+
+            return;
+        }
+
         if ($command === 'mutasi') {
             $this->payment->forget($chatId);
             Cache::forget($this->periodAwaitKey($chatId));
@@ -131,6 +148,13 @@ class FinanceBot
         // Pembayaran didahulukan: dulu "25jt" bisa terbaca sebagai tanggal bila
         // pemilih periode sempat dibuka sebelumnya.
         if (! $match) {
+            // Alasan penolakan setelah menekan ❌ Tolak.
+            if ($this->approvals->awaitingText($chatId)) {
+                $this->approvals->handleText($chatId, $user, $text);
+
+                return;
+            }
+
             if ($this->payment->awaitingText($chatId)) {
                 $this->payment->handleText($chatId, $text);
 
@@ -145,6 +169,7 @@ class FinanceBot
         }
 
         // Perintah lain menutup isian yang belum selesai.
+        $this->approvals->forget($chatId);
         $this->payment->forget($chatId);
         Cache::forget($this->periodAwaitKey($chatId));
 
@@ -188,6 +213,12 @@ class FinanceBot
 
         if (str_starts_with($data, 'mut:')) {
             $this->statements->handleCallback($callback, $user);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'apv:') || str_starts_with($data, 'rlz:')) {
+            $this->approvals->handleCallback($callback, $user);
 
             return;
         }
@@ -642,6 +673,13 @@ class FinanceBot
         }
     }
 
+    private function forgetInputs(int|string $chatId): void
+    {
+        $this->approvals->forget($chatId);
+        $this->payment->forget($chatId);
+        Cache::forget($this->periodAwaitKey($chatId));
+    }
+
     private function helpText(): string
     {
         return <<<'HTML'
@@ -664,7 +702,12 @@ class FinanceBot
         Bisa langsung mencari: <code>/bayar nama klien</code>
         /mutasi – kirim file mutasi rekening (CSV, Excel, PDF, atau foto): invoice yang dibayar dan expense/advance yang ditransfer dicocokkan, lalu dicatat sekaligus setelah kamu konfirmasi
 
-        <i>Periode berlaku untuk semua laporan sampai diganti. Selain /bayar dan /mutasi, bot ini hanya membaca data.</i>
+        <b>Persetujuan &amp; verifikasi</b>
+        /persetujuan – pengajuan yang menunggu disetujui/ditolak
+        /verifikasi – realisasi advance yang menunggu diverifikasi: setujui kelebihan, catat pengembalian sisa, selesaikan
+        Setiap pengajuan baru dan realisasi yang masuk juga dikirim ke sini, lengkap dengan tombolnya.
+
+        <i>Periode berlaku untuk semua laporan sampai diganti.</i>
         HTML;
     }
 

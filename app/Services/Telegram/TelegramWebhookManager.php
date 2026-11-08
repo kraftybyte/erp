@@ -36,6 +36,8 @@ class TelegramWebhookManager
         ['command' => 'excel',     'description' => 'Unduh data periode ini (Excel)'],
         ['command' => 'bayar',     'description' => 'Catat pembayaran invoice yang masuk'],
         ['command' => 'mutasi',    'description' => 'Catat pembayaran dari file mutasi rekening'],
+        ['command' => 'persetujuan', 'description' => 'Pengajuan yang menunggu disetujui'],
+        ['command' => 'verifikasi',  'description' => 'Realisasi yang menunggu diverifikasi'],
     ];
 
     /**

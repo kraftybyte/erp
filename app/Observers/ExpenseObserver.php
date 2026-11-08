@@ -32,6 +32,9 @@ class ExpenseObserver
             'info',
             $url
         );
+
+        // Telegram ke Director/Finance, dengan tombol Setujui/Tolak (bot laporan keuangan).
+        app(\App\Services\Telegram\ManagementAlerts::class)->newSubmission($expense);
     }
 
     public function updated(Expense $expense): void
