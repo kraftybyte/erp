@@ -285,6 +285,67 @@ class BankStatementTest extends TestCase
         $this->assertStringContainsString('pembayaran sebagian', $results[1]['candidates'][0]['note']);
     }
 
+    public function test_retainer_bernominal_sama_dipilih_invoice_terdekat_sebelum_transfer(): void
+    {
+        $september = $this->invoice(8_888_819, ['date' => '2026-09-01', 'due_date' => '2026-09-15']);
+        $oktober   = $this->invoice(8_888_819, ['date' => '2026-10-28', 'due_date' => '2026-11-04']);
+
+        $result = $this->match([$this->row('in', 8_888_819, 'TRSF E-BANKING CR ' . strtoupper($this->client), '2026-11-03')])[0];
+
+        $this->assertSame('sure', $result['status']);
+        $this->assertSame($oktober->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+        $this->assertNotSame($september->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+        $this->assertStringContainsString('dipilih yang tanggalnya paling dekat sebelum transfer', $result['candidates'][$result['pick']]['note']);
+        $this->assertSame(6, $result['candidates'][$result['pick']]['days']);
+    }
+
+    public function test_tanggal_invoice_yang_berdekatan_tetap_ditanyakan_dan_diurutkan(): void
+    {
+        $this->invoice(8_888_821, ['date' => '2026-10-28']);
+        $closer = $this->invoice(8_888_821, ['date' => '2026-10-31']);
+
+        $result = $this->match([$this->row('in', 8_888_821, 'TRSF E-BANKING CR ' . strtoupper($this->client), '2026-11-03')])[0];
+
+        $this->assertSame('review', $result['status'], 'Selisih 3 hari belum cukup jelas untuk dipilih sendiri.');
+        $this->assertSame($closer->id, $result['candidates'][0]['targets'][0]['id'], 'Yang tanggalnya terdekat di urutan pertama.');
+    }
+
+    public function test_nominal_sama_tanpa_nama_diurutkan_dari_tanggal_terdekat(): void
+    {
+        $this->invoice(8_888_823, ['date' => '2026-07-01', 'nama_perusahaan' => 'CV Lama ' . Str::upper(Str::random(5))]);
+        $recent = $this->invoice(8_888_823, ['date' => '2026-11-01', 'nama_perusahaan' => 'CV Baru ' . Str::upper(Str::random(5))]);
+
+        $result = $this->match([$this->row('in', 8_888_823, 'SETORAN TUNAI', '2026-11-03')])[0];
+
+        $this->assertSame('review', $result['status']);
+        $this->assertSame($recent->id, $result['candidates'][0]['targets'][0]['id']);
+    }
+
+    public function test_pengajuan_bernominal_sama_dipilih_yang_terdekat(): void
+    {
+        $budi = $this->employee('Budiman', 'Santosa');
+        $this->expense($budi, 333_337)->update(['submission_date' => '2026-10-01']);
+        $recent = $this->expense($budi, 333_337);
+        $recent->update(['submission_date' => '2026-11-02']);
+
+        $result = $this->match([$this->row('out', 333_337, 'TRSF E-BANKING DB BUDIMAN SANTOSA', '2026-11-03')])[0];
+
+        $this->assertSame('sure', $result['status']);
+        $this->assertSame($recent->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+    }
+
+    public function test_layar_tinjau_menampilkan_jarak_tanggal_invoice(): void
+    {
+        $this->user('Finance');
+        $this->invoice(15_437_233, ['date' => '2026-10-28']);
+
+        $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 15_437_233, 'CR']], opening: 0));
+        $this->send($this->tap('mut:rev'));
+
+        $this->assertStringContainsString('invoice dibuat 6 hari sebelum transfer', $this->lastText());
+        $this->assertStringContainsString('· 28 Okt ·', $this->lastText());
+    }
+
     public function test_uang_keluar_ke_expense_dan_advance_karyawan(): void
     {
         $budi    = $this->employee('Budiman', 'Santosa');
