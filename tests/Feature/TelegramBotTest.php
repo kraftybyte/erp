@@ -1505,6 +1505,51 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
     }
 
+    public function test_struk_yang_difoto_ulang_diberi_peringatan_mirip(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('struk-asli', 'expense kabel nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertStringNotContainsString('irip struk', $this->lastText());
+        $this->send($this->tap("{$draft->id}:submit:"));
+        $this->assertSame(1, Expense::where('user_id', $user->id)->count());
+
+        // File Telegram berbeda (difoto ulang), isi struknya sama.
+        $this->send($this->photoUpdate('struk-foto-ulang', 'expense kabel nestory'));
+
+        $this->assertStringContainsString('⚠️ Mirip struk yang sudah diajukan: Expense', $this->lastText());
+        $this->assertStringContainsString('Rp 265.000', $this->lastText());
+    }
+
+    public function test_sidik_jari_gambar_sama_dan_beda(): void
+    {
+        $image = function (int $seed): string {
+            // Gradasi kiri→kanan (seed 1) atau kanan→kiri (seed lain).
+            $gd = imagecreatetruecolor(180, 120);
+            for ($x = 0; $x < 180; $x += 10) {
+                $level = $seed === 1 ? $x : 179 - $x;
+                imagefilledrectangle($gd, $x, 0, $x + 9, 119, imagecolorallocate($gd, $level, $level, $level));
+            }
+            ob_start();
+            imagejpeg($gd, null, 90);
+
+            return ob_get_clean();
+        };
+
+        $a = \App\Services\Telegram\ReceiptFingerprint::hash($image(1));
+        $b = \App\Services\Telegram\ReceiptFingerprint::hash($image(1));
+        $c = \App\Services\Telegram\ReceiptFingerprint::hash($image(7));
+
+        $this->assertSame(16, strlen($a));
+        $this->assertSame(0, \App\Services\Telegram\ReceiptFingerprint::distance($a, $b));
+        $this->assertGreaterThan(5, \App\Services\Telegram\ReceiptFingerprint::distance($a, $c));
+        $this->assertNull(\App\Services\Telegram\ReceiptFingerprint::hash('%PDF-1.4'), 'PDF tidak diberi sidik jari gambar.');
+    }
+
     public function test_satu_struk_boleh_untuk_realisasi_beberapa_advance(): void
     {
         Storage::fake('public');

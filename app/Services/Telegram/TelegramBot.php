@@ -424,7 +424,9 @@ class TelegramBot
         $draft->attachment['name']   = $read['description'] ?? $read['name'];
         $draft->attachment['items']  = $read['items'];
         $draft->attachment['shop']   = $read['name'];
+        $draft->attachment['date']   = $read['date'];
         $draft->attachment['ai']     = true;
+        $this->markSimilar($draft->attachment, $data);
 
         $draft->amount      = $read['amount'];
         $draft->description = $read['description'] ?? $read['name'];
@@ -619,6 +621,9 @@ class TelegramBot
                     $draft->receipts[$index]['amount'] = $read['amount'];
                     $draft->receipts[$index]['name'] ??= $read['description'] ?? $read['name'];
                     $draft->receipts[$index]['items']  = $read['items'];
+                    $draft->receipts[$index]['shop']   = $read['name'];
+                    $draft->receipts[$index]['date']   = $read['date'];
+                    $this->markSimilar($draft->receipts[$index], $data);
 
                     continue;
                 }
@@ -749,9 +754,44 @@ class TelegramBot
                 'scope'          => $this->receiptScope($draft),
                 'user_id'        => $user->id,
                 'reference'      => $reference,
+                // Untuk mengenali struk yang sama bila nanti difoto ulang.
+                'phash'          => $receipt['phash'] ?? null,
+                'amount'         => $receipt['amount'] ?? ($draft->isMulti() ? null : $draft->amount),
+                'receipt_date'   => $receipt['date'] ?? ($draft->isMulti() ? null : $draft->date),
+                'shop'           => isset($receipt['shop']) ? Str::limit((string) $receipt['shop'], 100, '') : null,
                 'created_at'     => now(),
             ]);
         }
+    }
+
+    /**
+     * Sidik jari gambar struk dan, bila mirip struk yang sudah pernah diajukan
+     * (difoto ulang, jadi bukan file yang sama), keterangannya.
+     */
+    private function markSimilar(array &$receipt, ?string $data): void
+    {
+        $receipt['phash']   = $data !== null ? ReceiptFingerprint::hash($data) : null;
+        $receipt['similar'] = ReceiptFingerprint::similar(
+            isset($receipt['amount']) ? (float) $receipt['amount'] : null,
+            $receipt['date'] ?? null,
+            $receipt['shop'] ?? null,
+            $receipt['phash'],
+            $receipt['unique'] ?? null,
+        );
+    }
+
+    private function similarNote(Draft $draft): string
+    {
+        $receipts = $draft->isMulti() ? $draft->receipts : array_filter([$draft->attachment]);
+        $lines    = [];
+
+        foreach (array_values($receipts) as $index => $receipt) {
+            if (! empty($receipt['similar'])) {
+                $lines[] = '⚠️ ' . ($draft->isMulti() ? 'Struk ke-' . ($index + 1) . ' m' : 'M') . 'irip struk yang sudah diajukan: ' . e($receipt['similar']) . '. Pastikan bukan struk yang sama.';
+            }
+        }
+
+        return $lines ? implode("\n", $lines) . "\n" : '';
     }
 
     /**
@@ -1217,6 +1257,7 @@ class TelegramBot
                     . 'Total: <b>' . $this->rupiah($draft->total()) . "</b>\n\n"
                     . $this->totalMismatchWarning($draft)
                     . $advanceWarning
+                    . $this->similarNote($draft)
                     . 'Periksa nominal tiap struk, lalu tekan <b>Kirim</b>.',
                 $rows
             );
@@ -1249,6 +1290,7 @@ class TelegramBot
             "📝 <b>Draft {$type['label']}</b>\n\n{$this->details($draft)}\n\n"
                 . $advanceWarning
                 . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang supaya admin tidak perlu upload.\n")
+                . $this->similarNote($draft)
                 . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             $rows
         );
@@ -1416,6 +1458,7 @@ class TelegramBot
                         ? '⚠️ Melebihi sisa advance ' . $this->rupiah(abs($after)) . ". Butuh persetujuan Finance, dan realisasi berikutnya ditahan sampai disetujui.\n"
                         : '')
                     . $this->realisasiGuessNote($draft)
+                    . $this->similarNote($draft)
                     . 'Periksa nominal tiap struk, lalu tekan <b>Kirim</b>.',
                 [
                     [$this->button("✅ Kirim {$count} struk", $draft, 'submit')],
@@ -1453,6 +1496,7 @@ class TelegramBot
                     : '')
                 . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang sebagai bukti untuk Finance.\n")
                 . $this->realisasiGuessNote($draft)
+                . $this->similarNote($draft)
                 . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             [
                 [$this->button('✅ Kirim', $draft, 'submit')],
