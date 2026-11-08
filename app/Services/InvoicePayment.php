@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\PaymentAccount;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,11 +40,14 @@ class InvoicePayment
      * Baris invoice dikunci selama pencatatan: tanpa itu dua pembayaran yang
      * dicatat bersamaan (mis. dari ERP dan Telegram) bisa melebihi tagihan.
      *
+     * @param  ?Carbon  $receivedAt  tanggal uang masuk (dari mutasi rekening); default hari ini
+     * @param  ?string  $source      asal pencatatan untuk keterangan transaksi, mis. "mutasi rekening"
+     *
      * @throws InvoicePaymentException
      */
-    public function pay(Invoice $invoice, float $amount, PaymentAccount $account, User $by): Invoice
+    public function pay(Invoice $invoice, float $amount, PaymentAccount $account, User $by, ?Carbon $receivedAt = null, ?string $source = null): Invoice
     {
-        return DB::transaction(function () use ($invoice, $amount, $account, $by) {
+        return DB::transaction(function () use ($invoice, $amount, $account, $by, $receivedAt, $source) {
             $invoice = Invoice::lockForUpdate()->find($invoice->getKey());
 
             if (! $invoice || ! self::isPayable($invoice)) {
@@ -85,15 +89,15 @@ class InvoicePayment
                 'amount'             => $amount,
                 'reference_type'     => 'invoice',
                 'reference_id'       => $invoice->id,
-                'transaction_date'   => now(),
-                'description'        => 'Pembayaran Invoice ' . $invoice->uuid . ' dari ' . ($invoice->nama_perusahaan ?? '-'),
+                'transaction_date'   => $receivedAt ?? now(),
+                'description'        => 'Pembayaran Invoice ' . $invoice->uuid . ' dari ' . ($invoice->nama_perusahaan ?? '-') . ($source ? " ({$source})" : ''),
             ]);
 
             // Uang masuk: saldo dihitung ulang dari mutasi (initial + in - out).
             $account->syncBalanceFromTransactions();
 
             $invoice->invoiceLogs()->create([
-                'log'  => 'Paid ' . number_format($amount, 2) . ' ' . ($invoice->currency?->iso ?? 'id') . " from {$account->name} By: {$by->name}",
+                'log'  => 'Paid ' . number_format($amount, 2) . ' ' . ($invoice->currency?->iso ?? 'id') . " from {$account->name} By: {$by->name}" . ($source ? " ({$source})" : ''),
                 'type' => 'payment',
             ]);
 

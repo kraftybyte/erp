@@ -270,77 +270,25 @@ class AdvanceResource extends Resource
                     ->color('warning')
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
-                        /** @var User|null $currentUser */
-                        $currentUser = Auth::user();
-
-                        DB::transaction(function () use ($record, $data, $currentUser) {
-                            /*
-                            | Kunci baris advance-nya, lalu baca ulang statusnya dari database.
-                            | Tombol memang sudah disembunyikan lewat hidden(), tapi itu hanya
-                            | berlaku saat halaman di-render: dua orang yang membuka daftar
-                            | bersamaan sama-sama melihat tombolnya. Tanpa pemeriksaan di sini,
-                            | klik kedua tetap diproses dan advance terbayar dua kali.
-                            */
-                            $advance = Advance::lockForUpdate()->find($record->id);
-
-                            if (!$advance) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Pengajuan tidak ditemukan.',
-                                ]);
-                            }
-
-                            if ($advance->status !== 'Disetujui') {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => $advance->status === 'Dibayarkan'
-                                        ? 'Pengajuan ini sudah dibayarkan.'
-                                        : "Pengajuan berstatus \"{$advance->status}\" dan tidak bisa dibayarkan.",
-                                ]);
-                            }
-
-                            // Get payment account with pessimistic locking
-                            $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
-                            if (!$account) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Rekening tidak ditemukan.',
-                                ]);
-                            }
-
-                            /*
-                            | Saldo rekening sengaja TIDAK dijadikan penghalang: pembayaran
-                            | boleh melebihi saldo tercatat (budget longgar). Saldo tetap
-                            | disinkronkan setelah transaksi, sehingga nilainya bisa minus
-                            | dan selisihnya terlihat apa adanya.
-                            */
-
-                            // Create transaction record
-                            Transaction::create([
-                                'payment_account_id' => $account->id,
-                                'created_by' => $currentUser?->id,
-                                'type' => 'out',
-                                'amount' => (float) $data['paid'],
-                                'description' => "Advance: {$record->keterangan_advance}",
-                                'reference_type' => 'advance',
-                                'reference_id' => $record->id,
-                                'transaction_date' => $data['paid_at'] ?? now()->toDateString(),
-                                'category' => 'operational',
-                            ]);
-
-                            // Sync account balance after transaction
-                            $account->syncBalanceFromTransactions();
-
-                            // Update advance status with payment account
-                            $record->update([
-                                'status' => 'Dibayarkan',
-                                'paid_by' => $currentUser?->id,
-                                'paid' => $data['paid'],
-                                'payment_account_id' => $account->id,
-                                'reference_number' => $data['reference_number'] ?? null,
-                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
-                                    ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
-                                    : $data['attachment_pay'],
-                                'paid_at' => $data['paid_at'] ?? now(),
-                            ]);
-                        });
+                        // Status dibaca ulang di bawah kunci baris: hidden() hanya berlaku
+                        // saat halaman di-render, jadi dua orang bisa menekan bersamaan.
+                        try {
+                            app(\App\Services\Payout::class)->advance(
+                                $record,
+                                (float) $data['paid'],
+                                PaymentAccount::findOrFail($data['payment_account_id']),
+                                Auth::user(),
+                                [
+                                    'reference_number' => $data['reference_number'] ?? null,
+                                    'attachment_pay'   => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
+                                        ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
+                                        : $data['attachment_pay'],
+                                ],
+                                isset($data['paid_at']) ? \Illuminate\Support\Carbon::parse($data['paid_at']) : null,
+                            );
+                        } catch (\App\Exceptions\PayoutException $e) {
+                            throw ValidationException::withMessages(['payment_account_id' => $e->getMessage()]);
+                        }
                     })
                     ->form([
                         Forms\Components\DatePicker::make('paid_at')

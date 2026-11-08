@@ -315,72 +315,24 @@ class ExpenseResource extends Resource
                     ->color('warning')
                     ->label('Bayarkan Pengajuan')
                     ->action(function ($record, array $data) {
-                        DB::transaction(function () use ($record, $data) {
-                            /*
-                            | Kunci baris expense-nya, lalu baca ulang statusnya dari database.
-                            | hidden() hanya berlaku saat halaman di-render, sehingga dua orang
-                            | yang membuka daftar bersamaan sama-sama melihat tombolnya dan
-                            | pengajuan bisa terbayar dua kali.
-                            */
-                            $expense = Expense::lockForUpdate()->find($record->id);
-
-                            if (!$expense) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Pengajuan tidak ditemukan.',
-                                ]);
-                            }
-
-                            if ($expense->status !== 'Disetujui') {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => $expense->status === 'Dibayarkan'
-                                        ? 'Pengajuan ini sudah dibayarkan.'
-                                        : "Pengajuan berstatus \"{$expense->status}\" dan tidak bisa dibayarkan.",
-                                ]);
-                            }
-
-                            // Get payment account with pessimistic locking
-                            $account = PaymentAccount::lockForUpdate()->find($data['payment_account_id']);
-                            if (!$account) {
-                                throw ValidationException::withMessages([
-                                    'payment_account_id' => 'Rekening tidak ditemukan.',
-                                ]);
-                            }
-
-                            /*
-                            | Saldo rekening sengaja TIDAK dijadikan penghalang: pembayaran
-                            | boleh melebihi saldo tercatat (budget longgar). Saldo tetap
-                            | disinkronkan setelah transaksi, sehingga nilainya bisa minus
-                            | dan selisihnya terlihat apa adanya.
-                            */
-
-                            // Create transaction record
-                            Transaction::create([
-                                'payment_account_id' => $account->id,
-                                'created_by' => auth()->id(),
-                                'type' => 'out',
-                                'amount' => (float) $data['paid'],
-                                'description' => "Expense: {$record->keterangan_expense}",
-                                'reference_type' => 'expense',
-                                'reference_id' => $record->id,
-                                'transaction_date' => now()->toDateString(),
-                                'category' => 'operational',
-                            ]);
-
-                            // Sync account balance after transaction
-                            $account->syncBalanceFromTransactions();
-
-                            // Update expense status with payment account
-                            $record->update([
-                                'status' => 'Dibayarkan',
-                                'paid_by' => auth()->id(),
-                                'paid' => $data['paid'],
-                                'payment_account_id' => $account->id,
-                                'reference' => $data['reference'],
-                                'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
-                                    ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
-                                    : $data['attachment_pay'],
-                            ]);
-                        });
+                        // Status dibaca ulang di bawah kunci baris: hidden() hanya berlaku
+                        // saat halaman di-render, jadi dua orang bisa menekan bersamaan.
+                        try {
+                            app(\App\Services\Payout::class)->expense(
+                                $record,
+                                (float) $data['paid'],
+                                PaymentAccount::findOrFail($data['payment_account_id']),
+                                auth()->user(),
+                                [
+                                    'reference'      => $data['reference'],
+                                    'attachment_pay' => $data['attachment_pay'] instanceof \Illuminate\Http\UploadedFile
+                                        ? $data['attachment_pay']->storeAs('payments', uniqid() . '-' . now()->format('d-m-Y') . '.' . $data['attachment_pay']->getClientOriginalExtension())
+                                        : $data['attachment_pay'],
+                                ],
+                            );
+                        } catch (\App\Exceptions\PayoutException $e) {
+                            throw ValidationException::withMessages(['payment_account_id' => $e->getMessage()]);
+                        }
                     })
                     ->form([
                         Forms\Components\TextInput::make('paid')

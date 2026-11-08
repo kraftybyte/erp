@@ -92,3 +92,13 @@ $rows = DB::table('telegram_receipts')
     ->selectRaw("DATE(created_at) AS hari, SUM(scope = 'pengajuan') AS pengajuan, SUM(scope LIKE 'realisasi:%') AS realisasi")
     ->groupBy('hari')->orderBy('hari')->get();
 echo ($rows->isEmpty() ? 'Belum ada.' : $rows->map(fn ($row) => "{$row->hari}  pengajuan {$row->pengajuan} · realisasi {$row->realisasi}")->implode("\n")) . "\n";
+
+$section('Mutasi rekening dari bot (/mutasi)');
+echo \Illuminate\Support\Facades\Schema::hasTable('bank_mutations')
+    ? DB::table('bank_mutations')->count() . ' mutasi tercatat · terakhir: ' . (DB::table('bank_mutations')->max('created_at') ?? '-') . "\n"
+    : "Tabel belum ada (belum deploy).\n";
+
+$section('Antrean job (queue)');
+echo 'Koneksi: ' . config('queue.default')
+    . (\Illuminate\Support\Facades\Schema::hasTable('jobs') ? ' · menunggu: ' . DB::table('jobs')->count() . ' (terlama: ' . (($oldest = DB::table('jobs')->min('created_at')) ? date('Y-m-d H:i', (int) $oldest) : '-') . ')' : '')
+    . (\Illuminate\Support\Facades\Schema::hasTable('failed_jobs') ? ' · gagal: ' . DB::table('failed_jobs')->count() : '') . "\n";

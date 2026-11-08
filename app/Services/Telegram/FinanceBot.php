@@ -38,13 +38,21 @@ class FinanceBot
 
     private InvoicePaymentFlow $payment;
 
+    private BankStatementFlow $statements;
+
     // Overview untuk periode chat yang sedang dilayani; diisi render().
     private FinanceOverview $view;
 
     public function __construct(private FinanceOverview $overview, private FinanceExport $export, InvoicePayment $payments)
     {
-        $this->telegram = TelegramClient::forFinance();
-        $this->payment  = new InvoicePaymentFlow($this->telegram, $payments);
+        $this->telegram   = TelegramClient::forFinance();
+        $this->payment    = new InvoicePaymentFlow($this->telegram, $payments);
+        $this->statements = new BankStatementFlow(
+            $this->telegram,
+            app(\App\Services\BankStatement\StatementReader::class),
+            app(\App\Services\BankStatement\MutationMatcher::class),
+            app(\App\Services\BankStatement\MutationRecorder::class),
+        );
     }
 
     public function handle(array $update): void
@@ -80,10 +88,27 @@ class FinanceBot
             return;
         }
 
+        // File atau foto: mutasi rekening untuk dicocokkan dan dicatat.
+        if (isset($message['document']) || isset($message['photo'])) {
+            $this->payment->forget($chatId);
+            Cache::forget($this->periodAwaitKey($chatId));
+            $this->statements->receive($chatId, $message, $user);
+
+            return;
+        }
+
         $text = trim((string) ($message['text'] ?? ''));
         preg_match('/^\/(\w+)/u', $text, $match);
         $command = Str::lower($match[1] ?? 'ringkasan');
         $args    = $match ? trim(Str::after($text, $match[0])) : '';
+
+        if ($command === 'mutasi') {
+            $this->payment->forget($chatId);
+            Cache::forget($this->periodAwaitKey($chatId));
+            $this->statements->help($chatId);
+
+            return;
+        }
 
         if ($command === 'bayar') {
             Cache::forget($this->periodAwaitKey($chatId));
@@ -157,6 +182,12 @@ class FinanceBot
         if (str_starts_with($data, 'pay:')) {
             Cache::forget($this->periodAwaitKey($chatId));
             $this->payment->handleCallback($callback, $user);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'mut:')) {
+            $this->statements->handleCallback($callback, $user);
 
             return;
         }
@@ -631,8 +662,9 @@ class FinanceBot
         <b>Pembayaran</b>
         /bayar – catat pembayaran invoice yang masuk
         Bisa langsung mencari: <code>/bayar nama klien</code>
+        /mutasi – kirim file mutasi rekening (CSV, Excel, PDF, atau foto): invoice yang dibayar dan expense/advance yang ditransfer dicocokkan, lalu dicatat sekaligus setelah kamu konfirmasi
 
-        <i>Periode berlaku untuk semua laporan sampai diganti. Selain /bayar, bot ini hanya membaca data.</i>
+        <i>Periode berlaku untuk semua laporan sampai diganti. Selain /bayar dan /mutasi, bot ini hanya membaca data.</i>
         HTML;
     }
 
