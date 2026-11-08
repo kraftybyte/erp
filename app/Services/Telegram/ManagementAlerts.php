@@ -132,6 +132,21 @@ class ManagementAlerts
     // =================================================================
 
     /**
+     * Pesan bebas ke semua Director/Finance/super_admin yang terhubung (mis.
+     * ringkasan antrean harian). Jumlah penerima.
+     */
+    public function toManagers(string $html, array $actions = [], string $url = ''): int
+    {
+        $recipients = $this->recipients(null);
+
+        foreach ($recipients as $user) {
+            $this->deliver($user, $html, $actions, $url !== '' ? url($url) : '');
+        }
+
+        return $recipients->count();
+    }
+
+    /**
      * @return Collection<int, User>
      */
     private function recipients(?int $except): Collection

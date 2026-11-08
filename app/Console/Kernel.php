@@ -20,6 +20,11 @@ class Kernel extends ConsoleKernel
         $schedule->command('ringkasan:pagi')->weekdays()->at('08:00');
         $schedule->command('deadline:reminder')->dailyAt('08:00');
         $schedule->command('leads:follow-up-reminder')->weekdays()->at('09:00');
+
+        // Bot: antrean harian untuk Director/Finance, dan pengingat realisasi
+        // advance ke karyawan dua kali seminggu (supaya tidak jadi spam).
+        $schedule->command('finance:antrean')->weekdays()->at('08:15');
+        $schedule->command('advance:pengingat-realisasi')->days([1, 4])->at('09:30');
     }
 
     /**
