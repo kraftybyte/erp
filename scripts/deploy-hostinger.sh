@@ -14,6 +14,7 @@
 #   deploy-hostinger.sh <folder_situs> <commit> apply        # backup, sinkron, migrate
 #   deploy-hostinger.sh <folder_situs> <commit> rollback     # kembalikan kode
 #   deploy-hostinger.sh <folder_situs> <commit> rollback-db  # kembalikan kode + database
+#   deploy-hostinger.sh <folder_situs> - cleanup             # hapus salinan staging lama
 #
 # Hasil kerja dan backup ada di ~/erp-deploy (di luar public_html).
 
@@ -62,6 +63,24 @@ pick_php() {
     done
     echo "PHP >= 8.3 tidak ditemukan" >&2
     exit 1
+}
+
+# Salinan kode hasil unduhan (staging-*) hanya dipakai plan/apply commit itu:
+# kodenya ada di GitHub dan rollback memakai backup-*. Dulu tertinggal terus,
+# ±1.600 inode per deploy, sampai batas inode Hostinger terlampaui.
+cleanup_staging() {
+    local keep=${1:-} dir count=0 inodes=0
+
+    for dir in "$WORK"/staging-* "$WORK"/tmp.*; do
+        [ -d "$dir" ] || continue
+        [ -n "$keep" ] && [ "$dir" = "$keep" ] && continue
+        inodes=$((inodes + $(find "$dir" | wc -l)))
+        rm -rf "$dir"
+        count=$((count + 1))
+    done
+
+    [ "$count" -gt 0 ] && echo "   $count salinan staging lama dihapus ($inodes inode)"
+    return 0
 }
 
 fetch() {
@@ -118,6 +137,7 @@ env_value() {
 }
 
 plan() {
+    cleanup_staging "$STAGE"
     fetch
     echo "== PHP: $("$PHP" -r 'echo PHP_VERSION;') ($PHP)"
     echo "== Laravel: $(cd "$SITE" && "$PHP" artisan --version 2>&1 | head -1)"
@@ -234,6 +254,7 @@ apply() {
     restart_php
 
     touch "$WORK/applied-$SHA"
+    cleanup_staging
     echo "SELESAI: commit $SHA aktif. Backup: $BACKUP"
 }
 
@@ -294,5 +315,6 @@ case "$ACTION" in
     apply)       apply ;;
     rollback)    rollback 0 ;;
     rollback-db) rollback 1 ;;
-    *)           echo "Aksi tidak dikenal: $ACTION (plan | apply | rollback | rollback-db)" >&2; exit 1 ;;
+    cleanup)     echo "== Bersihkan $WORK"; cleanup_staging; echo "   Sisa: $(find "$WORK" | wc -l) inode, $(du -sh "$WORK" | cut -f1)" ;;
+    *)           echo "Aksi tidak dikenal: $ACTION (plan | apply | rollback | rollback-db | cleanup)" >&2; exit 1 ;;
 esac
