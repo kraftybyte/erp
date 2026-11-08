@@ -439,6 +439,7 @@ class BankStatementFlow
         foreach ($result['candidates'] as $candidateIndex => $candidate) {
             $chosen  = ($selection[$index] ?? null) === $candidateIndex;
             $lines[] = ($candidateIndex + 1) . '. ' . ($chosen ? '✅ ' : '') . e($candidate['label'])
+                . ($this->distance($candidate['days'] ?? null, $row['direction']) ? "\n   <i>" . $this->distance($candidate['days'], $row['direction']) . '</i>' : '')
                 . ($candidate['note'] ? "\n   <i>" . e($candidate['note']) . '</i>' : '')
                 . ($candidate['identity'] ? '' : "\n   <i>nama/nomor tidak ada di berita transfer</i>");
 
@@ -599,6 +600,25 @@ class BankStatementFlow
             fn ($result, $index) => $result['status'] === 'review' && ! isset($state['picked'][$index]) && ! isset($state['skipped'][$index]),
             ARRAY_FILTER_USE_BOTH
         ));
+    }
+
+    /**
+     * "invoice dibuat 5 hari sebelum transfer": jarak tanggal membantu memilih
+     * di antara tagihan bernominal sama.
+     */
+    private function distance(?int $days, string $direction): ?string
+    {
+        if ($days === null) {
+            return null;
+        }
+
+        $what = $direction === 'in' ? 'invoice dibuat' : 'diajukan';
+
+        return match (true) {
+            $days === 0 => "{$what} di hari yang sama dengan transfer",
+            $days > 0   => "{$what} {$days} hari sebelum transfer",
+            default     => "{$what} " . abs($days) . ' hari setelah transfer',
+        };
     }
 
     private function rowHead(array $row, bool $year = false): string

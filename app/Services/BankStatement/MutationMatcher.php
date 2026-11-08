@@ -220,13 +220,17 @@ class MutationMatcher
                 default  => null,
             };
 
+            $days = $this->daysAfter($row['date'], $invoice->date);
+
             $candidates[] = [
                 'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)]],
                 'label'    => $this->invoiceLabel($invoice, $remaining),
                 'note'     => $note,
                 'identity' => $identity,
                 'exact'    => $exact,
-                'score'    => ($exact ? 100 : ($pph ? 60 : 20)) + ($number ? 50 : 0) + 30 * min($name, 2) - $this->datePenalty($row['date'], $invoice->date),
+                'days'     => $days,
+                'score'    => ($exact ? 100 : ($pph ? 60 : 20)) + ($number ? 50 : 0) + 30 * min($name, 2)
+                    + $this->proximity($days) + $this->dueBonus($row['date'], $invoice->due_date),
             ];
         }
 
@@ -257,6 +261,9 @@ class MutationMatcher
                 $identity   = $this->nameScore($words, $this->tokens($subset[0]->nama_perusahaan . ' ' . $subset[0]->nama_pic)) > 0
                     || $collection->contains(fn (Invoice $invoice) => $this->numberMatch($invoice->uuid, $compact, $words));
 
+                // Invoice terbaru di gabungan: transfernya baru bisa terjadi setelah itu.
+                $days = $this->daysAfter($row['date'], $collection->max('date'));
+
                 $combos[] = [
                     'targets'  => $collection->map(fn (Invoice $invoice) => ['type' => 'invoice', 'id' => $invoice->id, 'amount' => InvoicePayment::remaining($invoice)])->all(),
                     'label'    => count($subset) . ' invoice ' . Text::short(ClientLabel::invoice($subset[0]), 40) . ': ' . $collection->pluck('uuid')->implode(', '),
@@ -264,7 +271,8 @@ class MutationMatcher
                     'identity' => $identity,
                     'exact'    => true,
                     'combo'    => true,
-                    'score'    => 90 + ($identity ? 40 : 0),
+                    'days'     => $days,
+                    'score'    => 90 + ($identity ? 40 : 0) + $this->proximity($days),
                 ];
             }
         }
@@ -305,7 +313,7 @@ class MutationMatcher
 
     private function invoiceLabel(Invoice $invoice, float $remaining): string
     {
-        return $invoice->uuid . ' · ' . Text::short(ClientLabel::invoice($invoice), 40) . ' · sisa ' . $this->rupiah($remaining);
+        return $invoice->uuid . ' · ' . Text::short(ClientLabel::invoice($invoice), 40) . $this->dated($invoice->date) . ' · sisa ' . $this->rupiah($remaining);
     }
 
     // =================================================================
@@ -331,13 +339,16 @@ class MutationMatcher
                 continue;
             }
 
+            $days = $this->daysAfter($row['date'], $payee->submission_date);
+
             $candidates[] = [
                 'targets'  => [['type' => $this->type($payee), 'id' => $payee->id, 'amount' => round($amount, 2)]],
                 'label'    => $this->payeeLabel($payee),
                 'note'     => $partial ? 'dibayar sebagian dari ' . $this->rupiah($requested) : null,
                 'identity' => $name > 0,
                 'exact'    => $exact,
-                'score'    => ($exact ? 100 : 20) + 30 * min($name, 2) - $this->datePenalty($row['date'], $payee->submission_date),
+                'days'     => $days,
+                'score'    => ($exact ? 100 : 20) + 30 * min($name, 2) + $this->proximity($days),
             ];
         }
 
@@ -357,7 +368,8 @@ class MutationMatcher
                         'identity' => $identity,
                         'exact'    => true,
                         'combo'    => true,
-                        'score'    => 90 + ($identity ? 40 : 0),
+                        'days'     => $days = $this->daysAfter($row['date'], collect($subset)->max('submission_date')),
+                        'score'    => 90 + ($identity ? 40 : 0) + $this->proximity($days),
                     ];
                 }
             }
@@ -375,7 +387,7 @@ class MutationMatcher
     {
         $what = $payee instanceof Expense ? $payee->keterangan_expense : $payee->keterangan_advance;
 
-        return ucfirst($this->type($payee)) . " #{$payee->id} · " . $this->userName($payee->user) . ' · ' . Text::short((string) $what, 40) . ' · ' . $this->rupiah($payee->amount);
+        return ucfirst($this->type($payee)) . " #{$payee->id} · " . $this->userName($payee->user) . ' · ' . Text::short((string) $what, 40) . $this->dated($payee->submission_date) . ' · ' . $this->rupiah($payee->amount);
     }
 
     private function userTokens(?User $user): array
@@ -405,14 +417,23 @@ class MutationMatcher
         $combos   = array_keys(array_filter($candidates, fn ($candidate) => ! empty($candidate['combo'])));
         $identity = fn (array $keys) => array_values(array_filter($keys, fn ($key) => $candidates[$key]['identity']));
 
+        $named   = $identity($exact);
+        $closest = count($named) > 1 ? $this->clearlyClosest($candidates, $named) : null;
+
         $sure = match (true) {
             count($exact) === 1 && $candidates[$exact[0]]['identity'] => $exact[0],
-            count($exact) > 1 && count($identity($exact)) === 1       => $identity($exact)[0],
+            count($named) === 1                                       => $named[0],
+            $closest !== null                                         => $closest,
             $exact === [] && count($identity($combos)) === 1 && count($combos) === 1 => $combos[0],
             default                                                   => null,
         };
 
-        $clean = array_map(fn ($candidate) => array_intersect_key($candidate, array_flip(['targets', 'label', 'note', 'identity'])), $candidates);
+        if ($closest !== null && $sure === $closest) {
+            $candidates[$closest]['note'] = trim(($candidates[$closest]['note'] ?? '') . '; ada ' . (count($named) - 1)
+                . ' tagihan lain bernominal sama dari nama yang sama, dipilih yang tanggalnya paling dekat sebelum transfer', '; ');
+        }
+
+        $clean = array_map(fn ($candidate) => array_intersect_key($candidate, array_flip(['targets', 'label', 'note', 'identity', 'days'])), $candidates);
 
         return $sure !== null
             ? $this->result('sure', $sure, $clean)
@@ -523,17 +544,67 @@ class MutationMatcher
     }
 
     /**
-     * Pembayaran jauh sebelum invoice/pengajuan dibuat kurang mungkin.
+     * Hari dari tanggal invoice/pengajuan sampai uang ditransfer (negatif: transfer lebih dulu).
      */
-    private function datePenalty(string $date, mixed $documentDate): int
+    private function daysAfter(string $date, mixed $documentDate): ?int
     {
-        if (! $documentDate) {
-            return 0;
+        return $documentDate ? (int) Carbon::parse($documentDate)->startOfDay()->diffInDays(Carbon::parse($date)->startOfDay(), false) : null;
+    }
+
+    /**
+     * Pembayaran biasanya tidak lama setelah invoice dibuat (atau pengajuan
+     * disetujui): makin dekat makin tinggi nilainya. Transfer jauh sebelum
+     * dokumennya dibuat kurang mungkin; yang hanya beberapa hari sebelumnya
+     * masih wajar (uang muka, invoice dibuat belakangan).
+     */
+    private function proximity(?int $days): int
+    {
+        return match (true) {
+            $days === null => 0,
+            $days < -30    => -40,
+            $days < -7     => -15,
+            $days < 0      => -5,
+            $days <= 45    => 20 - intdiv($days * 20, 45),
+            $days <= 120   => 0,
+            default        => -10,
+        };
+    }
+
+    /**
+     * Ditransfer sekitar jatuh tempo.
+     */
+    private function dueBonus(string $date, mixed $dueDate): int
+    {
+        $days = $this->daysAfter($date, $dueDate);
+
+        return $days !== null && abs($days) <= 7 ? 10 : 0;
+    }
+
+    /**
+     * Dari beberapa tagihan bernominal sama dan nama yang sama (mis. retainer
+     * bulanan): yang dibuat paling dekat sebelum transfer, bila jelas lebih
+     * dekat (selisih minimal 7 hari dengan yang berikutnya). Null bila tidak jelas.
+     *
+     * @param  array<int, int>  $keys
+     */
+    private function clearlyClosest(array $candidates, array $keys): ?int
+    {
+        $before = array_values(array_filter($keys, fn ($key) => ($candidates[$key]['days'] ?? null) !== null && $candidates[$key]['days'] >= -3));
+        usort($before, fn ($a, $b) => abs($candidates[$a]['days']) <=> abs($candidates[$b]['days']));
+
+        if ($before === []) {
+            return null;
         }
 
-        $days = Carbon::parse($documentDate)->diffInDays(Carbon::parse($date), false);
+        $others = array_diff($keys, [$before[0]]);
+        $gap    = min(array_map(fn ($key) => abs(($candidates[$key]['days'] ?? PHP_INT_MAX >> 1) - $candidates[$before[0]]['days']), $others));
 
-        return $days < -30 ? 40 : ($days < -7 ? 15 : 0);
+        return $gap >= 7 ? $before[0] : null;
+    }
+
+    private function dated(mixed $date): string
+    {
+        return $date ? ' · ' . Carbon::parse($date)->locale('id')->translatedFormat('j M') : '';
     }
 
     private function rupiah(float|string|null $amount): string
