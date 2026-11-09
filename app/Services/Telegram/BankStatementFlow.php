@@ -299,6 +299,10 @@ class BankStatementFlow
             $lines[] = '• ' . $this->rowHead($rows[$index]) . ' → ' . e(Text::short($chosen['label'], 70))
                 . (isset($chosen['confidence']) && $results[$index]['status'] !== 'fee' ? " · <b>{$chosen['confidence']}%</b>" : '')
                 . (isset($state['picked'][$index]) ? ' <i>(dipilih)</i>' : '');
+
+            foreach ($this->targetDetails($chosen['targets'], short: true) as $detail) {
+                $lines[] = "   {$detail}";
+            }
         }
 
         if (count($selected) > 12) {
@@ -484,8 +488,11 @@ class BankStatementFlow
         foreach ($result['candidates'] as $candidateIndex => $candidate) {
             $chosen  = ($selection[$index] ?? null) === $candidateIndex;
             // Alasan yang membuat kandidat ini cocok atau diragukan, dengan skor keyakinannya.
+            // Rincian lengkap untuk dua kandidat teratas; sisanya singkat (batas panjang pesan Telegram).
+            $details = $this->targetDetails($candidate['targets'], short: $candidateIndex >= 2);
             $lines[] = ($candidateIndex + 1) . '. ' . ($chosen ? '✅ ' : '') . e($candidate['label'])
                 . (isset($candidate['confidence']) ? " — <b>{$candidate['confidence']}%</b>" : '')
+                . ($details ? "\n   " . implode("\n   ", $details) : '')
                 . ($candidate['reasons'] ?? [] ? "\n   " . implode("\n   ", array_map('e', array_slice($candidate['reasons'], 0, 7))) : '')
                 . ($candidate['note'] ? "\n   <i>→ " . e($candidate['note']) . '</i>' : '');
 
@@ -562,6 +569,7 @@ class BankStatementFlow
                 $label   = $this->matcher->invoiceLabel($invoice, $found['remaining']);
                 $lines[] = ($number + 1) . '. ' . e($label)
                     . ($found['open'] ? '' : ' — <i>sudah Lunas</i>')
+                    . "\n   " . implode("\n   ", $this->targetDetails([['type' => 'invoice', 'id' => $invoice->id]], short: true))
                     . ($found['explanation'] ? "\n   ✓ " . e($found['explanation']['reason']) : ($found['open'] ? "\n   • nominal mutasi tidak cocok dengan sisa tagihannya" : ''));
 
                 if ($found['open']) {
@@ -833,6 +841,88 @@ class BankStatementFlow
             $days === 0 => "{$what} di hari yang sama dengan transfer",
             $days > 0   => "{$what} {$days} hari sebelum transfer",
             default     => "{$what} " . abs($days) . ' hari setelah transfer',
+        };
+    }
+
+    /**
+     * Rincian tagihan yang dibayar mutasi, supaya Finance tahu persis yang
+     * mana: tanggal, jatuh tempo, jenis pembayaran, total/terbayar/sisa,
+     * item, project, dan nomor PO (invoice); keterangan, kategori, dan project
+     * (expense/advance). $short: satu baris untuk ringkasan.
+     *
+     * @return array<int, string> baris HTML
+     */
+    private function targetDetails(array $targets, bool $short = false): array
+    {
+        $ids      = collect($targets)->filter(fn ($target) => isset($target['id']))->groupBy('type')->map(fn ($group) => $group->pluck('id')->all());
+        $invoices = \App\Models\Invoice::with(['invoicesItems', 'projects', 'parentInvoice'])->whereIn('id', $ids->get('invoice', []))->get()->keyBy('id');
+        $expenses = \App\Models\Expense::with('project')->whereIn('id', $ids->get('expense', []))->get()->keyBy('id');
+        $advances = \App\Models\Advance::with('project')->whereIn('id', $ids->get('advance', []))->get()->keyBy('id');
+        $lines    = [];
+
+        foreach ($targets as $target) {
+            // Biaya/bunga bank tidak punya tagihan.
+            if (! isset($target['id'])) {
+                continue;
+            }
+
+            if ($target['type'] === 'invoice' && ($invoice = $invoices->get($target['id']))) {
+                $items = $invoice->invoicesItems->map(fn ($item) => trim((string) ($item->item ?: $item->description))
+                    . ((float) $item->qty > 1 ? ' — ' . rtrim(rtrim(number_format((float) $item->qty, 2, ',', '.'), '0'), ',') . ' × ' . $this->rupiah($item->price) : ' — ' . $this->rupiah($item->total ?: $item->price)))
+                    ->filter(fn ($line) => ! str_starts_with($line, ' —'));
+
+                if ($short) {
+                    $lines[] = '📦 ' . e(Text::short($items->first() ?? '-', 45)) . ($items->count() > 1 ? ' +' . ($items->count() - 1) . ' item' : '')
+                        . ' · ' . $this->day((string) $invoice->date) . ' · ' . e($this->paymentType($invoice));
+
+                    continue;
+                }
+
+                $lines[] = '🗓 ' . $this->day((string) $invoice->date, year: true) . ($invoice->due_date ? ' · jatuh tempo ' . $this->day((string) $invoice->due_date) : '')
+                    . ' · ' . e($this->paymentType($invoice));
+                $lines[] = '💰 Total ' . $this->rupiah($invoice->grand_total) . ' · terbayar ' . $this->rupiah($invoice->paid) . ' · sisa ' . $this->rupiah(\App\Services\InvoicePayment::remaining($invoice));
+
+                foreach ($items->take(4) as $item) {
+                    $lines[] = '📦 ' . e(Text::short($item, 70));
+                }
+
+                if ($items->count() > 4) {
+                    $lines[] = '📦 +' . ($items->count() - 4) . ' item lain';
+                }
+
+                if ($project = $invoice->projects->first()) {
+                    $lines[] = '📁 Project: ' . e(Text::short((string) $project->nama_project, 50));
+                }
+
+                if (filled($invoice->po_number)) {
+                    $lines[] = '🧾 PO: ' . e((string) $invoice->po_number);
+                }
+
+                continue;
+            }
+
+            $payee = $target['type'] === 'expense' ? $expenses->get($target['id']) : $advances->get($target['id']);
+
+            if ($payee) {
+                $what    = $payee instanceof \App\Models\Expense ? $payee->keterangan_expense : $payee->keterangan_advance;
+                $lines[] = '🗒 ' . e(Text::short((string) $what, $short ? 45 : 90))
+                    . ($short ? '' : ($payee->category ? ' · 🏷 ' . e($payee->category) : '') . ' · 🗓 ' . $this->day((string) $payee->submission_date)
+                        . ($payee->project ? ' · 📁 ' . e(Text::short((string) $payee->project->nama_project, 40)) : ''));
+            }
+        }
+
+        return $lines;
+    }
+
+    private function paymentType(\App\Models\Invoice $invoice): string
+    {
+        $type = (string) $invoice->type_payment;
+
+        return match (true) {
+            $invoice->type === 'estimate'        => 'Proforma',
+            str_starts_with($type, 'dp_')        => 'DP ' . (int) substr($type, 3) . '%',
+            $type === 'final_payment'            => 'Pelunasan' . ($invoice->parentInvoice ? ' dari ' . $invoice->parentInvoice->uuid : ''),
+            default                              => 'Full payment',
         };
     }
 
