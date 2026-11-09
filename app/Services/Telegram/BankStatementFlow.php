@@ -275,7 +275,9 @@ class BankStatementFlow
         $lines[] = '✅ <b>Siap dicatat (' . count($selected) . ')</b>' . ($selected ? '' : ' — belum ada');
 
         foreach (array_slice($selected, 0, 12, true) as $index => $candidate) {
-            $lines[] = '• ' . $this->rowHead($rows[$index]) . ' → ' . e(Text::short($results[$index]['candidates'][$candidate]['label'], 70))
+            $chosen  = $results[$index]['candidates'][$candidate];
+            $lines[] = '• ' . $this->rowHead($rows[$index]) . ' → ' . e(Text::short($chosen['label'], 70))
+                . (isset($chosen['confidence']) && $results[$index]['status'] !== 'fee' ? " · <b>{$chosen['confidence']}%</b>" : '')
                 . (isset($state['picked'][$index]) ? ' <i>(dipilih)</i>' : '');
         }
 
@@ -445,10 +447,11 @@ class BankStatementFlow
 
         foreach ($result['candidates'] as $candidateIndex => $candidate) {
             $chosen  = ($selection[$index] ?? null) === $candidateIndex;
+            // Alasan yang membuat kandidat ini cocok atau diragukan, dengan skor keyakinannya.
             $lines[] = ($candidateIndex + 1) . '. ' . ($chosen ? '✅ ' : '') . e($candidate['label'])
-                . ($this->distance($candidate['days'] ?? null, $row['direction']) ? "\n   <i>" . $this->distance($candidate['days'], $row['direction']) . '</i>' : '')
-                . ($candidate['note'] ? "\n   <i>" . e($candidate['note']) . '</i>' : '')
-                . ($candidate['identity'] ? '' : "\n   <i>nama/nomor tidak ada di berita transfer</i>");
+                . (isset($candidate['confidence']) ? " — <b>{$candidate['confidence']}%</b>" : '')
+                . ($candidate['reasons'] ?? [] ? "\n   " . implode("\n   ", array_map('e', array_slice($candidate['reasons'], 0, 7))) : '')
+                . ($candidate['note'] ? "\n   <i>→ " . e($candidate['note']) . '</i>' : '');
 
             $buttons[] = [[
                 'text'          => ($chosen ? '✅ ' : '') . ($candidateIndex + 1) . '. ' . Text::short($candidate['label'], 45),
