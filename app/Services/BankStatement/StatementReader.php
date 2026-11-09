@@ -295,6 +295,10 @@ class StatementReader
             $meta['opening'] ??= $value;
         } elseif (preg_match('/saldo\s*akhir|closing|ending/iu', $text)) {
             $meta['closing'] ??= $value;
+        } elseif (preg_match('/mutasi\s*(kredit|credit|debet|debit)/iu', $text, $kind)) {
+            // "Mutasi Kredit : 12,500,000.00","3": total lalu jumlah transaksinya.
+            $side                   = in_array(strtolower($kind[1]), ['kredit', 'credit'], true) ? 'in' : 'out';
+            $meta['totals'][$side]  = ['amount' => $values[0] ?? null, 'count' => isset($values[1]) && $values[1] < 100_000 ? (int) $values[1] : null];
         }
     }
 
@@ -305,10 +309,14 @@ class StatementReader
      */
     private function meta(array $table): array
     {
-        $meta = ['account_number' => null, 'period_start' => null, 'period_end' => null, 'opening' => null, 'closing' => null];
+        $meta = ['account_number' => null, 'holder' => null, 'period_start' => null, 'period_end' => null, 'opening' => null, 'closing' => null, 'totals' => []];
 
         foreach ($table as $cells) {
             $text = trim(implode(' ', array_map('strval', $cells)));
+
+            if ($meta['holder'] === null && preg_match('/^\s*nama\s*:\s*(.+)$/iu', $text, $m)) {
+                $meta['holder'] = trim($m[1]);
+            }
 
             if ($meta['account_number'] === null && preg_match('/(no\.?\s*(rek|rekening|account)|nomor\s*rekening|account\s*(no|number))\D{0,15}([\d\-\s.]{6,24})/iu', $text, $m)) {
                 $meta['account_number'] = preg_replace('/\D/', '', $m[4]) ?: null;
@@ -447,7 +455,9 @@ class StatementReader
         $clean    = [];
 
         foreach ($rows as $row) {
-            $row['description'] = trim(preg_replace('/\s+/u', ' ', $row['description']));
+            // KlikBCA Bisnis memisahkan kode, berita, dan nama pengirim dengan dua spasi
+            // atau lebih: dipertahankan sebagai " · " (lihat BcaDescription).
+            $row['description'] = trim(preg_replace('/[ \t]+/u', ' ', preg_replace('/\s{2,}/u', ' · ', trim($row['description']))), ' ·');
             $row['amount']      = round($row['amount'], 2);
 
             if ($row['date'] > $tomorrow || $row['amount'] <= 0 || $row['amount'] >= 1e13) {
@@ -464,20 +474,43 @@ class StatementReader
             $clean[] = $row;
         }
 
-        return $meta + [
+        $isBca = (bool) array_filter($clean, fn ($row) => preg_match('/^(TRSF E-?BANKING|BI-?FAST|SWITCHING) (CR|DB)\b/i', $row['description']));
+
+        return ['bank' => ($meta['bank'] ?? null) ?: ($isBca ? 'BCA' : null)] + $meta + [
             'rows'    => $clean,
             'skipped' => $skipped,
             'source'  => $source,
-            'check'   => $this->check($meta['opening'] ?? null, $meta['closing'] ?? null, $clean),
+            'check'   => $this->check($meta['opening'] ?? null, $meta['closing'] ?? null, $clean, $meta['totals'] ?? []),
         ];
     }
 
     /**
      * Saldo awal + kredit − debet = saldo akhir; tanpa keduanya, saldo per baris berurutan.
      */
-    private function check(?float $opening, ?float $closing, array $rows): array
+    private function check(?float $opening, ?float $closing, array $rows, array $totals = []): array
     {
         $net = array_sum(array_map(fn ($row) => $row['direction'] === 'in' ? $row['amount'] : -$row['amount'], $rows));
+
+        // Ringkasan bank tanpa saldo akhir (KlikBCA Bisnis): total dan jumlah transaksi per arah.
+        if ($closing === null && $totals) {
+            $problems = [];
+
+            foreach ($totals as $side => $total) {
+                $sideRows = array_filter($rows, fn ($row) => $row['direction'] === $side);
+                $sum      = round(array_sum(array_column($sideRows, 'amount')), 2);
+                $label    = $side === 'in' ? 'kredit' : 'debet';
+
+                if ($total['amount'] !== null && abs($sum - $total['amount']) >= 1) {
+                    $problems[] = "total {$label} selisih " . number_format(abs($sum - $total['amount']), 0, ',', '.');
+                }
+
+                if ($total['count'] !== null && count($sideRows) !== $total['count']) {
+                    $problems[] = "{$label} terbaca " . count($sideRows) . " dari {$total['count']} transaksi";
+                }
+            }
+
+            return ['status' => $problems ? 'mismatch' : 'ok', 'difference' => $problems ? implode('; ', $problems) : 0, 'method' => 'total & jumlah mutasi'];
+        }
 
         if ($opening !== null && $closing !== null) {
             $difference = round($opening + $net - $closing, 2);

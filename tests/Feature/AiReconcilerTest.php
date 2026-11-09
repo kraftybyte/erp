@@ -131,6 +131,22 @@ class AiReconcilerTest extends TestCase
         $this->assertStringContainsString('Saldo prabayar Gemini habis', $after['error']);
     }
 
+    public function test_ai_menerima_berita_pengirim_nomor_proforma_dan_isi_invoice(): void
+    {
+        $invoice = $this->invoice(6_611_000);
+        $invoice->update(['proforma_uuid' => 'PI/0990001/00006']);
+        \App\Models\InvoicesItem::create(['invoice_id' => $invoice->id, 'item' => 'Frame Signage Akrilik', 'qty' => 1, 'price' => 6_611_000, 'total' => 6_611_000]);
+
+        $rows = [$this->row(6_611_000, 'TRSF E-BANKING CR 0511/FTSCY/WS95321 · F-FRAME SIGNANGE PI/ 0990001/00006 · KARYA MUDA SEJATI')];
+        app(AiReconciler::class)->review($rows, app(MutationMatcher::class)->match($rows, $this->account));
+
+        $prompt = json_encode(Http::recorded()->map(fn ($pair) => $pair[0]->data())->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        foreach (['F-FRAME SIGNANGE PI/ 0990001/00006', 'KARYA MUDA SEJATI', 'PI/0990001/00006', 'Frame Signage Akrilik', 'salah transfer'] as $expected) {
+            $this->assertStringContainsString($expected, $prompt);
+        }
+    }
+
     private function match(int $row, array $targets, int $confidence, string $reasoning): array
     {
         return ['row' => $row, 'decision' => 'match', 'targets' => $targets, 'confidence' => $confidence, 'reasoning' => $reasoning];
