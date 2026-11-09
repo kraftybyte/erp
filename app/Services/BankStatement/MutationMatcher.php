@@ -88,13 +88,14 @@ class MutationMatcher
 
         $recorded = $this->recordedTransactions($rows, $account, $processed);
 
-        $invoices = Invoice::where('type', 'sale')->whereNotIn('status', ['paid', 'cancelled'])->get()
+        $invoices = Invoice::with('deal')->where('type', 'sale')->whereNotIn('status', ['paid', 'cancelled'])->get()
             ->filter(fn (Invoice $invoice) => InvoicePayment::isPayable($invoice))
             ->values();
         $payees = Expense::with('user')->where('status', 'Disetujui')->get()
             ->concat(Advance::with('user')->where('status', 'Disetujui')->get())
             ->values();
 
+        $senders = $this->knownSenders();
         $results = [];
 
         foreach ($rows as $index => $row) {
@@ -102,7 +103,7 @@ class MutationMatcher
                 $processed->has($row['key']) => $this->result('duplicate', note: 'Sudah dicatat dari unggahan mutasi sebelumnya.'),
                 isset($recorded[$index])      => $this->result('recorded', note: $recorded[$index]),
                 $this->isFee($row)            => $this->feeResult($row),
-                $row['direction'] === 'in'    => $this->classify($this->invoiceCandidates($row, $invoices)),
+                $row['direction'] === 'in'    => $this->classify($this->invoiceCandidates($row, $invoices, $senders)),
                 default                       => $this->classify($this->payoutCandidates($row, $payees)),
             };
         }
@@ -209,54 +210,150 @@ class MutationMatcher
     // =================================================================
 
     /**
+     * Pengirim yang pernah membayar invoice lewat mutasi yang sudah dicatat:
+     * kata nama pengirimnya dan klien (Deal / nama perusahaan) yang dibayar.
+     * Klien sering membayar dari rekening pribadi PIC atau badan lain, jadi
+     * namanya tidak sama dengan nama di invoice.
+     *
+     * @return array<int, array{words: array<int, string>, deals: array<int, int>, companies: array<int, string>}>
+     */
+    private function knownSenders(): array
+    {
+        $mutations = BankMutation::where('direction', 'in')->latest('id')->limit(3000)->get(['description', 'targets']);
+        $ids       = $mutations->flatMap(fn (BankMutation $mutation) => collect($mutation->targets)->where('type', 'invoice')->pluck('id'))->unique();
+        $invoices  = Invoice::withTrashed()->whereIn('id', $ids)->get(['id', 'deal_id', 'nama_perusahaan'])->keyBy('id');
+        $senders   = [];
+
+        foreach ($mutations as $mutation) {
+            $words = BcaDescription::nameWords(BcaDescription::parse($mutation->description)['counterparty']);
+            $paid  = collect($mutation->targets)->where('type', 'invoice')->map(fn ($target) => $invoices->get($target['id']))->filter();
+
+            if ($words && $paid->isNotEmpty()) {
+                $senders[] = [
+                    'words'     => $words,
+                    'deals'     => $paid->pluck('deal_id')->filter()->unique()->values()->all(),
+                    'companies' => $paid->map(fn (Invoice $invoice) => mb_strtolower(trim((string) $invoice->nama_perusahaan)))->filter()->unique()->values()->all(),
+                ];
+            }
+        }
+
+        return $senders;
+    }
+
+    /**
      * @param  Collection<int, Invoice>  $invoices
      */
-    private function invoiceCandidates(array $row, Collection $invoices): array
+    private function invoiceCandidates(array $row, Collection $invoices, array $senders): array
     {
-        $amount     = $row['amount'];
-        $words      = $this->words($row['description']);
-        $compact    = $this->compact($row['description']);
+        $amount = $row['amount'];
+        $bca    = BcaDescription::parse($row['description']);
+
+        // Keterangan BCA mengulang nominalnya; bila berbeda, nominal hasil baca yang dipercaya.
+        $text    = $bca['counterparty'] !== '' ? $bca['counterparty'] : $row['description'];
+        $words   = $this->words($text);
+        $compact = $this->compact($text);
+        $sender  = BcaDescription::nameWords($text);
+        $known   = array_values(array_filter($senders, fn ($known) => BcaDescription::sameSender($sender, $known['words'])));
+
         $candidates = [];
 
         foreach ($invoices as $invoice) {
             $remaining = InvoicePayment::remaining($invoice);
-            $number    = $this->numberMatch($invoice->uuid, $compact, $words);
-            $name      = $this->nameScore($words, $this->tokens($invoice->nama_perusahaan . ' ' . $invoice->nama_pic));
-            $identity  = $number || $name > 0;
-            $exact     = abs($amount - $remaining) <= self::TOLERANCE;
-            $pph       = ! $exact && abs($amount - ($remaining - $this->pph23($invoice, $remaining))) <= self::TOLERANCE;
-            $partial   = ! $exact && ! $pph && $amount < $remaining && $identity;
+            $number    = $this->numberMatch($invoice->uuid, $compact, $words) || $this->poMatch($invoice, $compact);
+            $name      = $this->nameScore($words, $this->clientTokens($invoice));
+            $learned   = $this->paidBefore($known, $invoice);
+            $identity  = $number || $name > 0 || $learned;
+            $pattern   = $this->amountPattern($invoice, $remaining, $amount, $identity);
 
-            if (! $exact && ! $pph && ! $partial) {
+            if ($pattern === null) {
                 continue;
             }
-
-            $note = match (true) {
-                $pph     => 'nominal = sisa tagihan dipotong PPh 23 (2%); dicatat lunas dengan potongan PPh 23 ' . $this->rupiah($remaining - $amount) . ' (bukti potong menyusul)',
-                $partial => 'pembayaran sebagian; sisa setelah ini ' . $this->rupiah($remaining - $amount),
-                default  => null,
-            };
 
             $days = $this->daysAfter($row['date'], $invoice->date);
 
             $candidates[] = [
-                'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)] + ($pph ? ['withholding' => round($remaining - $amount, 2)] : [])],
+                'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)]
+                    + ($pattern['withholding'] ? ['withholding' => $pattern['withholding'], 'withholding_label' => $pattern['label']] : [])],
                 'label'    => $this->invoiceLabel($invoice, $remaining),
-                'note'     => $note,
+                'note'     => implode('; ', array_filter([$pattern['note'], $learned && ! $name && ! $number ? 'pengirim ini pernah membayar invoice klien yang sama' : null])) ?: null,
                 'identity' => $identity,
-                'exact'    => $exact,
+                'exact'    => $pattern['kind'] === 'exact',
                 'days'     => $days,
-                'score'    => ($exact ? 100 : ($pph ? 60 : 20)) + ($number ? 50 : 0) + 30 * min($name, 2)
+                'score'    => $pattern['score'] + ($number ? 50 : 0) + 30 * min($name, 2) + ($learned ? 40 : 0)
                     + $this->proximity($days) + $this->dueBonus($row['date'], $invoice->due_date),
             ];
         }
 
         // Satu transfer untuk beberapa invoice klien yang sama.
         if (! array_filter($candidates, fn ($candidate) => $candidate['exact'])) {
-            $candidates = array_merge($candidates, $this->invoiceCombos($row, $invoices, $words, $compact));
+            $candidates = array_merge($candidates, $this->invoiceCombos($row, $invoices, $words, $compact, $known));
         }
 
         return $candidates;
+    }
+
+    /**
+     * Nominal transfer dibanding sisa tagihan:
+     * - sama persis;
+     * - dipotong PPh 23 (2% DPP);
+     * - dipotong PPN oleh pemungut (WAPU: BUMN/instansi), dengan atau tanpa PPh 23;
+     * - kurang sedikit (biaya transfer/pembulatan, maks. Rp 50.000 dan 1%) bila nama/nomornya cocok;
+     * - sebagian (DP/termin) bila nama/nomornya cocok.
+     *
+     * @return array{kind: string, withholding: float, label: ?string, note: ?string, score: int}|null
+     */
+    private function amountPattern(Invoice $invoice, float $remaining, float $amount, bool $identity): ?array
+    {
+        $diff  = round($remaining - $amount, 2);
+        $total = (float) $invoice->grand_total;
+        $dpp   = $total > 0 ? max((float) $invoice->subtotal - (float) $invoice->total_discount, 0) * ($remaining / $total) : 0;
+        $vat   = (float) $invoice->total_vat > 0;
+        $pph   = round(self::PPH23 * $dpp, 2);
+        $near  = fn (float $value) => abs($amount - $value) <= self::TOLERANCE;
+        $cut   = fn (string $label, string $note, int $score, string $after = '; dicatat lunas') => ['kind' => 'cut', 'withholding' => $diff, 'label' => $label, 'note' => $note . ' ' . $this->rupiah($diff) . $after, 'score' => $score];
+
+        return match (true) {
+            abs($diff) <= self::TOLERANCE           => ['kind' => 'exact', 'withholding' => 0.0, 'label' => null, 'note' => null, 'score' => 100],
+            $near($remaining - $pph)                 => $cut('PPh 23', 'dipotong PPh 23 (2% DPP)', 60, '; dicatat lunas, minta bukti potongnya ke klien'),
+            $vat && $near($dpp - $pph)               => $cut('PPN (WAPU) + PPh 23', 'PPN dipungut klien (WAPU) dan dipotong PPh 23, total', 60, '; dicatat lunas, minta bukti pungut/potongnya ke klien'),
+            $vat && $near($dpp)                      => $cut('PPN (WAPU)', 'PPN dipungut klien (WAPU)', 55, '; dicatat lunas, minta bukti pungutnya ke klien'),
+            $identity && $diff > 0 && $diff <= min(50_000, max($remaining * 0.01, 7_500)) => $cut('selisih biaya transfer/pembulatan', 'kurang', 50),
+            $identity && $diff > 0                   => ['kind' => 'partial', 'withholding' => 0.0, 'label' => null, 'note' => 'pembayaran sebagian; sisa setelah ini ' . $this->rupiah($diff), 'score' => 20],
+            default                                  => null,
+        };
+    }
+
+    /**
+     * Nama klien dari invoice dan dari Deal-nya (nama di invoice kadang diketik beda).
+     *
+     * @return array<int, string>
+     */
+    private function clientTokens(Invoice $invoice): array
+    {
+        return $this->tokens(implode(' ', [$invoice->nama_perusahaan, $invoice->nama_pic, $invoice->deal?->nama_perusahaan, $invoice->deal?->nama_pic]));
+    }
+
+    private function paidBefore(array $known, Invoice $invoice): bool
+    {
+        $company = mb_strtolower(trim((string) $invoice->nama_perusahaan));
+
+        foreach ($known as $sender) {
+            if (($invoice->deal_id && in_array($invoice->deal_id, $sender['deals'], true)) || ($company !== '' && in_array($company, $sender['companies'], true))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Nomor PO klien di berita transfer.
+     */
+    private function poMatch(Invoice $invoice, string $compact): bool
+    {
+        $po = $this->compact((string) $invoice->po_number);
+
+        return strlen($po) >= 4 && str_contains($compact, $po);
     }
 
     /**
@@ -264,7 +361,7 @@ class MutationMatcher
      *
      * @param  Collection<int, Invoice>  $invoices
      */
-    private function invoiceCombos(array $row, Collection $invoices, array $words, string $compact): array
+    private function invoiceCombos(array $row, Collection $invoices, array $words, string $compact, array $known): array
     {
         $combos = [];
 
@@ -275,8 +372,9 @@ class MutationMatcher
 
             foreach ($this->subsets($group->values()->all(), fn (Invoice $invoice) => InvoicePayment::remaining($invoice), $row['amount']) as $subset) {
                 $collection = collect($subset);
-                $identity   = $this->nameScore($words, $this->tokens($subset[0]->nama_perusahaan . ' ' . $subset[0]->nama_pic)) > 0
-                    || $collection->contains(fn (Invoice $invoice) => $this->numberMatch($invoice->uuid, $compact, $words));
+                $identity   = $this->nameScore($words, $this->clientTokens($subset[0])) > 0
+                    || $this->paidBefore($known, $subset[0])
+                    || $collection->contains(fn (Invoice $invoice) => $this->numberMatch($invoice->uuid, $compact, $words) || $this->poMatch($invoice, $compact));
 
                 // Invoice terbaru di gabungan: transfernya baru bisa terjadi setelah itu.
                 $days = $this->daysAfter($row['date'], $collection->max('date'));
@@ -295,14 +393,6 @@ class MutationMatcher
         }
 
         return $combos;
-    }
-
-    private function pph23(Invoice $invoice, float $remaining): float
-    {
-        $total = (float) $invoice->grand_total;
-        $dpp   = max((float) $invoice->subtotal - (float) $invoice->total_discount, 0);
-
-        return $total > 0 ? round(self::PPH23 * $dpp * ($remaining / $total), 2) : 0.0;
     }
 
     /**

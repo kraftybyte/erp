@@ -106,7 +106,7 @@ class BankMutationResource extends Resource
             };
 
             $text = e($label) . ' · ' . e(Money::rupiah($target['amount'] ?? 0))
-                . (! empty($target['withholding']) ? ' + potongan PPh 23 ' . e(Money::rupiah($target['withholding'])) : '');
+                . (! empty($target['withholding']) ? ' + potongan ' . e($target['withholding_label'] ?? 'PPh 23') . ' ' . e(Money::rupiah($target['withholding'])) : '');
 
             return $url ? '<a href="' . e($url) . '" class="text-primary-600 hover:underline">' . $text . '</a>' : $text;
         });
