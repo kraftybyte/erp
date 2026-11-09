@@ -176,6 +176,8 @@ class Transaction extends Model
             'payment' => 'Pembayaran',
             'expense' => 'Biaya Operasional',
             'income' => 'Pendapatan',
+            'bank_fee' => 'Biaya & Pajak Bank',
+            'bank_interest' => 'Bunga / Jasa Giro',
             'other' => 'Lainnya',
         ];
     }

@@ -24,6 +24,10 @@ return [
         'key'   => env('GEMINI_API_KEY'),
         // gemini-2.0-flash sudah dimatikan Google per 1 Juni 2026.
         'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+        // Perkiraan harga (US$ per 1 juta token) untuk laporan mingguan bot;
+        // sesuaikan dengan harga model di AI Studio → Billing.
+        'price_input_per_million'  => env('GEMINI_PRICE_INPUT', 0.10),
+        'price_output_per_million' => env('GEMINI_PRICE_OUTPUT', 0.40),
     ],
 
     'telegram' => [

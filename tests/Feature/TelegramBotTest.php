@@ -1505,6 +1505,130 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
     }
 
+    public function test_pesan_suara_ditranskrip_lalu_diproses_seperti_ketikan(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: ['text' => 'expense 50rb grab ke kantor nestory']);
+
+        $this->send($this->voiceUpdate(duration: 6));
+
+        $texts = collect(Http::recorded())->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => str_ends_with($request->url(), '/sendMessage'))
+            ->map(fn (Request $request) => $request->data()['text']);
+        $this->assertTrue($texts->contains(fn ($text) => str_contains($text, '🎙️ Terdengar: <i>«expense 50rb grab ke kantor nestory»</i>')));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame(['expense', 50_000, $project->id], [$draft->type, $draft->amount, $draft->projectId]);
+    }
+
+    public function test_pesan_suara_yang_gagal_dibaca_atau_terlalu_panjang(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->voiceUpdate(duration: 200));
+        $this->assertStringContainsString('maksimal 90 detik', $this->lastText());
+
+        $this->send($this->voiceUpdate(duration: 5));
+        $this->assertStringContainsString('Pesan suara belum bisa dibaca: Saldo prabayar Gemini habis', $this->lastText());
+        $this->assertNull(Draft::load($this->chatId));
+    }
+
+    private function voiceUpdate(int $duration): array
+    {
+        return [
+            'update_id' => 700_000_000 + ++$this->updateId,
+            'message'   => [
+                'message_id' => 10 + $this->updateId,
+                'chat'       => ['id' => $this->chatId, 'type' => 'private'],
+                'from'       => ['id' => $this->chatId, 'is_bot' => false, 'first_name' => 'Tes'],
+                'voice'      => ['file_id' => 'suara-' . $this->updateId, 'file_unique_id' => 'us-' . $this->updateId, 'duration' => $duration, 'mime_type' => 'audio/ogg', 'file_size' => 4_000],
+            ],
+        ];
+    }
+
+    public function test_satu_struk_dibagi_ke_dua_project(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $nestory = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $belamy  = $this->project('PT Belamy Indonesia', 'Booth Pameran');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-bagi', 'expense grab tim 150rb nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertContains('🔀 Bagi ke beberapa project', $this->lastButtons());
+
+        $this->send($this->tap("{$draft->id}:split:"));
+        $this->assertStringContainsString('Total harus <b>Rp 150.000</b>', $this->lastText());
+
+        // Jumlah yang tidak pas ditanyakan ulang.
+        $this->send($this->textUpdate('nestory 100rb, belamy 20rb'));
+        $this->assertStringContainsString('harus sama dengan total struk Rp 150.000', $this->lastText());
+
+        $this->send($this->textUpdate('nestory 100rb, belamy sisanya'));
+        $this->assertStringContainsString('Dibagi ke 2 project', $this->lastText());
+        $this->assertStringContainsString('<b>Rp 50.000</b>', $this->lastText());
+        $this->assertContains('✅ Kirim 2 expense', $this->lastButtons());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expenses = Expense::where('user_id', $user->id)->orderBy('id')->get();
+        $this->assertCount(2, $expenses);
+        $this->assertSame([$nestory->id, $belamy->id], $expenses->pluck('project_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertEquals([100_000, 50_000], $expenses->pluck('amount')->map(fn ($amount) => (float) $amount)->all());
+        $this->assertStringContainsString('(bagian 2/2 dari Rp 150.000)', $expenses[1]->keterangan_expense);
+        $this->assertNotSame($expenses[0]->attachment, $expenses[1]->attachment, 'Masing-masing punya salinan struk.');
+        Storage::disk('public')->assertExists([$expenses[0]->attachment, $expenses[1]->attachment]);
+        $this->assertStringContainsString('2 Expense (#', $this->lastText());
+    }
+
+    public function test_struk_yang_difoto_ulang_diberi_peringatan_mirip(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('struk-asli', 'expense kabel nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertStringNotContainsString('irip struk', $this->lastText());
+        $this->send($this->tap("{$draft->id}:submit:"));
+        $this->assertSame(1, Expense::where('user_id', $user->id)->count());
+
+        // File Telegram berbeda (difoto ulang), isi struknya sama.
+        $this->send($this->photoUpdate('struk-foto-ulang', 'expense kabel nestory'));
+
+        $this->assertStringContainsString('⚠️ Mirip struk yang sudah diajukan: Expense', $this->lastText());
+        $this->assertStringContainsString('Rp 265.000', $this->lastText());
+    }
+
+    public function test_sidik_jari_gambar_sama_dan_beda(): void
+    {
+        $image = function (int $seed): string {
+            // Gradasi kiri→kanan (seed 1) atau kanan→kiri (seed lain).
+            $gd = imagecreatetruecolor(180, 120);
+            for ($x = 0; $x < 180; $x += 10) {
+                $level = $seed === 1 ? $x : 179 - $x;
+                imagefilledrectangle($gd, $x, 0, $x + 9, 119, imagecolorallocate($gd, $level, $level, $level));
+            }
+            ob_start();
+            imagejpeg($gd, null, 90);
+
+            return ob_get_clean();
+        };
+
+        $a = \App\Services\Telegram\ReceiptFingerprint::hash($image(1));
+        $b = \App\Services\Telegram\ReceiptFingerprint::hash($image(1));
+        $c = \App\Services\Telegram\ReceiptFingerprint::hash($image(7));
+
+        $this->assertSame(16, strlen($a));
+        $this->assertSame(0, \App\Services\Telegram\ReceiptFingerprint::distance($a, $b));
+        $this->assertGreaterThan(5, \App\Services\Telegram\ReceiptFingerprint::distance($a, $c));
+        $this->assertNull(\App\Services\Telegram\ReceiptFingerprint::hash('%PDF-1.4'), 'PDF tidak diberi sidik jari gambar.');
+    }
+
     public function test_satu_struk_boleh_untuk_realisasi_beberapa_advance(): void
     {
         Storage::fake('public');

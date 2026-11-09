@@ -32,6 +32,9 @@ class AdvanceObserver
             'info',
             $url
         );
+
+        // Telegram ke Director/Finance, dengan tombol Setujui/Tolak (bot laporan keuangan).
+        app(\App\Services\Telegram\ManagementAlerts::class)->newSubmission($advance);
     }
 
     public function updated(Advance $advance): void

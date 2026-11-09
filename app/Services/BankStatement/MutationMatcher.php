@@ -101,7 +101,7 @@ class MutationMatcher
             $results[$index] = match (true) {
                 $processed->has($row['key']) => $this->result('duplicate', note: 'Sudah dicatat dari unggahan mutasi sebelumnya.'),
                 isset($recorded[$index])      => $this->result('recorded', note: $recorded[$index]),
-                $this->isFee($row)            => $this->result('fee', note: 'Biaya, pajak, atau bunga bank.'),
+                $this->isFee($row)            => $this->feeResult($row),
                 $row['direction'] === 'in'    => $this->classify($this->invoiceCandidates($row, $invoices)),
                 default                       => $this->classify($this->payoutCandidates($row, $payees)),
             };
@@ -174,6 +174,23 @@ class MutationMatcher
         return $result;
     }
 
+    /**
+     * Biaya/pajak/bunga bank: tidak dicatat kecuali Finance memilih "Catat juga
+     * biaya/bunga bank", supaya saldo ERP sama persis dengan saldo bank.
+     */
+    private function feeResult(array $row): array
+    {
+        $interest = $row['direction'] === 'in';
+
+        return $this->result('fee', 0, [[
+            'targets'  => [['type' => $interest ? 'bank_interest' : 'bank_fee', 'amount' => round($row['amount'], 2)]],
+            'label'    => $interest ? 'Bunga / jasa giro bank' : 'Biaya / pajak bank',
+            'note'     => null,
+            'identity' => true,
+            'days'     => null,
+        ]], 'Biaya, pajak, atau bunga bank.');
+    }
+
     private function isFee(array $row): bool
     {
         $text = mb_strtoupper($row['description']);
@@ -215,7 +232,7 @@ class MutationMatcher
             }
 
             $note = match (true) {
-                $pph     => 'nominal = sisa tagihan dipotong PPh 23 (2%); invoice tetap Sebagian dengan sisa ' . $this->rupiah($remaining - $amount),
+                $pph     => 'nominal = sisa tagihan dipotong PPh 23 (2%); dicatat lunas dengan potongan PPh 23 ' . $this->rupiah($remaining - $amount) . ' (bukti potong menyusul)',
                 $partial => 'pembayaran sebagian; sisa setelah ini ' . $this->rupiah($remaining - $amount),
                 default  => null,
             };
@@ -223,7 +240,7 @@ class MutationMatcher
             $days = $this->daysAfter($row['date'], $invoice->date);
 
             $candidates[] = [
-                'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)]],
+                'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)] + ($pph ? ['withholding' => round($remaining - $amount, 2)] : [])],
                 'label'    => $this->invoiceLabel($invoice, $remaining),
                 'note'     => $note,
                 'identity' => $identity,

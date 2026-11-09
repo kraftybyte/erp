@@ -6,6 +6,7 @@ use App\Settings\IntegrationSettings;
 use GuzzleHttp\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -143,6 +144,7 @@ class GeminiService
         } catch (ConnectionException $e) {
             Log::error('Gemini API tidak bisa dihubungi', ['error' => $e->getMessage()]);
             self::$lastError = 'Server Google tidak bisa dihubungi dari server ini.';
+            self::recordUsage(failed: true);
 
             return null;
         }
@@ -153,11 +155,47 @@ class GeminiService
                 'body'   => $response->body(),
             ]);
             self::$lastError = self::explain($response, IntegrationSettings::geminiModel());
+            self::recordUsage(failed: true);
+
+            // Saldo habis, batas pemakaian, atau key salah: baca struk & pesan suara mati.
+            if (in_array($response->status(), [400, 401, 402, 403, 404, 429], true)) {
+                \App\Services\Telegram\AdminAlerts::once(
+                    "gemini-{$response->status()}",
+                    '⚠️ <b>Gemini gagal</b>: ' . e(self::$lastError) . "\nBaca struk otomatis, pesan suara, dan mutasi PDF/foto tidak jalan sampai ini dibereskan (Settings → Integrasi → Tes koneksi)."
+                );
+            }
 
             return null;
         }
 
+        self::recordUsage(
+            input: (int) $response->json('usageMetadata.promptTokenCount', 0),
+            output: (int) $response->json('usageMetadata.candidatesTokenCount', 0) + (int) $response->json('usageMetadata.thoughtsTokenCount', 0),
+        );
+
         return $response;
+    }
+
+    /**
+     * Rekap harian di tabel ai_usages; diabaikan bila tabelnya belum ada.
+     */
+    private static function recordUsage(bool $failed = false, int $input = 0, int $output = 0): void
+    {
+        try {
+            DB::table('ai_usages')->upsert(
+                [['date' => today()->toDateString(), 'calls' => 1, 'failures' => (int) $failed, 'input_tokens' => $input, 'output_tokens' => $output, 'created_at' => now(), 'updated_at' => now()]],
+                ['date'],
+                [
+                    'calls'         => DB::raw('calls + 1'),
+                    'failures'      => DB::raw('failures + ' . (int) $failed),
+                    'input_tokens'  => DB::raw('input_tokens + ' . $input),
+                    'output_tokens' => DB::raw('output_tokens + ' . $output),
+                    'updated_at'    => now(),
+                ]
+            );
+        } catch (\Throwable) {
+            // Pencatatan pemakaian tidak boleh menggagalkan permintaan AI.
+        }
     }
 
     private function text(Response $response): string

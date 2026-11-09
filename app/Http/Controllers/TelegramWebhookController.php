@@ -27,6 +27,7 @@ class TelegramWebhookController extends Controller
             // Tetap balas 200: bila gagal, Telegram mengulang update yang sama
             // terus-menerus dan antrean pesan berikutnya ikut tertahan.
             report($e);
+            \App\Services\Telegram\AdminAlerts::exception($e, 'bot pengajuan');
         }
 
         return response()->json(['ok' => true]);

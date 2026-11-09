@@ -83,23 +83,58 @@ class MutationRecorder
         $targets   = [];
 
         foreach ($item['targets'] as $target) {
+            if (in_array($target['type'], ['bank_fee', 'bank_interest'], true)) {
+                $targets[] = $target + ['transaction_id' => $this->bankCharge($account, $by, $mutation, $target, $row, $date)];
+
+                continue;
+            }
+
             match ($target['type']) {
                 'invoice' => $this->payments->pay(Invoice::findOrFail($target['id']), (float) $target['amount'], $account, $by, $date, self::SOURCE),
                 'expense' => $this->payout->expense(Expense::findOrFail($target['id']), (float) $target['amount'], $account, $by, ['reference' => $reference], $date),
                 'advance' => $this->payout->advance(Advance::findOrFail($target['id']), (float) $target['amount'], $account, $by, ['reference_number' => $reference], $date),
             };
 
-            $targets[] = $target + [
-                'transaction_id' => Transaction::where('payment_account_id', $account->id)
-                    ->where('reference_type', $target['type'])
-                    ->where('reference_id', $target['id'])
-                    ->latest('id')
-                    ->value('id'),
-            ];
+            $transaction = Transaction::where('payment_account_id', $account->id)
+                ->where('reference_type', $target['type'])
+                ->where('reference_id', $target['id'])
+                ->latest('id')
+                ->value('id');
+
+            // Klien memotong PPh 23: sisanya lunas tanpa uang masuk.
+            if ($target['type'] === 'invoice' && ($target['withholding'] ?? 0) > 0) {
+                $this->payments->withhold(Invoice::findOrFail($target['id']), (float) $target['withholding'], $by);
+            }
+
+            $targets[] = $target + ['transaction_id' => $transaction];
         }
 
         $mutation->update(['targets' => $targets]);
 
         return ['row' => $row, 'targets' => $targets];
+    }
+
+    /**
+     * Biaya admin/pajak (keluar) atau bunga (masuk) bank sebagai transaksi
+     * rekening, supaya saldo ERP sama dengan saldo bank.
+     */
+    private function bankCharge(PaymentAccount $account, User $by, BankMutation $mutation, array $target, array $row, Carbon $date): int
+    {
+        $interest    = $target['type'] === 'bank_interest';
+        $transaction = Transaction::create([
+            'payment_account_id' => $account->id,
+            'created_by'         => $by->id,
+            'type'               => $interest ? 'in' : 'out',
+            'category'           => $target['type'],
+            'amount'             => (float) $target['amount'],
+            'reference_type'     => 'bank_mutation',
+            'reference_id'       => $mutation->id,
+            'transaction_date'   => $date->toDateString(),
+            'description'        => ($interest ? 'Bunga bank: ' : 'Biaya bank: ') . Str::limit($row['description'], 200, ''),
+        ]);
+
+        $account->syncBalanceFromTransactions();
+
+        return $transaction->id;
     }
 }

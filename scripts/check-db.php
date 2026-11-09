@@ -102,3 +102,10 @@ $section('Antrean job (queue)');
 echo 'Koneksi: ' . config('queue.default')
     . (\Illuminate\Support\Facades\Schema::hasTable('jobs') ? ' · menunggu: ' . DB::table('jobs')->count() . ' (terlama: ' . (($oldest = DB::table('jobs')->min('created_at')) ? date('Y-m-d H:i', (int) $oldest) : '-') . ')' : '')
     . (\Illuminate\Support\Facades\Schema::hasTable('failed_jobs') ? ' · gagal: ' . DB::table('failed_jobs')->count() : '') . "\n";
+
+$section('Gemini 7 hari terakhir');
+echo \Illuminate\Support\Facades\Schema::hasTable('ai_usages')
+    ? DB::table('ai_usages')->where('date', '>=', today()->subDays(7)->toDateString())->orderBy('date')->get()
+        ->map(fn ($row) => "{$row->date}  {$row->calls} panggilan · {$row->failures} gagal · " . number_format($row->input_tokens + $row->output_tokens, 0, ',', '.') . ' token')
+        ->whenEmpty(fn ($rows) => collect(['Belum tercatat.']))->implode("\n") . "\n"
+    : "Tabel belum ada (belum deploy).\n";
