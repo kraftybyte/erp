@@ -225,11 +225,45 @@ class BankStatementTest extends TestCase
         $this->assertSame([['type' => 'invoice', 'id' => $invoice->id, 'amount' => 15_437_219.0]], $result['candidates'][$result['pick']]['targets']);
     }
 
-    public function test_nominal_sama_tanpa_nama_perlu_dipilih(): void
+    public function test_tanpa_nama_hanya_pasti_bila_nominalnya_khas_dan_satu_satunya(): void
     {
         $this->invoice(15_437_221);
+        $this->invoice(15_430_000);
 
-        $this->assertSame('review', $this->match([$this->row('in', 15_437_221, 'SETORAN TUNAI')])[0]['status']);
+        $khas  = $this->match([$this->row('in', 15_437_221, 'SETORAN TUNAI')])[0];
+        $bulat = $this->match([$this->row('in', 15_430_000, 'SETORAN TUNAI')])[0];
+
+        $this->assertSame('sure', $khas['status'], 'Nominal tidak bulat dan hanya satu tagihan: hampir pasti.');
+        $this->assertLessThanOrEqual(88, $khas['candidates'][0]['confidence']);
+        $this->assertContains('✗ nama/nomor tidak ada di berita transfer', $khas['candidates'][0]['reasons']);
+
+        $this->assertSame('review', $bulat['status'], 'Nominal bulat tanpa nama bisa kebetulan.');
+        $this->assertLessThanOrEqual(70, $bulat['candidates'][0]['confidence']);
+    }
+
+    public function test_berita_yang_menyebut_klien_lain_melemahkan_kandidat(): void
+    {
+        $other  = 'CV Beda ' . Str::upper(Str::random(5)) . ' Abadi';
+        $target = $this->invoice(9_876_543);
+        $this->invoice(1_111_119, ['nama_perusahaan' => $other]);
+
+        // Nominal sama dengan invoice klien A, tapi berita menyebut klien B.
+        $result = $this->match([$this->row('in', 9_876_543, 'TRSF E-BANKING CR ' . strtoupper($other))])[0];
+
+        $this->assertNotSame('sure', $result['status']);
+        $candidate = collect($result['candidates'])->firstWhere(fn ($candidate) => $candidate['targets'][0]['id'] === $target->id);
+        $this->assertTrue(collect($candidate['reasons'])->contains(fn ($reason) => str_starts_with($reason, '✗ berita menyebut klien lain')));
+    }
+
+    public function test_dp_persen_dari_total_invoice_dikenali(): void
+    {
+        $invoice = $this->invoice(12_345_670);
+
+        $result = $this->match([$this->row('in', 6_172_835, 'TRSF E-BANKING CR ' . strtoupper($this->client))])[0];
+
+        $this->assertSame('sure', $result['status']);
+        $this->assertSame($invoice->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+        $this->assertStringContainsString('DP 50%', $result['candidates'][$result['pick']]['reasons'][0]);
     }
 
     public function test_dua_invoice_bernominal_sama_dipilih_yang_namanya_cocok(): void
@@ -277,7 +311,7 @@ class BankStatementTest extends TestCase
             $this->row('in', 3_000_000, 'TRSF E-BANKING CR DP ' . strtoupper($this->client)),
         ]);
 
-        $this->assertSame('review', $results[0]['status']);
+        $this->assertSame('sure', $results[0]['status'], 'Potongan PPh 23 yang pas + nama klien: pasti.');
         $this->assertStringContainsString('PPh 23', $results[0]['candidates'][0]['note']);
         $this->assertSame($pph->id, $results[0]['candidates'][0]['targets'][0]['id']);
 
@@ -337,12 +371,14 @@ class BankStatementTest extends TestCase
     public function test_layar_tinjau_menampilkan_jarak_tanggal_invoice(): void
     {
         $this->user('Finance');
-        $this->invoice(15_437_233, ['date' => '2026-10-28']);
+        $this->invoice(15_440_000, ['date' => '2026-10-28']);
 
-        $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 15_437_233, 'CR']], opening: 0));
+        $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 15_440_000, 'CR']], opening: 0));
         $this->send($this->tap('mut:rev'));
 
         $this->assertStringContainsString('invoice dibuat 6 hari sebelum transfer', $this->lastText());
+        $this->assertStringContainsString('nominal = sisa tagihan Rp 15.440.000 persis', $this->lastText());
+        $this->assertMatchesRegularExpression('/— <b>\d+%<\/b>/', $this->lastText());
         $this->assertStringContainsString('· 28 Okt ·', $this->lastText());
     }
 
@@ -499,20 +535,20 @@ class BankStatementTest extends TestCase
     public function test_pengirim_yang_pernah_membayar_dikenali_walau_namanya_beda(): void
     {
         $user  = $this->user('Finance');
-        $first = $this->invoice(5_111_117);
-        $row   = $this->row('in', 5_111_117, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA', '2026-10-25');
+        $first = $this->invoice(5_100_000);
+        $row   = $this->row('in', 5_100_000, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA', '2026-10-25');
 
         // Pertama kali: nama pengirim (PIC, rekening pribadi) tidak ada di invoice.
         $this->assertSame('review', $this->match([$row])[0]['status']);
-        app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => [['type' => 'invoice', 'id' => $first->id, 'amount' => 5_111_117]]]], 'a');
+        app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => [['type' => 'invoice', 'id' => $first->id, 'amount' => 5_100_000]]]], 'a');
 
         // Berikutnya: pengirim yang sama untuk invoice klien yang sama langsung pasti.
-        $second = $this->invoice(6_222_227);
-        $result = $this->match([$this->row('in', 6_222_227, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA')])[0];
+        $second = $this->invoice(6_200_000);
+        $result = $this->match([$this->row('in', 6_200_000, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA')])[0];
 
         $this->assertSame('sure', $result['status']);
         $this->assertSame($second->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
-        $this->assertStringContainsString('pernah membayar invoice klien yang sama', $result['candidates'][$result['pick']]['note']);
+        $this->assertContains('✓ pengirim ini pernah membayar invoice klien yang sama', $result['candidates'][$result['pick']]['reasons']);
     }
 
     public function test_nomor_po_dan_nama_di_deal_dikenali(): void
@@ -547,7 +583,7 @@ class BankStatementTest extends TestCase
         $this->assertSame([2_600_000.0, 'PPN (WAPU) + PPh 23'], [$wapuTarget['withholding'], $wapuTarget['withholding_label']]);
 
         $feeCandidate = collect($results[1]['candidates'])->firstWhere(fn ($candidate) => $candidate['targets'][0]['id'] === $fee->id);
-        $this->assertSame([6_500.0, 'selisih biaya transfer/pembulatan'], [$feeCandidate['targets'][0]['withholding'], $feeCandidate['targets'][0]['withholding_label']]);
+        $this->assertSame([6_500.0, 'biaya transfer'], [$feeCandidate['targets'][0]['withholding'], $feeCandidate['targets'][0]['withholding_label']]);
 
         app(MutationRecorder::class)->record($this->account, $user, [['row' => $this->row('in', 19_600_000, 'X'), 'targets' => [$wapuTarget]]], 'wapu');
         $this->assertSame('paid', $wapu->fresh()->status);
@@ -623,10 +659,10 @@ class BankStatementTest extends TestCase
     public function test_mutasi_yang_ragu_ditinjau_dan_dipilih(): void
     {
         $this->user('Finance');
-        $invoice = $this->invoice(15_437_223);
+        $invoice = $this->invoice(15_450_000);
 
         $this->sendDocument($this->klikBca([
-            ['03/11', 'SETORAN TUNAI', 15_437_223, 'CR'],
+            ['03/11', 'SETORAN TUNAI', 15_450_000, 'CR'],
         ], opening: 0));
 
         $this->assertStringContainsString('🟡 <b>Perlu dipilih (1)</b>', $this->lastText());
