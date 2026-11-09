@@ -30,7 +30,8 @@ use Illuminate\Support\Collection;
  * - none      tidak ada kandidat;
  * - recorded  sudah ada transaksi senilai itu di rekening ini (dicatat manual di ERP);
  * - duplicate sudah dicatat dari unggahan mutasi sebelumnya;
- * - fee       biaya admin, pajak, atau bunga bank.
+ * - fee       biaya admin, pajak, atau bunga bank;
+ * - other     bukan pembayaran tagihan: pengembalian dana atau salah transfer.
  *
  * Tidak ada yang diubah di sini; pencatatan di MutationRecorder.
  */
@@ -62,6 +63,19 @@ class MutationMatcher
         'brimo', 'klikbca', 'atm', 'va', 'virtual', 'account', 'pembayaran', 'bayar', 'payment', 'invoice', 'inv', 'ftscy', 'ftfva', 'ws', 'switching',
         'kr', 'otomatis', 'pemindahan', 'dana', 'antar', 'rek', 'rekening', 'mbank', 'internet', 'mobile', 'cms', 'kbb', 'byr', 'pemb', 'tf',
     ];
+
+    // Kata isi invoice yang terlalu umum untuk membedakan satu invoice dari yang lain.
+    private const GENERIC = [
+        'jasa', 'biaya', 'pembuatan', 'pembayaran', 'pelunasan', 'lunas', 'termin', 'tahap', 'uang', 'muka', 'down', 'payment', 'sisa',
+        'tagihan', 'invoice', 'proforma', 'project', 'proyek', 'paket', 'bulan', 'bulanan', 'service', 'services', 'total', 'unit', 'item',
+        'untuk', 'dengan', 'pengerjaan', 'pekerjaan', 'pemasangan', 'produksi', 'desain', 'design',
+    ];
+
+    /** @var array<int, array<int, string>> id invoice => kata isi invoice (item, nama, catatan, project) */
+    private array $content = [];
+
+    /** @var array<string, int> kata isi => jumlah invoice terbuka yang memuatnya */
+    private array $frequency = [];
 
     private const FEE_OUT = [
         '/\bBIAYA\s+(ADM|ADMIN|ADMINISTRASI|TXN|TRANSAKSI|TRANSFER|TRF|KARTU|MATERAI|METERAI|PROVISI|RTGS|SKN|BI-?FAST|LAYANAN|BULANAN|PENUTUPAN)\b/',
@@ -100,24 +114,298 @@ class MutationMatcher
             ->concat(Advance::with('user')->where('status', 'Disetujui')->get())
             ->values();
 
+        $this->indexContent($invoices);
+
         $senders = $this->knownSenders();
         $results = [];
+        $open    = [];
 
         foreach ($rows as $index => $row) {
+            $other = $this->notABill($row);
+
             $results[$index] = match (true) {
                 $processed->has($row['key']) => $this->result('duplicate', note: 'Sudah dicatat dari unggahan mutasi sebelumnya.'),
                 isset($recorded[$index])      => $this->result('recorded', note: $recorded[$index]),
                 $this->isFee($row)            => $this->feeResult($row),
-                $row['direction'] === 'in'    => $this->classify($this->invoiceCandidates($row, $invoices, $senders)),
-                default                       => $this->classify($this->payoutCandidates($row, $payees)),
+                $other !== null               => $this->result('other', note: $other),
+                $row['direction'] === 'out'   => $this->classify($this->payoutCandidates($row, $payees)),
+                default                       => null,
             };
 
-            if ($results[$index]['status'] === 'none' && $row['direction'] === 'in') {
-                $results[$index]['note'] = $this->alreadyPaidHint($row);
+            if ($results[$index] === null) {
+                $open[] = $index;
+            }
+        }
+
+        // Uang masuk: transfer yang dipecah dinilai bersama, lalu pengirim yang
+        // sudah pasti di file ini membantu baris lain dari pengirim yang sama.
+        $groups = $this->splitGroups($rows, $open);
+
+        foreach ($open as $index) {
+            $results[$index] = $this->classify($this->incomingCandidates($rows, $index, $groups, $invoices, $senders));
+        }
+
+        $learned = $this->statementSenders($rows, $results, $invoices);
+
+        if ($learned !== []) {
+            foreach ($open as $index) {
+                $own = $this->senderWords($rows[$index]);
+
+                if (in_array($results[$index]['status'], ['review', 'none'], true)
+                    && array_filter($learned, fn ($sender) => $sender['row'] !== $index && BcaDescription::sameSender($own, $sender['words']))) {
+                    $results[$index] = $this->classify($this->incomingCandidates($rows, $index, $groups, $invoices, array_merge($senders, $learned)));
+                }
+            }
+        }
+
+        $results = $this->resolveConflicts($rows, $results, $invoices);
+
+        foreach ($open as $index) {
+            if ($results[$index]['status'] === 'none') {
+                $results[$index]['note'] = $this->numberHint($rows[$index]) ?? $this->alreadyPaidHint($rows[$index]);
             }
         }
 
         return $results;
+    }
+
+    /**
+     * Satu invoice yang dianggap pasti oleh beberapa baris sekaligus dengan
+     * jumlah melebihi sisa tagihannya: hanya yang paling yakin tetap pasti,
+     * sisanya ditinjau. Transfer yang dipecah jumlahnya pas, jadi tetap pasti.
+     *
+     * @param  Collection<int, Invoice>  $invoices
+     */
+    private function resolveConflicts(array $rows, array $results, Collection $invoices): array
+    {
+        $claims = [];
+
+        foreach ($results as $index => $result) {
+            if ($result['status'] !== 'sure' || $rows[$index]['direction'] !== 'in') {
+                continue;
+            }
+
+            $candidate = $result['candidates'][$result['pick']];
+
+            foreach ($candidate['targets'] as $target) {
+                if ($target['type'] === 'invoice') {
+                    $claims[$target['id']][] = ['row' => $index, 'value' => $target['amount'] + ($target['withholding'] ?? 0), 'confidence' => $candidate['confidence']];
+                }
+            }
+        }
+
+        $byId = $invoices->keyBy('id');
+
+        foreach ($claims as $id => $list) {
+            $invoice = $byId->get($id);
+
+            if (count($list) < 2 || ! $invoice || array_sum(array_column($list, 'value')) <= InvoicePayment::remaining($invoice) + self::TOLERANCE) {
+                continue;
+            }
+
+            usort($list, fn ($a, $b) => [$b['confidence'], $a['row']] <=> [$a['confidence'], $b['row']]);
+
+            foreach (array_slice($list, 1) as $claim) {
+                $results[$claim['row']]['status'] = 'review';
+                $results[$claim['row']]['pick']   = null;
+                $results[$claim['row']]['note']   = "{$invoice->uuid} juga cocok dengan mutasi " . $this->rupiah($rows[$list[0]['row']]['amount'])
+                    . ' tanggal ' . Carbon::parse($rows[$list[0]['row']]['date'])->locale('id')->translatedFormat('j M') . '; jumlah keduanya melebihi sisa tagihan.';
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Pengembalian dana dan salah transfer: bukan pembayaran invoice atau
+     * pengajuan, jadi tidak dicocokkan. Null bila bukan keduanya.
+     */
+    private function notABill(array $row): ?string
+    {
+        $bca  = BcaDescription::parse($row['description']);
+        $who  = $bca['sender'] !== '' ? $bca['sender'] : $bca['counterparty'];
+        $who  = $who !== '' ? ' ' . ($row['direction'] === 'in' ? 'dari' : 'ke') . ' ' . $who : '';
+
+        return match ($bca['purpose']) {
+            'refund' => $row['direction'] === 'in'
+                ? "Pengembalian dana{$who}: bukan pembayaran invoice, tidak dicatat otomatis."
+                : "Pengembalian dana{$who}: bukan expense/advance, tidak dicatat otomatis.",
+            'wrong'  => $row['direction'] === 'in'
+                ? "Salah transfer{$who}: bukan pendapatan; biasanya dikembalikan ke pengirim."
+                : "Salah transfer{$who}: minta dikembalikan; bukan expense/advance.",
+            default  => null,
+        };
+    }
+
+    /**
+     * Kandidat satu baris uang masuk, ditambah kandidat dari transfer yang
+     * dipecah (Rp 20 jt + Rp 9 jt untuk satu tagihan Rp 29 jt).
+     *
+     * @param  array<int, array<int, int>>  $groups  indeks baris => anggota kelompoknya
+     */
+    private function incomingCandidates(array $rows, int $index, array $groups, Collection $invoices, array $senders): array
+    {
+        $own = $this->invoiceCandidates($rows[$index], $invoices, $senders);
+
+        if (! isset($groups[$index])) {
+            return $own;
+        }
+
+        $members = $groups[$index];
+        $amounts = array_map(fn ($member) => $rows[$member]['amount'], $members);
+        $total   = round(array_sum($amounts), 2);
+        $whole   = ['amount' => $total] + $rows[$members[0]];
+        $last    = end($members) === $index;
+        $split   = '✓ transfer dipecah ' . count($members) . 'x di hari yang sama (berita/referensi sama): '
+            . implode(' + ', array_map(fn ($amount) => $this->rupiah($amount), $amounts)) . ' = ' . $this->rupiah($total);
+
+        $joined = [];
+
+        foreach ($this->invoiceCandidates($whole, $invoices, $senders) as $candidate) {
+            if (! empty($candidate['combo']) || $candidate['kind'] === 'partial' || count($candidate['targets']) !== 1) {
+                continue;
+            }
+
+            // Potongan (PPh 23, biaya) dicatat sekali, di baris terakhir kelompoknya.
+            $target = ['amount' => round($rows[$index]['amount'], 2)] + $candidate['targets'][0];
+
+            if (! $last) {
+                unset($target['withholding'], $target['withholding_label']);
+            }
+
+            $joined[] = array_merge($candidate, [
+                'targets' => [$target],
+                'note'    => 'bagian dari transfer ' . $this->rupiah($total) . ' yang dipecah ' . count($members) . 'x'
+                    . ($last && $candidate['note'] ? '; ' . $candidate['note'] : ''),
+                'reasons' => [$split, ...$candidate['reasons']],
+                'score'   => $candidate['score'] + 5,
+            ]);
+        }
+
+        if ($joined === []) {
+            return $own;
+        }
+
+        // Pembayaran sebagian ke invoice yang sudah dijelaskan oleh gabungannya tidak perlu ditampilkan lagi.
+        $covered = array_map(fn ($candidate) => $candidate['targets'][0]['id'] ?? null, $joined);
+        $own     = array_filter($own, fn ($candidate) => ! (in_array($candidate['kind'], ['partial', 'dp'], true) && count($candidate['targets']) === 1 && in_array($candidate['targets'][0]['id'] ?? null, $covered, true)));
+
+        return [...$joined, ...array_values($own)];
+    }
+
+    /**
+     * Baris uang masuk yang tampaknya satu pembayaran yang dipecah: tanggal
+     * sama dan nomor referensi sama, atau berita dan pengirim sama persis.
+     *
+     * @param  array<int, int>  $open
+     * @return array<int, array<int, int>> indeks baris => anggota kelompoknya (2–6 baris)
+     */
+    private function splitGroups(array $rows, array $open): array
+    {
+        $buckets = [];
+
+        foreach ($open as $index) {
+            $bca = BcaDescription::parse($rows[$index]['description']);
+            $key = $bca['reference'] ?? ($bca['sender'] !== '' && $bca['remark'] !== '' ? $this->compact($bca['remark']) . '|' . $this->compact($bca['sender']) : null);
+
+            if ($key !== null) {
+                $buckets[$rows[$index]['date'] . '|' . $key][] = $index;
+            }
+        }
+
+        $groups = [];
+
+        foreach ($buckets as $members) {
+            if (count($members) >= 2 && count($members) <= 6) {
+                foreach ($members as $member) {
+                    $groups[$member] = $members;
+                }
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Pengirim dari baris yang sudah pasti di file ini dan klien yang
+     * dibayarnya: baris lain dari pengirim yang sama kemungkinan besar
+     * membayar klien yang sama.
+     *
+     * @return array<int, array{words: array<int, string>, deals: array<int, int>, companies: array<int, string>, source: string, row: int}>
+     */
+    private function statementSenders(array $rows, array $results, Collection $invoices): array
+    {
+        $byId    = $invoices->keyBy('id');
+        $senders = [];
+
+        foreach ($results as $index => $result) {
+            if ($result['status'] !== 'sure' || $rows[$index]['direction'] !== 'in') {
+                continue;
+            }
+
+            $words = $this->senderWords($rows[$index]);
+            $paid  = collect($result['candidates'][$result['pick']]['targets'])->where('type', 'invoice')->map(fn ($target) => $byId->get($target['id']))->filter();
+
+            if ($words && $paid->isNotEmpty()) {
+                $senders[] = [
+                    'words'     => $words,
+                    'deals'     => $paid->pluck('deal_id')->filter()->unique()->values()->all(),
+                    'companies' => $paid->map(fn (Invoice $invoice) => mb_strtolower(trim((string) $invoice->nama_perusahaan)))->filter()->unique()->values()->all(),
+                    'source'    => 'statement',
+                    'row'       => $index,
+                ];
+            }
+        }
+
+        return $senders;
+    }
+
+    /**
+     * Kata nama pengirim: bagian nama rekening bila keterangannya terpisah
+     * (KlikBCA Bisnis), selain itu seluruh lawan transaksi.
+     *
+     * @return array<int, string>
+     */
+    private function senderWords(array $row): array
+    {
+        $bca = BcaDescription::parse($row['description']);
+
+        return BcaDescription::nameWords($bca['sender'] !== '' ? $bca['sender'] : $bca['counterparty']);
+    }
+
+    /**
+     * Berita menyebut nomor invoice/proforma, tapi tidak ada pasangannya:
+     * jelaskan keadaan invoice itu (sudah Lunas, dibatalkan, nominal lebih besar).
+     */
+    private function numberHint(array $row): ?string
+    {
+        $remark = BcaDescription::parse($row['description'])['counterparty'];
+
+        if (! preg_match_all('/(\d{7})\D{0,3}?(\d{3,6})(?!\d)/', $remark, $found, PREG_SET_ORDER)) {
+            return null;
+        }
+
+        foreach ($found as [, $code, $sequence]) {
+            $invoice = Invoice::whereIn('type', ['sale', 'estimate'])
+                ->where(fn ($query) => $query->where('uuid', 'like', "%{$code}%{$sequence}")->orWhere('proforma_uuid', 'like', "%{$code}%{$sequence}"))
+                ->latest('id')->first();
+
+            if (! $invoice) {
+                continue;
+            }
+
+            $remaining = InvoicePayment::remaining($invoice);
+            $named     = $invoice->uuid . ($invoice->proforma_uuid && ! str_contains(preg_replace('/\D/', '', $invoice->uuid), $code . $sequence) ? " (dulu {$invoice->proforma_uuid})" : '');
+
+            return match (true) {
+                $invoice->status === 'paid' || $remaining <= 0 => "Berita menyebut {$named}, yang sudah Lunas. Mungkin sudah dicatat manual, atau lebih bayar.",
+                $invoice->status === 'cancelled'               => "Berita menyebut {$named}, yang sudah dibatalkan.",
+                $row['amount'] > $remaining + self::TOLERANCE  => "Berita menyebut {$named}, tapi nominal transfer lebih besar dari sisa tagihannya (" . $this->rupiah($remaining) . '). Periksa: lebih bayar atau untuk beberapa invoice.',
+                default                                        => null,
+            };
+        }
+
+        return null;
     }
 
     /**
@@ -204,7 +492,8 @@ class MutationMatcher
      */
     public static function openInvoices(): Collection
     {
-        return Invoice::with('deal')->whereIn('type', ['sale', 'estimate'])->whereNotIn('status', ['paid', 'cancelled'])->get()
+        return Invoice::with(['deal', 'invoicesItems:id,invoice_id,item,description', 'projects:id,invoice_id,nama_project'])
+            ->whereIn('type', ['sale', 'estimate'])->whereNotIn('status', ['paid', 'cancelled'])->get()
             ->filter(fn (Invoice $invoice) => $invoice->type === 'estimate' ? InvoicePayment::remaining($invoice) > 0 : InvoicePayment::isPayable($invoice))
             ->values();
     }
@@ -343,8 +632,17 @@ class MutationMatcher
         $text    = $bca['counterparty'] !== '' ? $bca['counterparty'] : $row['description'];
         $words   = $this->words($text);
         $compact = $this->compact($text);
-        $sender  = BcaDescription::nameWords($text);
-        $known   = array_values(array_filter($senders, fn ($known) => BcaDescription::sameSender($sender, $known['words'])));
+        $known   = array_values(array_filter($senders, fn ($known) => BcaDescription::sameSender($this->senderWords($row), $known['words'])));
+        $purpose = $bca['purpose'];
+
+        // Kata di berita (tanpa nama rekening pengirim) yang cocok dengan isi invoice.
+        $remark  = array_values(array_filter($this->words($bca['remark'] !== '' ? $bca['remark'] : $text)['words'], fn ($word) => mb_strlen($word) >= 4 && ! in_array($word, self::GENERIC, true)));
+        $content = [];
+        foreach ($invoices as $invoice) {
+            $content[$invoice->id] = $this->contentMatch($remark, $invoice);
+        }
+        $bestContent = $content ? max(array_column($content, 'score')) : 0;
+        $bestOwner   = $bestContent > 0 ? $invoices->first(fn (Invoice $invoice) => $content[$invoice->id]['score'] === $bestContent && $content[$invoice->id]['identity']) : null;
 
         // Klien yang namanya jelas tertulis di berita transfer.
         $mentioned = [];
@@ -359,15 +657,25 @@ class MutationMatcher
         foreach ($invoices as $invoice) {
             $remaining   = InvoicePayment::remaining($invoice);
             $number      = $this->numberMatch($invoice->uuid, $compact, $words);
+            $proforma    = ! $number && $invoice->proforma_uuid && $this->numberMatch($invoice->proforma_uuid, $compact, $words);
             $po          = $this->poMatch($invoice, $compact);
             $matchedName = $this->nameMatches($words, $this->clientTokens($invoice));
             $name        = $this->nameScore($words, $this->clientTokens($invoice));
             $learned     = $this->paidBefore($known, $invoice);
-            $identity    = $number || $po || $name > 0 || $learned;
+            $about       = $content[$invoice->id];
+            $identity    = $number || $proforma || $po || $name > 0 || $learned !== null || $about['identity'];
             $explanation = $this->explainAmount($invoice, $remaining, $amount, $identity);
 
             if ($explanation === null) {
                 continue;
+            }
+
+            // "DP" di berita: pembayaran sebagian pertama berapa pun persennya adalah uang muka.
+            if ($purpose === 'dp' && $explanation['kind'] === 'partial' && (float) $invoice->paid <= 0 && (float) $invoice->grand_total > 0) {
+                $percent     = round($amount / (float) $invoice->grand_total * 100);
+                $explanation = ['kind' => 'dp', 'score' => 35, 'withholding' => 0.0, 'label' => null,
+                    'reason' => "berita menyebut DP: {$percent}% dari total " . $this->rupiah($invoice->grand_total),
+                    'note'   => "pembayaran DP {$percent}%; sisa setelah ini " . $this->rupiah($remaining - $amount)];
             }
 
             $days    = $this->daysAfter($row['date'], $invoice->date);
@@ -375,9 +683,9 @@ class MutationMatcher
             $reasons = ['✓ ' . $explanation['reason']];
             $score   = $explanation['score'];
 
-            if ($number) {
+            if ($number || $proforma) {
                 $score += 35;
-                $reasons[] = '✓ nomor invoice tertulis di berita';
+                $reasons[] = $proforma ? "✓ nomor proforma {$invoice->proforma_uuid} tertulis di berita (sekarang {$invoice->uuid})" : '✓ nomor invoice tertulis di berita';
             }
 
             if ($po) {
@@ -390,9 +698,30 @@ class MutationMatcher
                 $reasons[] = '✓ nama klien di berita (' . mb_strtoupper(implode(' ', $matchedName)) . ')';
             }
 
-            if ($learned) {
-                $score += 25;
-                $reasons[] = '✓ pengirim ini pernah membayar invoice klien yang sama';
+            if ($learned !== null) {
+                $score += $learned === 'statement' ? 20 : 25;
+                $reasons[] = $learned === 'statement'
+                    ? '✓ pengirim yang sama membayar invoice klien ini di baris lain file ini'
+                    : '✓ pengirim ini pernah membayar invoice klien yang sama';
+            }
+
+            if ($about['score'] > 0) {
+                $score += $about['score'];
+                $reasons[] = ($about['score'] >= 8 ? '✓' : '•') . ' berita menyebut isi invoice (' . mb_strtoupper(implode(', ', $about['words'])) . ')';
+            }
+
+            if ($bestOwner && $bestOwner->id !== $invoice->id && $about['score'] <= $bestContent - 15 && ! $number && ! $proforma && ! $po) {
+                $score -= 15;
+                $reasons[] = '✗ berita lebih cocok dengan isi ' . $bestOwner->uuid;
+            }
+
+            if ($purpose === 'dp' && $explanation['kind'] === 'dp' && ! str_starts_with($explanation['reason'], 'berita')) {
+                $score += 10;
+                $reasons[] = '✓ berita menyebut DP';
+            } elseif ($purpose === 'settlement') {
+                $settles   = in_array($explanation['kind'], ['exact', 'pph', 'wapu', 'fee', 'diff'], true);
+                $score    += $settles ? 10 : -10;
+                $reasons[] = $settles ? '✓ berita menyebut pelunasan' : '✗ berita menyebut pelunasan, tapi nominal kurang dari sisa tagihan';
             }
 
             if ($mentioned && ! isset($mentioned[$client])) {
@@ -514,7 +843,7 @@ class MutationMatcher
         $senders   = [];
 
         foreach ($mutations as $mutation) {
-            $words = BcaDescription::nameWords(BcaDescription::parse($mutation->description)['counterparty']);
+            $words = $this->senderWords(['description' => (string) $mutation->description]);
             $paid  = collect($mutation->targets)->where('type', 'invoice')->map(fn ($target) => $invoices->get($target['id']))->filter();
 
             if ($words && $paid->isNotEmpty()) {
@@ -522,6 +851,7 @@ class MutationMatcher
                     'words'     => $words,
                     'deals'     => $paid->pluck('deal_id')->filter()->unique()->values()->all(),
                     'companies' => $paid->map(fn (Invoice $invoice) => mb_strtolower(trim((string) $invoice->nama_perusahaan)))->filter()->unique()->values()->all(),
+                    'source'    => 'history',
                 ];
             }
         }
@@ -544,17 +874,136 @@ class MutationMatcher
         return $invoice->deal_id ? "deal:{$invoice->deal_id}" : 'co:' . mb_strtolower(trim((string) $invoice->nama_perusahaan));
     }
 
-    private function paidBefore(array $known, Invoice $invoice): bool
+    /**
+     * 'history' bila pengirim ini pernah membayar klien yang sama lewat mutasi
+     * yang sudah dicatat, 'statement' bila dari baris lain di file ini, null bila tidak.
+     */
+    private function paidBefore(array $known, Invoice $invoice): ?string
     {
         $company = mb_strtolower(trim((string) $invoice->nama_perusahaan));
+        $found   = null;
 
         foreach ($known as $sender) {
             if (($invoice->deal_id && in_array($invoice->deal_id, $sender['deals'], true)) || ($company !== '' && in_array($company, $sender['companies'], true))) {
-                return true;
+                if (($sender['source'] ?? 'history') === 'history') {
+                    return 'history';
+                }
+
+                $found = 'statement';
             }
         }
 
-        return false;
+        return $found;
+    }
+
+    // =================================================================
+    // Isi invoice (item, nama, catatan, project) di berita transfer
+    // =================================================================
+
+    /**
+     * Kata isi setiap invoice terbuka dan berapa invoice yang memuatnya:
+     * kata yang hanya ada di satu-dua invoice ("Grandmall", "Sukamaju") membedakan,
+     * kata yang ada di banyak invoice ("signage") hampir tidak.
+     *
+     * @param  Collection<int, Invoice>  $invoices
+     */
+    private function indexContent(Collection $invoices): void
+    {
+        $this->content   = [];
+        $this->frequency = [];
+
+        foreach ($invoices as $invoice) {
+            $tokens = array_values(array_diff($this->contentTokens($invoice), $this->clientTokens($invoice)));
+            $this->content[$invoice->id] = $tokens;
+
+            foreach ($tokens as $token) {
+                $this->frequency[$token] = ($this->frequency[$token] ?? 0) + 1;
+            }
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function contentTokens(Invoice $invoice): array
+    {
+        $parts = [$invoice->name, Text::short(strip_tags((string) $invoice->notes), 300)];
+
+        foreach ($invoice->invoicesItems ?? [] as $item) {
+            $parts[] = $item->item;
+            $parts[] = Text::short(strip_tags((string) $item->description), 200);
+        }
+
+        foreach ($invoice->projects ?? [] as $project) {
+            $parts[] = $project->nama_project;
+        }
+
+        return array_values(array_filter(
+            $this->tokens(implode(' ', array_filter($parts))),
+            fn (string $token) => mb_strlen($token) >= 4 && ! in_array($token, self::GENERIC, true) && ! in_array($token, self::NOISE, true),
+        ));
+    }
+
+    /**
+     * Kata berita yang cocok dengan isi invoice. Kata khas (ada di ≤ 2 invoice
+     * atau ≤ 10% invoice terbuka) bernilai 8–12, kata umum 3; maksimal 30.
+     * Dianggap identitas bila dua kata khas cocok, atau satu kata ≥ 5 huruf
+     * yang hanya ada di invoice ini. Salah ketik satu huruf ("SIGNANGE") dan
+     * kata terpotong di belakang tetap dihitung.
+     *
+     * @param  array<int, string>  $remark
+     * @return array{score: int, words: array<int, string>, identity: bool}
+     */
+    private function contentMatch(array $remark, Invoice $invoice): array
+    {
+        $tokens = $this->content[$invoice->id] ?? [];
+
+        if ($tokens === [] || $remark === []) {
+            return ['score' => 0, 'words' => [], 'identity' => false];
+        }
+
+        $limit    = max(2, intdiv(count($this->content), 10));
+        $score    = 0;
+        $words    = [];
+        $distinct = 0;
+        $unique   = false;
+
+        foreach ($tokens as $token) {
+            foreach ($remark as $word) {
+                if (! $this->similarWord($word, $token)) {
+                    continue;
+                }
+
+                $frequency = $this->frequency[$token] ?? 1;
+
+                if ($frequency <= $limit) {
+                    $score += mb_strlen($token) >= 5 ? 12 : 8;
+                    $distinct++;
+                    $unique = $unique || ($frequency === 1 && mb_strlen($token) >= 5);
+                } else {
+                    $score += 3;
+                }
+
+                $words[] = $word;
+
+                break;
+            }
+        }
+
+        return ['score' => min($score, 30), 'words' => array_values(array_unique($words)), 'identity' => $distinct >= 2 || $unique];
+    }
+
+    private function similarWord(string $word, string $token): bool
+    {
+        if ($word === $token) {
+            return true;
+        }
+
+        $wordLength  = mb_strlen($word);
+        $tokenLength = mb_strlen($token);
+
+        return ($wordLength >= 5 && str_starts_with($token, $word))
+            || ($wordLength >= 6 && $tokenLength >= 6 && abs($wordLength - $tokenLength) <= 1 && levenshtein($word, $token) <= 1);
     }
 
     /**
@@ -595,7 +1044,7 @@ class MutationMatcher
                     $collection = collect($subset);
                     $name       = $this->nameScore($words, $this->clientTokens($subset[0]));
                     $learned    = $this->paidBefore($known, $subset[0]);
-                    $number     = $collection->contains(fn (Invoice $invoice) => $this->numberMatch($invoice->uuid, $compact, $words) || $this->poMatch($invoice, $compact));
+                    $number     = $collection->contains(fn (Invoice $invoice) => $this->numberMatch($invoice->uuid, $compact, $words) || ($invoice->proforma_uuid && $this->numberMatch($invoice->proforma_uuid, $compact, $words)) || $this->poMatch($invoice, $compact));
                     $days       = $this->daysAfter($row['date'], $collection->max('date'));
                     [$dateScore, $dateReason] = $this->dateEvidence($days, 'invoice terbaru dibuat');
 
@@ -609,17 +1058,17 @@ class MutationMatcher
                         })->all(),
                         'label'    => count($subset) . ' invoice ' . Text::short(ClientLabel::invoice($subset[0]), 40) . ': ' . $collection->pluck('uuid')->implode(', '),
                         'note'     => 'satu transfer untuk ' . count($subset) . ' invoice; semuanya jadi lunas' . ($withPph ? ', masing-masing dengan potongan PPh 23' : ''),
-                        'identity' => $name > 0 || $learned || $number,
+                        'identity' => $name > 0 || $learned !== null || $number,
                         'kind'     => $withPph ? 'combo-pph' : 'combo',
                         'exact'    => true,
                         'combo'    => true,
                         'client'   => $client,
                         'days'     => $days,
-                        'score'    => ($withPph ? 45 : 50) + ($name === 2 ? 30 : ($name ? 15 : 0)) + ($learned ? 25 : 0) + ($number ? 35 : 0) + $dateScore,
+                        'score'    => ($withPph ? 45 : 50) + ($name === 2 ? 30 : ($name ? 15 : 0)) + ($learned !== null ? 25 : 0) + ($number ? 35 : 0) + $dateScore,
                         'reasons'  => array_values(array_filter([
                             '✓ nominal = jumlah sisa ' . count($subset) . ' invoice klien yang sama' . ($withPph ? ' setelah PPh 23' : ''),
                             $name ? '✓ nama klien di berita' : null,
-                            $learned ? '✓ pengirim ini pernah membayar invoice klien yang sama' : null,
+                            $learned !== null ? '✓ pengirim ini pernah membayar invoice klien yang sama' : null,
                             $number ? '✓ nomor invoice/PO tertulis di berita' : null,
                             $dateReason,
                         ])),

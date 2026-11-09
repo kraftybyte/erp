@@ -95,13 +95,17 @@ class AiReconciler
             $row = $rows[$index];
             $bca = BcaDescription::parse($row['description']);
 
-            return ['row' => $index, 'date' => $row['date'], 'direction' => $row['direction'], 'amount' => $row['amount'], 'description' => Text::short($row['description'], 200), 'transfer_kind' => $bca['kind'], 'sender_bank_code' => $bca['bank'], 'counterparty' => $bca['counterparty']];
+            return ['row' => $index, 'date' => $row['date'], 'direction' => $row['direction'], 'amount' => $row['amount'], 'description' => Text::short($row['description'], 200), 'transfer_kind' => $bca['kind'], 'sender_bank_code' => $bca['bank'],
+                'remark' => $bca['remark'], 'account_name' => $bca['sender'], 'reference' => $bca['reference'], 'purpose' => $bca['purpose']];
         }, $indexes);
 
         $openInvoices = $invoices->map(fn (Invoice $invoice) => [
             'id'           => $invoice->id,
             'number'       => $invoice->uuid,
+            'proforma_no'  => $invoice->proforma_uuid,
             'kind'         => $invoice->type === 'estimate' ? 'proforma (belum jadi invoice)' : 'invoice',
+            'items'        => Text::short($invoice->invoicesItems->pluck('item')->filter()->implode('; '), 160),
+            'project'      => Text::short($invoice->projects->pluck('nama_project')->filter()->implode('; '), 80) ?: null,
             'client'       => ClientLabel::invoice($invoice) . ($invoice->deal ? ' / deal: ' . ClientLabel::of($invoice->deal->nama_pic, $invoice->deal->nama_perusahaan) : ''),
             'date'         => optional($invoice->date)->format('Y-m-d') ?? (string) $invoice->date,
             'due'          => optional($invoice->due_date)->format('Y-m-d') ?? (string) $invoice->due_date,
@@ -118,7 +122,7 @@ class AiReconciler
             ->concat($advances->map(fn (Advance $advance) => ['type' => 'advance', 'id' => $advance->id, 'employee' => $this->name($advance->user), 'amount' => (float) $advance->amount, 'date' => (string) $advance->submission_date, 'description' => Text::short((string) $advance->keterangan_advance, 80)]))
             ->values()->all();
 
-        $data = json_encode(['mutations' => $mutations, 'open_invoices' => $openInvoices, 'approved_payouts' => $payees], JSON_UNESCAPED_UNICODE);
+        $data = json_encode(['mutations' => $mutations, 'open_invoices' => $openInvoices, 'approved_payouts' => $payees], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $result = $this->gemini->extractJson(<<<PROMPT
             Kamu konsultan keuangan & pajak senior di Indonesia yang ahli rekonsiliasi bank untuk agensi digital. Cocokkan setiap mutasi rekening dengan tagihan di ERP.
@@ -130,6 +134,9 @@ class AiReconciler
             - Pengirim bisa berupa PIC pribadi, pemilik, atau perusahaan lain dalam grup klien; nama di berita transfer BCA sering terpotong di belakang.
             - Biaya transfer (2.500 BI-FAST, 6.500 online, 2.900/5.000 LLG, 25.000/30.000 RTGS) kadang dipotong pengirim.
             - Tanggal: pembayaran biasanya beberapa hari/minggu setelah invoice dibuat, sekitar jatuh tempo; DP bisa sebelum invoice dibuat.
+            - Keterangan KlikBCA Bisnis sudah diurai: remark = berita dari pengirim, account_name = nama rekening pengirim (maks. 18 huruf, terpotong). Remark sering menyebut nomor invoice/proforma (kadang salah ketik atau berspasi, mis. "PI/ 0130105/00007"; cocokkan juga ke proforma_no karena proforma yang sudah dijadikan invoice berganti nomor), nama item/proyek (cocokkan ke items/project, toleransi salah ketik), atau kata DP/pelunasan.
+            - Satu pembayaran bisa dipecah beberapa transfer di hari yang sama dengan reference/remark yang sama; jumlahnya = sisa tagihan. Tiap baris tetap mencatat nominal baris itu sendiri.
+            - purpose "refund" (pengembalian dana) atau "wrong" (salah transfer) bukan pembayaran tagihan: no_match. purpose "dp" = uang muka (berapa pun persennya), "settlement" = pelunasan sisa.
             - Uang keluar ke karyawan: nominal sama dengan pengajuan dan nama karyawan di berita.
 
             Aturan jawaban:

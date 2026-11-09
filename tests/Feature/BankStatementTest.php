@@ -315,8 +315,11 @@ class BankStatementTest extends TestCase
         $this->assertStringContainsString('PPh 23', $results[0]['candidates'][0]['note']);
         $this->assertSame($pph->id, $results[0]['candidates'][0]['targets'][0]['id']);
 
+        // "DP" di berita: dibaca sebagai uang muka, tapi invoice yang sama sudah
+        // dilunasi baris pertama, jadi baris ini ditinjau.
         $this->assertSame('review', $results[1]['status']);
-        $this->assertStringContainsString('pembayaran sebagian', $results[1]['candidates'][0]['note']);
+        $this->assertStringContainsString('pembayaran DP 27%', $results[1]['candidates'][0]['note']);
+        $this->assertStringContainsString('melebihi sisa tagihan', $results[1]['note']);
     }
 
     public function test_retainer_bernominal_sama_dipilih_invoice_terdekat_sebelum_transfer(): void
@@ -849,6 +852,121 @@ class BankStatementTest extends TestCase
         return $result['statement'];
     }
 
+    // =================================================================
+    // KlikBCA Bisnis (CorpAcct): berita dan nama pengirim terpisah
+    // =================================================================
+
+    public function test_corpacct_klikbca_bisnis_dibaca_dengan_ringkasan_mutasi(): void
+    {
+        $csv = $this->corpAcct([
+            ['04/11/2026', 'TRSF E-BANKING CR 0411/FTSCY/WS95051 6650000.00  DP Logo PI/ 0991611/00002  CAKRAWALA RINTIS B ', 6_650_000, 'CR'],
+            ['05/11/2026', 'BIAYA ADM', 10_000, 'DB'],
+        ], opening: 1_000_000, credit: [6_650_000, 1], debit: [10_000, 1]);
+
+        $statement = app(StatementReader::class)->read($csv, 'CorpAcctTrxn.csv')['statement'];
+
+        $this->assertSame(['BCA', $this->accountNumber, 'PT CONTOH TES INDONESIA'], [$statement['bank'], $statement['account_number'], $statement['holder']]);
+        $this->assertSame(['status' => 'ok', 'difference' => 0, 'method' => 'total & jumlah mutasi'], $statement['check']);
+
+        $bca = \App\Services\BankStatement\BcaDescription::parse($statement['rows'][0]['description']);
+        $this->assertSame('DP LOGO PI/ 0991611/00002', $bca['remark'], 'Nomor proforma di berita tidak boleh ikut terbuang.');
+        $this->assertSame(['CAKRAWALA RINTIS B', 'dp', 6_650_000.0], [$bca['sender'], $bca['purpose'], $bca['echo']]);
+
+        // Baris yang hilang ketahuan dari jumlah transaksi di ringkasan bank.
+        $short = app(StatementReader::class)->read($this->corpAcct([
+            ['04/11/2026', 'TRSF E-BANKING CR 0411/FTSCY/WS95051 6650000.00  DP Logo  CAKRAWALA RINTIS B ', 6_650_000, 'CR'],
+        ], opening: 0, credit: [7_000_000, 2]), 'CorpAcctTrxn.csv')['statement'];
+
+        $this->assertSame('mismatch', $short['check']['status']);
+        $this->assertStringContainsString('kredit terbaca 1 dari 2 transaksi', $short['check']['difference']);
+    }
+
+    public function test_corpacct_nomor_proforma_isi_invoice_dp_dan_transfer_dipecah(): void
+    {
+        $this->user('Finance');
+        $tag = Str::upper(Str::random(5));
+
+        // Proforma yang sudah jadi invoice: klien masih menulis nomor proformanya.
+        $codeA     = '09' . random_int(10_000, 99_999);
+        $converted = $this->invoice(13_300_000, ['nama_perusahaan' => "PT Arunika {$tag}", 'proforma_uuid' => "PI/{$codeA}/00002"]);
+        $this->item($converted, 'Logo Kopiku Mon');
+
+        // Tanpa nomor dan nama: dikenali dari isi item.
+        $byItems = $this->invoice(10_370_000, ['nama_perusahaan' => "PT Pelita {$tag}"]);
+        $this->item($byItems, 'Logo Kopiku Grandmall Sukamaju');
+
+        // Rp 29.017.000 ditransfer dua kali dengan referensi yang sama.
+        $split = $this->invoice(29_017_000, ['nama_perusahaan' => "CV Lintang {$tag} Perkasa"]);
+        $this->item($split, 'Signage Akrilik Qwert Tower');
+
+        // Proforma dengan nomor berspasi dan item salah ketik di berita.
+        $codeD    = '09' . random_int(10_000, 99_999);
+        $proforma = $this->invoice(6_611_000, ['type' => 'estimate', 'uuid' => "PI/{$codeD}/00006", 'nama_perusahaan' => "PT Rumah {$tag}"]);
+        $this->item($proforma, 'Frame Signage Akrilik');
+
+        $reference = 'BTR261104100' . random_int(100_000, 999_999);
+        $sender    = Str::substr("LINTANG {$tag} PERKASA", 0, 18);
+
+        $this->sendDocument($this->corpAcct([
+            ['04/11/2026', 'TRSF E-BANKING CR 0411/FTSCY/WS95051 756000.00  pengembalian dana MAJU TERUS SENTOSA  ', 756_000, 'CR'],
+            ['04/11/2026', "TRSF E-BANKING CR 0411/ATSCY/WS95321 {$reference}  TL QWERT SIGNAGE AKRILIK  {$sender} ", 20_004_000, 'CR'],
+            ['04/11/2026', "TRSF E-BANKING CR 0411/ATSCY/WS95321 {$reference}  TL QWERT SIGNAGE AKRILIK  {$sender} ", 9_013_000, 'CR'],
+            ['04/11/2026', "TRSF E-BANKING CR 0411/FTSCY/WS95051 6650000.00  DP Logo Kopiku mon PI/{$codeA}/00002  CAKRAWALA RINTIS B ", 6_650_000, 'CR'],
+            ['04/11/2026', 'TRSF E-BANKING CR 0411/FTSCY/WS95051 5185000.00  DP logo kopiku grandmall sukamaju  CAKRAWALA RINTIS B ', 5_185_000, 'CR'],
+            ['05/11/2026', "TRSF E-BANKING CR 0511/FTSCY/WS95321 BCA2611050000" . random_int(10_000, 99_999) . "  F-FRAME SIGNANGE PI/ {$codeD}/00006  KARYA MUDA SEJATI ", 6_611_000, 'CR'],
+            ['06/11/2026', 'TRSF E-BANKING CR 0611/FTSCY/WS95051 72000.00  Salah TF MAJU LASER JAYA CV  ', 72_000, 'CR'],
+        ], opening: 1_000_000, credit: [48_291_000, 7]));
+
+        $text = $this->lastText();
+        $this->assertStringContainsString('a.n. PT CONTOH TES INDONESIA', $text);
+        $this->assertStringContainsString('✅ Cocok dengan ringkasan bank', $text);
+        $this->assertStringContainsString('✅ <b>Siap dicatat (5)</b>', $text);
+        $this->assertStringContainsString('↩️ <b>Bukan pembayaran tagihan (2)</b>', $text);
+        $this->assertStringContainsString('Pengembalian dana dari MAJU TERUS SENTOSA', $text);
+        $this->assertStringContainsString('Salah transfer dari MAJU LASER JAYA CV', $text);
+
+        $state   = Cache::get("telegram:finance-mutasi:{$this->chatId}");
+        $results = $state['results'];
+        $target  = fn (int $row) => $results[$row]['candidates'][$results[$row]['pick']];
+
+        $this->assertSame([$split->id, $split->id], [$target(1)['targets'][0]['id'], $target(2)['targets'][0]['id']]);
+        $this->assertStringContainsString('transfer dipecah 2x', implode(' ', $target(1)['reasons']));
+        $this->assertSame($converted->id, $target(3)['targets'][0]['id']);
+        $this->assertStringContainsString("nomor proforma PI/{$codeA}/00002", implode(' ', $target(3)['reasons']));
+        $this->assertSame($byItems->id, $target(4)['targets'][0]['id']);
+        $this->assertStringContainsString('GRANDMALL', implode(' ', $target(4)['reasons']));
+        $this->assertSame([$proforma->id, true], [$target(5)['targets'][0]['id'], $target(5)['targets'][0]['convert'] ?? false]);
+        $this->assertStringContainsString('SIGNANGE', implode(' ', $target(5)['reasons']), 'Salah ketik satu huruf tetap cocok dengan item.');
+
+        $this->send($this->tap('mut:ok'));
+
+        $this->assertStringContainsString('✅ <b>5 mutasi dicatat</b>', $this->lastText());
+        $this->assertSame('paid', $split->fresh()->status, 'Dua transfer yang dipecah melunasi satu invoice.');
+        $this->assertEquals(6_650_000, $converted->fresh()->paid);
+        $this->assertEquals(5_185_000, $byItems->fresh()->paid);
+        $this->assertSame(['sale', 'paid'], [$proforma->fresh()->type, $proforma->fresh()->status]);
+    }
+
+    public function test_pengirim_yang_pasti_di_satu_baris_membantu_baris_lain(): void
+    {
+        $tag     = Str::upper(Str::random(5));
+        $code    = '09' . random_int(10_000, 99_999);
+        $first   = $this->invoice(4_123_000, ['nama_perusahaan' => "CV Senja {$tag}", 'uuid' => "#TES/{$code}/00031"]);
+        $second  = $this->invoice(3_317_000, ['nama_perusahaan' => "CV Senja {$tag}"]);
+        $sender  = 'HARTONO ' . Str::upper(Str::random(6));
+
+        $results = $this->match([
+            $this->row('in', 4_123_000, "TRSF E-BANKING CR 0411/FTSCY/WS95051 4123000.00 · INV {$code}/00031 · {$sender}"),
+            $this->row('in', 3_317_000, "TRSF E-BANKING CR 0511/FTSCY/WS95051 3317000.00 · PEMBAYARAN KEDUA · {$sender}", '2026-11-05'),
+        ]);
+
+        $this->assertSame('sure', $results[0]['status']);
+        $this->assertSame('sure', $results[1]['status'], 'Pengirim yang sama baru saja membayar klien ini di baris pertama.');
+        $this->assertSame($second->id, $results[1]['candidates'][$results[1]['pick']]['targets'][0]['id']);
+        $this->assertContains('✓ pengirim yang sama membayar invoice klien ini di baris lain file ini', $results[1]['candidates'][$results[1]['pick']]['reasons']);
+        $this->assertNotNull($first);
+    }
+
     private function match(array $rows): array
     {
         return app(MutationMatcher::class)->match($rows, $this->account);
@@ -857,6 +975,44 @@ class BankStatementTest extends TestCase
     private function row(string $direction, float $amount, string $description, string $date = '2026-11-03'): array
     {
         return ['key' => hash('sha256', Str::random(20)), 'date' => $date, 'description' => $description, 'amount' => (float) $amount, 'direction' => $direction, 'balance' => null];
+    }
+
+    /**
+     * Ekspor KlikBCA Bisnis (CorpAcctTrxn): kolom Jumlah berakhiran CR/DB,
+     * tanpa saldo per baris, ringkasan "Mutasi Kredit : total","jumlah" di bawah.
+     */
+    private function corpAcct(array $rows, float $opening, ?array $credit = null, ?array $debit = null): string
+    {
+        $lines = [
+            '"Informasi Rekening - Mutasi Rekening"," "," "," "," ",',
+            '',
+            "\"No. rekening : {$this->accountNumber}\"",
+            '"Nama : PT CONTOH TES INDONESIA"',
+            '"Periode : 01/11/2026 - 09/11/2026"',
+            '"Kode Mata Uang : Rp"',
+            '"Tanggal Transaksi","Keterangan","Cabang","Jumlah"',
+        ];
+
+        foreach ($rows as [$date, $description, $amount, $flag]) {
+            $lines[] = "\"{$date}\",\"{$description}\",\"0000\",\"" . number_format($amount, 2, '.', ',') . " {$flag}\"";
+        }
+
+        $lines[] = '"Saldo Awal : ' . number_format($opening, 2, '.', ',') . '"';
+
+        if ($credit) {
+            $lines[] = '"Mutasi Kredit : ' . number_format($credit[0], 2, '.', ',') . "\",\"{$credit[1]}\"";
+        }
+
+        if ($debit) {
+            $lines[] = '"Mutasi Debet : ' . number_format($debit[0], 2, '.', ',') . "\",\"{$debit[1]}\"";
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    private function item(Invoice $invoice, string $name): void
+    {
+        \App\Models\InvoicesItem::create(['invoice_id' => $invoice->id, 'item' => $name, 'qty' => 1, 'price' => $invoice->grand_total, 'total' => $invoice->grand_total]);
     }
 
     private function invoice(float $total, array $attributes = []): Invoice

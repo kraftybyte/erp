@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Models\PaymentAccount;
 use App\Models\User;
 use App\Services\BankStatement\AiReconciler;
+use App\Services\BankStatement\BcaDescription;
 use App\Services\BankStatement\MutationMatcher;
 use App\Services\BankStatement\MutationRecorder;
 use App\Services\BankStatement\StatementReader;
@@ -269,7 +270,9 @@ class BankStatementFlow
         $countDir  = fn (string $direction) => count(array_filter($rows, fn ($row) => $row['direction'] === $direction));
 
         $lines = [
-            '🏦 <b>Mutasi ' . e(trim(($statement['bank'] ?? '') . ' ' . ($statement['account_number'] ?? ''))) . '</b>' . ($account ? ' → rekening ERP <b>' . e($account->name) . '</b>' : ''),
+            '🏦 <b>Mutasi ' . e(trim(($statement['bank'] ?? '') . ' ' . ($statement['account_number'] ?? ''))) . '</b>'
+                . (($statement['holder'] ?? null) ? ' a.n. ' . e(Text::short($statement['holder'], 40)) : '')
+                . ($account ? ' → rekening ERP <b>' . e($account->name) . '</b>' : ''),
             $this->periodLine($statement, $rows) . ' · ' . count($rows) . ' transaksi',
             "⬇️ Masuk {$countDir('in')} · " . $this->rupiah($sum('in')) . "   ⬆️ Keluar {$countDir('out')} · " . $this->rupiah($sum('out')),
             $this->checkLine($statement),
@@ -303,6 +306,11 @@ class BankStatementFlow
             foreach ($this->targetDetails($chosen['targets'], short: true) as $detail) {
                 $lines[] = "   {$detail}";
             }
+
+            // DP, transfer dipecah, potongan PPh 23: terlihat sebelum Catat ditekan.
+            if ($chosen['note'] ?? null) {
+                $lines[] = '   <i>→ ' . e(Text::short($chosen['note'], 110)) . '</i>';
+            }
         }
 
         if (count($selected) > 12) {
@@ -321,12 +329,28 @@ class BankStatementFlow
             $lines[] = '❓ <b>Tanpa pasangan di ERP (' . count($none) . ')</b>';
 
             foreach (array_slice($none, 0, 6) as $index) {
-                $lines[] = '• ' . $this->rowHead($rows[$index]) . ' · ' . e(Text::short($rows[$index]['description'], 45))
+                $lines[] = '• ' . $this->rowHead($rows[$index]) . ' · ' . e($this->brief($rows[$index], 45))
                     . ($results[$index]['note'] ? "\n   <i>" . e($results[$index]['note']) . '</i>' : '');
             }
 
             if (count($none) > 6) {
                 $lines[] = '  …dan ' . (count($none) - 6) . ' lainnya.';
+            }
+        }
+
+        // Pengembalian dana dan salah transfer: ditampilkan supaya Finance menindaklanjuti, tidak dicatat.
+        $notBills = array_keys(array_filter($results, fn ($result) => $result['status'] === 'other'));
+
+        if ($notBills) {
+            $lines[] = '';
+            $lines[] = '↩️ <b>Bukan pembayaran tagihan (' . count($notBills) . ')</b>';
+
+            foreach (array_slice($notBills, 0, 6) as $index) {
+                $lines[] = '• ' . $this->rowHead($rows[$index]) . "\n   <i>" . e((string) $results[$index]['note']) . '</i>';
+            }
+
+            if (count($notBills) > 6) {
+                $lines[] = '  …dan ' . (count($notBills) - 6) . ' lainnya.';
             }
         }
 
@@ -388,10 +412,12 @@ class BankStatementFlow
         $check = $statement['check'] ?? ['status' => 'unknown'];
 
         return match ($check['status']) {
-            'ok'       => '✅ Saldo cocok (' . $check['method'] . '): tidak ada baris yang terlewat.',
-            'mismatch' => $check['method'] === 'saldo awal & akhir'
-                ? '⚠️ <b>Saldo tidak cocok</b>: saldo awal + mutasi selisih ' . $this->rupiah(abs((float) $check['difference'])) . ' dari saldo akhir. Mungkin ada baris yang terlewat atau salah baca; periksa sebelum mencatat.'
-                : "⚠️ <b>Saldo per baris tidak berurutan di {$check['difference']} baris</b>: mungkin ada yang salah baca; periksa sebelum mencatat.",
+            'ok'       => ($check['method'] === 'total & jumlah mutasi' ? '✅ Cocok dengan ringkasan bank (total & jumlah mutasi)' : '✅ Saldo cocok (' . $check['method'] . ')') . ': tidak ada baris yang terlewat.',
+            'mismatch' => match ($check['method']) {
+                'saldo awal & akhir'    => '⚠️ <b>Saldo tidak cocok</b>: saldo awal + mutasi selisih ' . $this->rupiah(abs((float) $check['difference'])) . ' dari saldo akhir. Mungkin ada baris yang terlewat atau salah baca; periksa sebelum mencatat.',
+                'total & jumlah mutasi' => '⚠️ <b>Tidak cocok dengan ringkasan bank</b>: ' . e((string) $check['difference']) . '. Mungkin ada baris yang terlewat atau salah baca; periksa sebelum mencatat.',
+                default                 => "⚠️ <b>Saldo per baris tidak berurutan di {$check['difference']} baris</b>: mungkin ada yang salah baca; periksa sebelum mencatat.",
+            },
             default    => 'ℹ️ Saldo awal/akhir tidak tertera, jadi kelengkapan baris tidak bisa diperiksa.',
         };
     }
@@ -403,7 +429,7 @@ class BankStatementFlow
         $selected = $this->selection($state);
         $pages    = max(1, (int) ceil(count($rows) / self::LIST_PAGE));
         $page     = min(max($page, 0), $pages - 1);
-        $icons    = ['sure' => '✅', 'review' => '🟡', 'none' => '❓', 'recorded' => '⏭', 'duplicate' => '♻️', 'fee' => '🏦'];
+        $icons    = ['sure' => '✅', 'review' => '🟡', 'none' => '❓', 'recorded' => '⏭', 'duplicate' => '♻️', 'fee' => '🏦', 'other' => '↩️'];
 
         $lines = ['📄 <b>Semua baris mutasi</b> · halaman ' . ($page + 1) . " dari {$pages}", ''];
 
@@ -412,11 +438,11 @@ class BankStatementFlow
             $icon   = isset($state['skipped'][$index]) ? '🚫' : (isset($selected[$index]) ? '✅' : $icons[$result['status']]);
             $target = isset($selected[$index]) ? ' → ' . e(Text::short($result['candidates'][$selected[$index]]['label'], 50)) : '';
 
-            $lines[] = "{$icon} " . $this->rowHead($row) . ' · ' . e(Text::short($row['description'], 40)) . $target;
+            $lines[] = "{$icon} " . $this->rowHead($row) . ' · ' . e($this->brief($row, 40)) . $target;
         }
 
         $lines[] = '';
-        $lines[] = '✅ dicatat · 🟡 perlu dipilih · ❓ tanpa pasangan · ⏭ sudah di ERP · ♻️ sudah dicatat sebelumnya · 🏦 biaya bank · 🚫 dilewati';
+        $lines[] = '✅ dicatat · 🟡 perlu dipilih · ❓ tanpa pasangan · ↩️ bukan pembayaran tagihan · ⏭ sudah di ERP · ♻️ sudah dicatat sebelumnya · 🏦 biaya bank · 🚫 dilewati';
 
         $nav = array_values(array_filter([
             $page > 0 ? ['text' => '⬅️ Sebelumnya', 'callback_data' => 'mut:list:' . ($page - 1)] : null,
@@ -477,6 +503,7 @@ class BankStatementFlow
             '',
             $this->rowHead($row, year: true),
             '<i>' . e(Text::short($row['description'], 300)) . '</i>',
+            ...$this->parsedLines($row),
             '',
             $result['candidates']
                 ? ($row['direction'] === 'in' ? 'Pembayaran invoice yang mana?' : 'Pembayaran expense/advance yang mana?')
@@ -924,6 +951,38 @@ class BankStatementFlow
             $type === 'final_payment'            => 'Pelunasan' . ($invoice->parentInvoice ? ' dari ' . $invoice->parentInvoice->uuid : ''),
             default                              => 'Full payment',
         };
+    }
+
+    /**
+     * Berita dan nama pengirim tanpa kode bank; keterangan asli bila tidak terurai.
+     */
+    private function brief(array $row, int $limit): string
+    {
+        $bca  = BcaDescription::parse($row['description']);
+        $text = trim($bca['remark'] . ($bca['sender'] !== '' ? ' · ' . $bca['sender'] : ''), ' ·');
+
+        return Text::short($text !== '' ? $text : $row['description'], $limit);
+    }
+
+    /**
+     * Hasil urai keterangan BCA untuk layar Tinjau.
+     *
+     * @return array<int, string>
+     */
+    private function parsedLines(array $row): array
+    {
+        $bca = BcaDescription::parse($row['description']);
+
+        if ($bca['sender'] === '') {
+            return [];
+        }
+
+        $purpose = ['dp' => 'DP / uang muka', 'settlement' => 'pelunasan', 'refund' => 'pengembalian dana', 'wrong' => 'salah transfer'][$bca['purpose']] ?? null;
+
+        return array_values(array_filter([
+            ($row['direction'] === 'in' ? 'Pengirim: ' : 'Penerima: ') . '<b>' . e($bca['sender']) . '</b>' . ($bca['remark'] !== '' ? ' · berita: ' . e($bca['remark']) : ''),
+            $purpose ? "Tujuan menurut berita: {$purpose}" : null,
+        ]));
     }
 
     private function rowHead(array $row, bool $year = false): string
