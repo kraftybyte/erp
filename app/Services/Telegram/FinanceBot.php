@@ -149,6 +149,13 @@ class FinanceBot
         // Pembayaran didahulukan: dulu "25jt" bisa terbaca sebagai tanggal bila
         // pemilih periode sempat dibuka sebelumnya.
         if (! $match) {
+            // Kata kunci pencarian invoice untuk satu mutasi rekening.
+            if ($this->statements->awaitingText($chatId)) {
+                $this->statements->handleText($chatId, $text);
+
+                return;
+            }
+
             // Alasan penolakan setelah menekan ❌ Tolak.
             if ($this->approvals->awaitingText($chatId)) {
                 $this->approvals->handleText($chatId, $user, $text);
@@ -170,6 +177,7 @@ class FinanceBot
         }
 
         // Perintah lain menutup isian yang belum selesai.
+        $this->statements->stopFinding($chatId);
         $this->approvals->forget($chatId);
         $this->payment->forget($chatId);
         Cache::forget($this->periodAwaitKey($chatId));

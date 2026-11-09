@@ -94,9 +94,8 @@ class MutationMatcher
 
         $recorded = $this->recordedTransactions($rows, $account, $processed);
 
-        $invoices = Invoice::with('deal')->where('type', 'sale')->whereNotIn('status', ['paid', 'cancelled'])->get()
-            ->filter(fn (Invoice $invoice) => InvoicePayment::isPayable($invoice))
-            ->values();
+        // Proforma ikut dicari: klien sering mentransfer berdasarkan proforma sebelum invoicenya dibuat.
+        $invoices = self::openInvoices();
         $payees = Expense::with('user')->where('status', 'Disetujui')->get()
             ->concat(Advance::with('user')->where('status', 'Disetujui')->get())
             ->values();
@@ -112,9 +111,121 @@ class MutationMatcher
                 $row['direction'] === 'in'    => $this->classify($this->invoiceCandidates($row, $invoices, $senders)),
                 default                       => $this->classify($this->payoutCandidates($row, $payees)),
             };
+
+            if ($results[$index]['status'] === 'none' && $row['direction'] === 'in') {
+                $results[$index]['note'] = $this->alreadyPaidHint($row);
+            }
         }
 
         return $results;
+    }
+
+    /**
+     * Pencarian manual dari layar Tinjau: nomor invoice (potongan angka),
+     * nama klien/PIC (juga di Deal), atau nominal. Hasil diurutkan menurut
+     * kecocokan dengan kata kunci dan dengan nominal mutasinya; invoice yang
+     * sudah lunas ikut ditampilkan sebagai info.
+     *
+     * @return array<int, array{invoice: Invoice, open: bool, remaining: float, explanation: ?array, score: int}>
+     */
+    public function searchInvoices(string $query, array $row, int $limit = 8): array
+    {
+        $words   = $this->words($query);
+        $digits  = preg_replace('/\D/', '', $query);
+        $amount  = \App\Services\Telegram\AmountParser::parse($query);
+        $results = [];
+
+        foreach (Invoice::with('deal')->whereIn('type', ['sale', 'estimate'])->where('status', '!=', 'cancelled')->latest('id')->limit(2000)->get() as $invoice) {
+            $remaining = InvoicePayment::remaining($invoice);
+            $open      = $invoice->status !== 'paid' && $remaining > 0;
+            $score     = 0;
+
+            if (strlen($digits) >= 3 && ! $amount && str_contains(preg_replace('/\D/', '', $invoice->uuid . $invoice->proforma_uuid), $digits)) {
+                $score += 100;
+            }
+
+            $score += 40 * $this->nameScore($words, $this->clientTokens($invoice));
+
+            if ($amount && (abs($remaining - $amount) <= self::TOLERANCE || abs((float) $invoice->grand_total - $amount) <= self::TOLERANCE)) {
+                $score += 60;
+            }
+
+            if ($score === 0) {
+                continue;
+            }
+
+            $explanation = $open ? $this->explainAmount($invoice, $remaining, $row['amount'], true) : null;
+            $score      += ($explanation && $explanation['kind'] !== 'partial' ? 30 : 0) + ($open ? 20 : 0);
+            $results[]   = ['invoice' => $invoice, 'open' => $open, 'remaining' => $remaining, 'explanation' => $explanation, 'score' => $score];
+        }
+
+        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
+
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
+     * Pencarian manual expense/advance yang sudah Disetujui: ID (#45), nama
+     * karyawan, atau nominal.
+     *
+     * @return array<int, array{payee: Expense|Advance, label: string, score: int}>
+     */
+    public function searchPayees(string $query, array $row, int $limit = 8): array
+    {
+        $words   = $this->words($query);
+        $digits  = preg_replace('/\D/', '', $query);
+        $amount  = \App\Services\Telegram\AmountParser::parse($query);
+        $results = [];
+
+        $payees = Expense::with('user')->where('status', 'Disetujui')->get()->concat(Advance::with('user')->where('status', 'Disetujui')->get());
+
+        foreach ($payees as $payee) {
+            $score = ($digits !== '' && ! $amount && (string) $payee->id === $digits ? 100 : 0)
+                + 40 * $this->nameScore($words, $this->userTokens($payee->user))
+                + ($amount && abs((float) $payee->amount - $amount) <= self::TOLERANCE ? 60 : 0);
+
+            if ($score === 0) {
+                continue;
+            }
+
+            $score    += abs((float) $payee->amount - $row['amount']) <= self::TOLERANCE ? 30 : 0;
+            $results[] = ['payee' => $payee, 'label' => $this->payeeLabel($payee), 'score' => $score];
+        }
+
+        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
+
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
+     * Invoice penjualan yang belum lunas dan proforma yang belum dibayar.
+     *
+     * @return Collection<int, Invoice>
+     */
+    public static function openInvoices(): Collection
+    {
+        return Invoice::with('deal')->whereIn('type', ['sale', 'estimate'])->whereNotIn('status', ['paid', 'cancelled'])->get()
+            ->filter(fn (Invoice $invoice) => $invoice->type === 'estimate' ? InvoicePayment::remaining($invoice) > 0 : InvoicePayment::isPayable($invoice))
+            ->values();
+    }
+
+    /**
+     * Uang masuk tanpa pasangan: invoice yang sudah Lunas dengan nominal ini
+     * (dan nama klien di berita, bila ada), supaya Finance tahu mungkin sudah
+     * dicatat manual tanpa transaksi rekening.
+     */
+    private function alreadyPaidHint(array $row): ?string
+    {
+        $words = $this->words(BcaDescription::parse($row['description'])['counterparty'] ?: $row['description']);
+        $paid  = Invoice::with('deal')->where('type', 'sale')->where('status', 'paid')
+            ->where(fn ($query) => $query->whereBetween('grand_total', [$row['amount'] - 1, $row['amount'] + 1])->orWhereBetween('paid', [$row['amount'] - 1, $row['amount'] + 1]))
+            ->latest('id')->limit(20)->get()
+            ->sortByDesc(fn (Invoice $invoice) => $this->nameScore($words, $this->clientTokens($invoice)))
+            ->first();
+
+        return $paid
+            ? 'Mungkin sudah dicatat: ' . $paid->uuid . ' · ' . Text::short(ClientLabel::invoice($paid), 30) . ' sudah Lunas dengan nominal ini.'
+            : null;
     }
 
     // =================================================================
@@ -296,8 +407,12 @@ class MutationMatcher
                 $reasons[] = $dateReason;
             }
 
+            if ($invoice->type === 'estimate') {
+                $reasons[] = '• masih proforma: dijadikan invoice #SC saat dicatat';
+            }
+
             $candidates[] = [
-                'targets'  => [['type' => 'invoice', 'id' => $invoice->id, 'amount' => round($amount, 2)]
+                'targets'  => [$this->invoiceTarget($invoice, round($amount, 2))
                     + ($explanation['withholding'] > 0 ? ['withholding' => $explanation['withholding'], 'withholding_label' => $explanation['label']] : [])],
                 'label'    => $this->invoiceLabel($invoice, $remaining),
                 'note'     => $explanation['note'],
@@ -332,7 +447,7 @@ class MutationMatcher
      *
      * @return array{kind: string, score: int, withholding: float, label: ?string, reason: string, note: ?string}|null
      */
-    private function explainAmount(Invoice $invoice, float $remaining, float $amount, bool $identity): ?array
+    public function explainAmount(Invoice $invoice, float $remaining, float $amount, bool $identity): ?array
     {
         $diff  = round($remaining - $amount, 2);
         $total = (float) $invoice->grand_total;
@@ -489,7 +604,7 @@ class MutationMatcher
                             $remaining = InvoicePayment::remaining($invoice);
                             $cash      = round($value($invoice), 2);
 
-                            return ['type' => 'invoice', 'id' => $invoice->id, 'amount' => $cash]
+                            return $this->invoiceTarget($invoice, $cash)
                                 + ($withPph ? ['withholding' => round($remaining - $cash, 2), 'withholding_label' => 'PPh 23'] : []);
                         })->all(),
                         'label'    => count($subset) . ' invoice ' . Text::short(ClientLabel::invoice($subset[0]), 40) . ': ' . $collection->pluck('uuid')->implode(', '),
@@ -539,9 +654,17 @@ class MutationMatcher
             && (in_array($sequence, $words['numbers'], true) || (strlen($short) >= 2 && in_array($short, $words['numbers'], true)));
     }
 
-    private function invoiceLabel(Invoice $invoice, float $remaining): string
+    /**
+     * Target pencatatan untuk invoice; proforma ditandai untuk dikonversi dulu.
+     */
+    public function invoiceTarget(Invoice $invoice, float $amount): array
     {
-        return $invoice->uuid . ' · ' . Text::short(ClientLabel::invoice($invoice), 40) . $this->dated($invoice->date) . ' · sisa ' . $this->rupiah($remaining);
+        return ['type' => 'invoice', 'id' => $invoice->id, 'amount' => $amount] + ($invoice->type === 'estimate' ? ['convert' => true] : []);
+    }
+
+    public function invoiceLabel(Invoice $invoice, float $remaining): string
+    {
+        return ($invoice->type === 'estimate' ? 'Proforma ' : '') . $invoice->uuid . ' · ' . Text::short(ClientLabel::invoice($invoice), 40) . $this->dated($invoice->date) . ' · sisa ' . $this->rupiah($remaining);
     }
 
     // =================================================================

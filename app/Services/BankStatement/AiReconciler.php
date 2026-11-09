@@ -46,8 +46,7 @@ class AiReconciler
             return ['results' => $results, 'summary' => null, 'error' => null];
         }
 
-        $invoices = Invoice::with('deal')->where('type', 'sale')->whereNotIn('status', ['paid', 'cancelled'])->latest('id')->limit(self::MAX_INVOICES)->get()
-            ->filter(fn (Invoice $invoice) => InvoicePayment::isPayable($invoice))->keyBy('id');
+        $invoices = MutationMatcher::openInvoices()->sortByDesc('id')->take(self::MAX_INVOICES)->keyBy('id');
         $expenses = Expense::with('user')->where('status', 'Disetujui')->get()->keyBy('id');
         $advances = Advance::with('user')->where('status', Advance::STATUS_DISETUJUI)->get()->keyBy('id');
 
@@ -102,6 +101,7 @@ class AiReconciler
         $openInvoices = $invoices->map(fn (Invoice $invoice) => [
             'id'           => $invoice->id,
             'number'       => $invoice->uuid,
+            'kind'         => $invoice->type === 'estimate' ? 'proforma (belum jadi invoice)' : 'invoice',
             'client'       => ClientLabel::invoice($invoice) . ($invoice->deal ? ' / deal: ' . ClientLabel::of($invoice->deal->nama_pic, $invoice->deal->nama_perusahaan) : ''),
             'date'         => optional($invoice->date)->format('Y-m-d') ?? (string) $invoice->date,
             'due'          => optional($invoice->due_date)->format('Y-m-d') ?? (string) $invoice->due_date,
@@ -222,6 +222,7 @@ class AiReconciler
 
             $sum    += $amount;
             $clean[] = ['type' => $type, 'id' => $id, 'amount' => $amount]
+                + ($type === 'invoice' && $invoices->get($id)?->type === 'estimate' ? ['convert' => true] : [])
                 + ($withholding > 0 ? ['withholding' => $withholding, 'withholding_label' => Text::short((string) ($target['withholding_label'] ?? 'potongan klien'), 40)] : []);
         }
 
