@@ -371,15 +371,25 @@ class BankStatementTest extends TestCase
     public function test_layar_tinjau_menampilkan_jarak_tanggal_invoice(): void
     {
         $this->user('Finance');
-        $this->invoice(15_440_000, ['date' => '2026-10-28']);
+        $invoice = $this->invoice(15_440_000, ['date' => '2026-10-28', 'type_payment' => 'dp_50', 'grand_total' => 30_880_000, 'subtotal' => 30_880_000]);
+        $invoice->invoicesItems()->create(['item' => 'Booth pameran 3x3', 'qty' => 1, 'price' => 30_000_000, 'total' => 30_000_000]);
+        $invoice->invoicesItems()->create(['item' => 'Cetak banner', 'qty' => 2, 'price' => 440_000, 'total' => 880_000]);
 
         $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 15_440_000, 'CR']], opening: 0));
         $this->send($this->tap('mut:rev'));
+        $this->assertStringContainsString('🗓 28 Okt 2026 · jatuh tempo 20 Nov · DP 50%', $this->lastText());
+        $this->assertStringContainsString('💰 Total Rp 30.880.000 · terbayar Rp 0 · sisa Rp 15.440.000', $this->lastText());
+        $this->assertStringContainsString('📦 Booth pameran 3x3 — Rp 30.000.000', $this->lastText());
+        $this->assertStringContainsString('📦 Cetak banner — 2 × Rp 440.000', $this->lastText());
 
         $this->assertStringContainsString('invoice dibuat 6 hari sebelum transfer', $this->lastText());
         $this->assertStringContainsString('nominal = sisa tagihan Rp 15.440.000 persis', $this->lastText());
         $this->assertMatchesRegularExpression('/— <b>\d+%<\/b>/', $this->lastText());
         $this->assertStringContainsString('· 28 Okt ·', $this->lastText());
+
+        // Ringkasan: satu baris rincian di bawah pasangan yang siap dicatat.
+        $this->send($this->tap('mut:pick:0:0'));
+        $this->assertStringContainsString('📦 Booth pameran 3x3 — Rp 30.000.000 +1 item · 28 Okt · DP 50%', $this->lastText());
     }
 
     public function test_uang_keluar_ke_expense_dan_advance_karyawan(): void
