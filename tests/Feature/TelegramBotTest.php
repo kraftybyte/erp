@@ -1505,6 +1505,42 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
     }
 
+    public function test_satu_struk_dibagi_ke_dua_project(): void
+    {
+        Storage::fake('public');
+        $user    = $this->user();
+        $nestory = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $belamy  = $this->project('PT Belamy Indonesia', 'Booth Pameran');
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->photoUpdate('struk-bagi', 'expense grab tim 150rb nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->assertContains('🔀 Bagi ke beberapa project', $this->lastButtons());
+
+        $this->send($this->tap("{$draft->id}:split:"));
+        $this->assertStringContainsString('Total harus <b>Rp 150.000</b>', $this->lastText());
+
+        // Jumlah yang tidak pas ditanyakan ulang.
+        $this->send($this->textUpdate('nestory 100rb, belamy 20rb'));
+        $this->assertStringContainsString('harus sama dengan total struk Rp 150.000', $this->lastText());
+
+        $this->send($this->textUpdate('nestory 100rb, belamy sisanya'));
+        $this->assertStringContainsString('Dibagi ke 2 project', $this->lastText());
+        $this->assertStringContainsString('<b>Rp 50.000</b>', $this->lastText());
+        $this->assertContains('✅ Kirim 2 expense', $this->lastButtons());
+
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $expenses = Expense::where('user_id', $user->id)->orderBy('id')->get();
+        $this->assertCount(2, $expenses);
+        $this->assertSame([$nestory->id, $belamy->id], $expenses->pluck('project_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertEquals([100_000, 50_000], $expenses->pluck('amount')->map(fn ($amount) => (float) $amount)->all());
+        $this->assertStringContainsString('(bagian 2/2 dari Rp 150.000)', $expenses[1]->keterangan_expense);
+        $this->assertNotSame($expenses[0]->attachment, $expenses[1]->attachment, 'Masing-masing punya salinan struk.');
+        Storage::disk('public')->assertExists([$expenses[0]->attachment, $expenses[1]->attachment]);
+        $this->assertStringContainsString('2 Expense (#', $this->lastText());
+    }
+
     public function test_struk_yang_difoto_ulang_diberi_peringatan_mirip(): void
     {
         Storage::fake('public');

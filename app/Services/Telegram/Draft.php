@@ -51,6 +51,8 @@ final class Draft
         // Pesan ringkasan terakhir, supaya bisa diperbarui di tempat saat
         // struk dari album yang sama masih berdatangan.
         public ?int $panelMessageId = null,
+        // Satu struk expense dibagi ke beberapa project: [['project_id' => int, 'amount' => int]].
+        public array $splits = [],
     ) {}
 
     public function isEmpty(): bool

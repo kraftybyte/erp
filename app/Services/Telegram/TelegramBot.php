@@ -934,6 +934,21 @@ class TelegramBot
                 }
 
                 $draft->amount = $amount;
+                // Pembagian project mengikuti total lama: harus ditulis ulang.
+                $draft->splits = [];
+                break;
+
+            case 'split':
+                $parsed = $this->parseSplits($text, (int) $draft->amount);
+
+                if (isset($parsed['error'])) {
+                    $this->ask($chatId, null, $draft, 'split', '⚠️ ' . $parsed['error'] . "\nTulis lagi, misalnya <i>nestory 100rb, belamy 50rb</i>.");
+
+                    return;
+                }
+
+                $draft->splits    = $parsed['splits'];
+                $draft->projectId = $parsed['splits'][0]['project_id'];
                 break;
 
             case 'description':
@@ -1045,6 +1060,15 @@ class TelegramBot
                 $this->showAdvanceChoices($chatId, $messageId, $draft, $user, $this->advances->realizableBy($user), mode: 'all', page: (int) $value);
 
                 return;
+
+            case 'split':
+                $this->ask($chatId, $messageId, $draft, 'split', 'Tulis pembagiannya per project, dipisah koma atau baris baru. Total harus <b>' . $this->rupiah($draft->amount) . "</b>.\nContoh: <i>nestory 100rb, belamy 50rb</i> atau <i>nestory 100rb, belamy sisanya</i>");
+
+                return;
+
+            case 'unsplit':
+                $draft->splits = [];
+                break;
 
             case 'ramt':
                 // Ubah nominal satu struk: ditanyakan ulang sambil membalas fotonya.
@@ -1268,11 +1292,18 @@ class TelegramBot
         $other = $draft->type === 'expense' ? 'advance' : 'expense';
 
         $rows = [
-            [$this->button('✅ Kirim', $draft, 'submit')],
+            [$this->button($draft->splits ? '✅ Kirim ' . count($draft->splits) . ' expense' : '✅ Kirim', $draft, 'submit')],
             [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description'), $this->button('✏️ Tanggal', $draft, 'edit', 'date')],
             [$this->button('📁 Project', $draft, 'edit', 'project'), $this->button('🏷 Kategori', $draft, 'edit', 'category')],
             [$this->button('🔁 Jadikan ' . self::TYPES[$other]['label'], $draft, 'type', $other), $this->button('❌ Batal', $draft, 'cancel')],
         ];
+
+        // Satu struk untuk beberapa project (mis. makan tim dua klien): jadi beberapa expense.
+        if ($draft->type === 'expense') {
+            array_splice($rows, 3, 0, [[$draft->splits
+                ? $this->button('↩️ Batalkan pembagian project', $draft, 'unsplit')
+                : $this->button('🔀 Bagi ke beberapa project', $draft, 'split')]]);
+        }
 
         if ($openForProject->isNotEmpty()) {
             array_splice($rows, 1, 0, [[$this->button('🧾 Jadikan realisasi advance', $draft, 'type', 'realisasi')]]);
@@ -1984,6 +2015,20 @@ class TelegramBot
                 'items'       => $draft->lineItems(),
             ]];
 
+        // Satu struk dibagi ke beberapa project: satu expense per project, masing-masing
+        // dengan salinan struknya (menghapus satu expense tidak menghapus bukti yang lain).
+        if ($draft->type === 'expense' && $draft->splits && ! $draft->isMulti()) {
+            $count   = count($draft->splits);
+            $entries = collect($draft->splits)->map(fn (array $split, int $index) => [
+                'amount'      => $split['amount'],
+                'description' => Str::limit((string) $draft->description, 400, '') . ' (bagian ' . ($index + 1) . "/{$count} dari " . $this->rupiah($draft->amount) . ')',
+                'path'        => $index === 0 ? ($files[0]['path'] ?? null) : $this->copyStored($files[0]['path'] ?? null),
+                'paths'       => [],
+                'items'       => [],
+                'project_id'  => $split['project_id'],
+            ])->all();
+        }
+
         try {
             $records = DB::transaction(function () use ($draft, $user, $entries) {
                 $records = [];
@@ -1992,7 +2037,7 @@ class TelegramBot
                     $attributes = [
                         'user_id'         => $user->id,
                         'submission_date' => $draft->date,
-                        'project_id'      => $draft->projectId,
+                        'project_id'      => $entry['project_id'] ?? $draft->projectId,
                         'category'        => $draft->category,
                         'amount'          => $entry['amount'],
                         'attachment'      => $entry['path'],
@@ -2068,7 +2113,8 @@ class TelegramBot
             $draft->isMulti() && $draft->type === 'expense'
                 ? '✅ <b>' . count($records) . " expense terkirim</b> {$next}\n\n"
                     . $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\nKetik /status untuk memantau."
-                : "✅ <b>{$type['label']} #{$records[0]->id} terkirim</b> {$next}\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
+                : '✅ <b>' . (count($records) > 1 ? count($records) . " {$type['label']} (#" . collect($records)->pluck('id')->implode(', #') . ')' : "{$type['label']} #{$records[0]->id}")
+                    . " terkirim</b> {$next}\n\n{$this->details($draft)}\n\nKetik /status untuk memantau.",
             $buttons
         );
     }
@@ -2285,6 +2331,81 @@ class TelegramBot
         return ['text' => $text, 'callback_data' => "{$draft->id}:{$action}:{$value}"];
     }
 
+    /**
+     * "nestory 100rb, belamy 50rb" / "nestory 100rb, belamy sisanya": project
+     * dan nominal per bagian; jumlahnya harus sama dengan total struk.
+     *
+     * @return array{splits?: array<int, array{project_id: int, amount: int}>, error?: string}
+     */
+    private function parseSplits(string $text, int $total): array
+    {
+        $parts  = array_values(array_filter(array_map('trim', preg_split('/[\n,;]+|\s+dan\s+/iu', $text))));
+        $splits = [];
+
+        foreach ($parts as $part) {
+            $match   = $this->matcher->match($part);
+            $project = $match['project_id'] ?? (count($match['candidates'] ?? []) === 1 ? $match['candidates'][0] : null);
+            $amount  = AmountParser::parse($part);
+
+            if (! $project) {
+                return ['error' => 'Project untuk "' . e(Str::limit($part, 40)) . '" belum jelas. Tulis nama klien atau project yang lebih lengkap.'];
+            }
+
+            if (! $amount && ! preg_match('/\bsisa(nya)?\b/iu', $part)) {
+                return ['error' => 'Nominal untuk "' . e(Str::limit($part, 40)) . '" belum terbaca.'];
+            }
+
+            $splits[] = ['project_id' => (int) $project, 'amount' => $amount];
+        }
+
+        if (count($splits) < 2) {
+            return ['error' => 'Tulis minimal dua project.'];
+        }
+
+        if (count(array_unique(array_column($splits, 'project_id'))) !== count($splits)) {
+            return ['error' => 'Ada project yang ditulis dua kali.'];
+        }
+
+        // "sisanya": selisih total dengan bagian lain (hanya satu bagian).
+        $rest = array_keys(array_filter($splits, fn ($split) => $split['amount'] === null));
+
+        if (count($rest) > 1) {
+            return ['error' => 'Kata "sisanya" hanya boleh untuk satu project.'];
+        }
+
+        if ($rest) {
+            $splits[$rest[0]]['amount'] = $total - array_sum(array_column($splits, 'amount'));
+        }
+
+        $sum = array_sum(array_column($splits, 'amount'));
+
+        if (min(array_column($splits, 'amount')) <= 0 || abs($sum - $total) > 1) {
+            return ['error' => 'Jumlah pembagian ' . $this->rupiah($sum) . ', harus sama dengan total struk ' . $this->rupiah($total) . '.'];
+        }
+
+        return ['splits' => $splits];
+    }
+
+    private function splitLines(Draft $draft): string
+    {
+        $projects = Project::with('deal')->whereIn('id', array_column($draft->splits, 'project_id'))->get()->keyBy('id');
+
+        return '🔀 Dibagi ke ' . count($draft->splits) . " project (jadi " . count($draft->splits) . " expense):\n"
+            . collect($draft->splits)->map(fn (array $split) => '   • ' . e(Text::short($projects->has($split['project_id']) ? $this->projectLabel($projects[$split['project_id']]) : '-', 60)) . ' — <b>' . $this->rupiah($split['amount']) . '</b>')->implode("\n");
+    }
+
+    private function copyStored(?string $path): ?string
+    {
+        if (! $path || ! Storage::disk('public')->exists($path)) {
+            return $path;
+        }
+
+        $copy = preg_replace('/(\.[a-z0-9]+)$/i', '-' . Str::lower(Str::random(6)) . '$1', $path);
+        Storage::disk('public')->copy($path, $copy);
+
+        return $copy;
+    }
+
     private function details(Draft $draft): string
     {
         $project = Project::with('deal')->find($draft->projectId);
@@ -2293,7 +2414,7 @@ class TelegramBot
             '📅 Tanggal: ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y'),
             '💰 Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
             '🏷 Kategori: ' . e($draft->category),
-            '📁 Project: ' . ($project ? $this->projectLines($project) : '-'),
+            $draft->splits ? $this->splitLines($draft) : '📁 Project: ' . ($project ? $this->projectLines($project) : '-'),
             '🗒 Keterangan: ' . e($draft->description),
             ...($draft->lineItems() ? ["🧾 Rincian:\n" . rtrim($this->itemLines($draft->lineItems(), 12))] : []),
             '📎 Lampiran: ' . $this->attachmentLabel($draft),
