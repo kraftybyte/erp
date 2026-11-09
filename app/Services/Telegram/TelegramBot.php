@@ -47,6 +47,9 @@ class TelegramBot
     // telegram_receipts.scope untuk struk expense/advance; realisasi memakai "realisasi:{advance_id}".
     private const RECEIPT_SCOPE = 'pengajuan';
 
+    // Pesan suara lebih panjang dari ini lebih cepat diketik.
+    private const MAX_VOICE_SECONDS = 90;
+
     // Advance per halaman daftar pilihan: 8 kartu lengkap masih muat dalam satu pesan Telegram.
     private const ADVANCES_PER_PAGE = 8;
 
@@ -143,6 +146,12 @@ class TelegramBot
             return;
         }
 
+        if (isset($message['voice']) || isset($message['audio'])) {
+            $this->receiveVoice($chatId, $user, $message['voice'] ?? $message['audio']);
+
+            return;
+        }
+
         if ($text === '') {
             return;
         }
@@ -176,6 +185,42 @@ class TelegramBot
 
         // Pesan baru tanpa draft yang sedang ditanyakan dianggap pengajuan baru.
         $this->startDraft($chatId, $user, $text, null);
+    }
+
+    /**
+     * Pesan suara ("expense lima puluh ribu grab ke nestory"): ditranskrip
+     * Gemini, ditampilkan apa yang terdengar, lalu diproses seperti pesan ketik
+     * (termasuk jawaban atas pertanyaan bot yang sedang menunggu).
+     */
+    private function receiveVoice(int|string $chatId, User $user, array $voice): void
+    {
+        if (! $this->gemini->isConfigured()) {
+            $this->telegram->sendMessage($chatId, 'Pesan suara butuh baca otomatis (Gemini) yang belum aktif. Ketik saja pesannya.');
+
+            return;
+        }
+
+        if (($voice['duration'] ?? 0) > self::MAX_VOICE_SECONDS || ($voice['file_size'] ?? 0) > self::MAX_ATTACHMENT_BYTES) {
+            $this->telegram->sendMessage($chatId, 'Pesan suara maksimal ' . self::MAX_VOICE_SECONDS . ' detik. Ucapkan lebih singkat, atau ketik pesannya.');
+
+            return;
+        }
+
+        $this->telegram->typing($chatId);
+        $data = $this->telegram->download($voice['file_id'], self::MAX_ATTACHMENT_BYTES);
+        $text = $data === null ? null : $this->parser->transcribe(['mime' => $voice['mime_type'] ?? 'audio/ogg', 'data' => $data]);
+
+        if ($text === null) {
+            $reason = GeminiService::lastError();
+            $this->telegram->sendMessage($chatId, $reason
+                ? '⚠️ Pesan suara belum bisa dibaca: ' . e($reason) . ' Ketik saja pesannya.'
+                : 'Pesan suaranya tidak terdengar jelas. Ulangi, atau ketik pesannya.');
+
+            return;
+        }
+
+        $this->telegram->sendMessage($chatId, '🎙️ Terdengar: <i>«' . e($text) . '»</i>');
+        $this->handleText($chatId, $user, $text);
     }
 
     private function startDraft(int|string $chatId, User $user, string $text, ?string $type, ?Draft $draft = null): void
@@ -2283,6 +2328,8 @@ class TelegramBot
         • <i>expense 150rb grab ke kantor klien nestory</i>
         • <i>advance 2jt beli properti shooting</i>
         • <i>realisasi 350rb sewa lighting nestory</i>
+
+        Bisa juga dengan <b>pesan suara</b>, misalnya "expense lima puluh ribu grab ke kantor Nestory".
 
         <i>Realisasi</i> = laporan pemakaian advance yang sudah dibayarkan. Tulis ID advance-nya untuk langsung memilihnya, misalnya <i>realisasi #12 sewa lighting</i>; ID ada di /listadvance.
 

@@ -1505,6 +1505,49 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Realisasi untuk advance yang mana?', $this->lastText());
     }
 
+    public function test_pesan_suara_ditranskrip_lalu_diproses_seperti_ketikan(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: ['text' => 'expense 50rb grab ke kantor nestory']);
+
+        $this->send($this->voiceUpdate(duration: 6));
+
+        $texts = collect(Http::recorded())->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => str_ends_with($request->url(), '/sendMessage'))
+            ->map(fn (Request $request) => $request->data()['text']);
+        $this->assertTrue($texts->contains(fn ($text) => str_contains($text, '🎙️ Terdengar: <i>«expense 50rb grab ke kantor nestory»</i>')));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame(['expense', 50_000, $project->id], [$draft->type, $draft->amount, $draft->projectId]);
+    }
+
+    public function test_pesan_suara_yang_gagal_dibaca_atau_terlalu_panjang(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        $this->send($this->voiceUpdate(duration: 200));
+        $this->assertStringContainsString('maksimal 90 detik', $this->lastText());
+
+        $this->send($this->voiceUpdate(duration: 5));
+        $this->assertStringContainsString('Pesan suara belum bisa dibaca: Saldo prabayar Gemini habis', $this->lastText());
+        $this->assertNull(Draft::load($this->chatId));
+    }
+
+    private function voiceUpdate(int $duration): array
+    {
+        return [
+            'update_id' => 700_000_000 + ++$this->updateId,
+            'message'   => [
+                'message_id' => 10 + $this->updateId,
+                'chat'       => ['id' => $this->chatId, 'type' => 'private'],
+                'from'       => ['id' => $this->chatId, 'is_bot' => false, 'first_name' => 'Tes'],
+                'voice'      => ['file_id' => 'suara-' . $this->updateId, 'file_unique_id' => 'us-' . $this->updateId, 'duration' => $duration, 'mime_type' => 'audio/ogg', 'file_size' => 4_000],
+            ],
+        ];
+    }
+
     public function test_satu_struk_dibagi_ke_dua_project(): void
     {
         Storage::fake('public');
