@@ -442,7 +442,7 @@ class BankStatementTest extends TestCase
         $row     = $this->row('in', 10_900_000, 'TRSF E-BANKING CR ' . strtoupper($this->client));
 
         $candidate = $this->match([$row])[0]['candidates'][0];
-        $this->assertSame(['type' => 'invoice', 'id' => $invoice->id, 'amount' => 10_900_000.0, 'withholding' => 200_000.0], $candidate['targets'][0]);
+        $this->assertSame(['type' => 'invoice', 'id' => $invoice->id, 'amount' => 10_900_000.0, 'withholding' => 200_000.0, 'withholding_label' => 'PPh 23'], $candidate['targets'][0]);
 
         $outcome = app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => $candidate['targets']]], 'pph');
         $this->assertSame([], $outcome['failed']);
@@ -481,6 +481,77 @@ class BankStatementTest extends TestCase
         $this->assertEquals(1_000_000 + 15_437_235 - 10_000, $this->account->fresh()->current_balance);
         $this->assertStringContainsString('1 biaya/pajak bank dicatat', $this->lastText());
         $this->assertStringContainsString('saldo akhir di mutasi Rp 16.427.235 ✅', $this->lastText());
+    }
+
+    public function test_keterangan_bca_diurai_tanpa_kode_transaksi(): void
+    {
+        $transfer = \App\Services\BankStatement\BcaDescription::parse('TRSF E-BANKING CR 0311/FTSCY/WS95051 15000000.00 INV SC0132611 00012 PT NESTORY INDO');
+        $this->assertSame(['transfer BCA', 15_000_000.0, 'INV SC0132611 00012 PT NESTORY INDO'], [$transfer['kind'], $transfer['echo'], $transfer['counterparty']]);
+
+        $bifast = \App\Services\BankStatement\BcaDescription::parse('BI-FAST CR BIF TRANSFER DR 014 BUDI SANTOSO');
+        $this->assertSame(['BI-FAST', '014', 'BUDI SANTOSO'], [$bifast['kind'], $bifast['bank'], $bifast['counterparty']]);
+
+        $this->assertSame(['budi', 'santoso'], \App\Services\BankStatement\BcaDescription::nameWords('PEMBAYARAN DP BUDI SANTOSO'));
+        $this->assertTrue(\App\Services\BankStatement\BcaDescription::sameSender(['budi', 'santoso'], ['budi', 'santos']), 'Nama terpotong BCA tetap sama.');
+        $this->assertFalse(\App\Services\BankStatement\BcaDescription::sameSender(['budi', 'santoso'], ['budi', 'hartono']));
+    }
+
+    public function test_pengirim_yang_pernah_membayar_dikenali_walau_namanya_beda(): void
+    {
+        $user  = $this->user('Finance');
+        $first = $this->invoice(5_111_117);
+        $row   = $this->row('in', 5_111_117, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA', '2026-10-25');
+
+        // Pertama kali: nama pengirim (PIC, rekening pribadi) tidak ada di invoice.
+        $this->assertSame('review', $this->match([$row])[0]['status']);
+        app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => [['type' => 'invoice', 'id' => $first->id, 'amount' => 5_111_117]]]], 'a');
+
+        // Berikutnya: pengirim yang sama untuk invoice klien yang sama langsung pasti.
+        $second = $this->invoice(6_222_227);
+        $result = $this->match([$this->row('in', 6_222_227, 'BI-FAST CR BIF TRANSFER DR 014 HENDRA WIJAYAKUSUMA')])[0];
+
+        $this->assertSame('sure', $result['status']);
+        $this->assertSame($second->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+        $this->assertStringContainsString('pernah membayar invoice klien yang sama', $result['candidates'][$result['pick']]['note']);
+    }
+
+    public function test_nomor_po_dan_nama_di_deal_dikenali(): void
+    {
+        $deal    = \App\Models\Deal::forceCreate(['nama_perusahaan' => 'PT Sinar Galaksi ' . Str::upper(Str::random(4)), 'nama_pic' => 'Rina', 'alamat' => 'Jl. Tes']);
+        $byDeal  = $this->invoice(7_333_337, ['nama_perusahaan' => 'Nama Lain Di Invoice', 'deal_id' => $deal->id]);
+        $byPo    = $this->invoice(7_444_447, ['nama_perusahaan' => 'CV Tanpa Nama ' . Str::random(4), 'po_number' => 'PO-88123']);
+
+        $results = $this->match([
+            $this->row('in', 7_333_337, 'TRSF E-BANKING CR 0311/FTSCY/WS95051 7333337.00 ' . strtoupper($deal->nama_perusahaan)),
+            $this->row('in', 7_444_447, 'TRSF E-BANKING CR 0311/FTSCY/WS95051 7444447.00 PEMBAYARAN PO88123'),
+        ]);
+
+        $this->assertSame(['sure', 'sure'], array_column($results, 'status'));
+        $this->assertSame($byDeal->id, $results[0]['candidates'][$results[0]['pick']]['targets'][0]['id']);
+        $this->assertSame($byPo->id, $results[1]['candidates'][$results[1]['pick']]['targets'][0]['id']);
+    }
+
+    public function test_ppn_wapu_dan_selisih_biaya_transfer(): void
+    {
+        $user = $this->user('Finance');
+        // DPP 20.000.000 + PPN 11% = 22.200.000. BUMN memungut PPN dan memotong PPh 23: masuk 19.600.000.
+        $wapu = $this->invoice(22_200_000, ['subtotal' => 20_000_000, 'total_vat' => 2_200_000, 'total_discount' => 0]);
+        $fee  = $this->invoice(3_456_789);
+
+        $results = $this->match([
+            $this->row('in', 19_600_000, 'TRSF E-BANKING CR ' . strtoupper($this->client)),
+            $this->row('in', 3_450_289, 'BI-FAST CR BIF TRANSFER DR 008 ' . strtoupper($this->client)),
+        ]);
+
+        $wapuTarget = collect($results[0]['candidates'])->firstWhere(fn ($candidate) => $candidate['targets'][0]['id'] === $wapu->id)['targets'][0];
+        $this->assertSame([2_600_000.0, 'PPN (WAPU) + PPh 23'], [$wapuTarget['withholding'], $wapuTarget['withholding_label']]);
+
+        $feeCandidate = collect($results[1]['candidates'])->firstWhere(fn ($candidate) => $candidate['targets'][0]['id'] === $fee->id);
+        $this->assertSame([6_500.0, 'selisih biaya transfer/pembulatan'], [$feeCandidate['targets'][0]['withholding'], $feeCandidate['targets'][0]['withholding_label']]);
+
+        app(MutationRecorder::class)->record($this->account, $user, [['row' => $this->row('in', 19_600_000, 'X'), 'targets' => [$wapuTarget]]], 'wapu');
+        $this->assertSame('paid', $wapu->fresh()->status);
+        $this->assertStringContainsString('PPN (WAPU) + PPh 23', (string) $wapu->invoiceLogs()->latest('id')->value('log'));
     }
 
     public function test_mutasi_yang_sama_tidak_dicatat_dua_kali_dan_gagal_satu_tidak_menahan_lain(): void

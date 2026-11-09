@@ -103,7 +103,7 @@ class MutationRecorder
 
             // Klien memotong PPh 23: sisanya lunas tanpa uang masuk.
             if ($target['type'] === 'invoice' && ($target['withholding'] ?? 0) > 0) {
-                $this->payments->withhold(Invoice::findOrFail($target['id']), (float) $target['withholding'], $by);
+                $this->payments->withhold(Invoice::findOrFail($target['id']), (float) $target['withholding'], $by, $target['withholding_label'] ?? 'PPh 23');
             }
 
             $targets[] = $target + ['transaction_id' => $transaction];

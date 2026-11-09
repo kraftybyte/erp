@@ -534,7 +534,7 @@ class BankStatementFlow
         $withheld = collect($outcome['recorded'])->flatMap(fn ($item) => $item['targets'])->sum(fn ($target) => $target['withholding'] ?? 0);
 
         if ($withheld > 0) {
-            $lines[] = '• potongan PPh 23 ' . $this->rupiah($withheld) . ' dicatat di invoice (minta bukti potongnya ke klien)';
+            $lines[] = '• potongan pajak/selisih ' . $this->rupiah($withheld) . ' dicatat di invoice (untuk PPh 23/PPN WAPU, minta bukti potong/pungutnya ke klien)';
         }
 
         $lines[] = 'Saldo rekening di ERP sekarang <b>' . $this->rupiah($account->current_balance) . '</b>'
