@@ -435,6 +435,54 @@ class BankStatementTest extends TestCase
         $this->assertNotNull(BankMutation::where('fingerprint', $in['key'])->sole()->targets[0]['transaction_id']);
     }
 
+    public function test_potongan_pph23_dicatat_lunas_tanpa_uang_masuk_tambahan(): void
+    {
+        $user    = $this->user('Finance');
+        $invoice = $this->invoice(11_100_000, ['subtotal' => 10_000_000, 'total_vat' => 1_100_000, 'total_discount' => 0]);
+        $row     = $this->row('in', 10_900_000, 'TRSF E-BANKING CR ' . strtoupper($this->client));
+
+        $candidate = $this->match([$row])[0]['candidates'][0];
+        $this->assertSame(['type' => 'invoice', 'id' => $invoice->id, 'amount' => 10_900_000.0, 'withholding' => 200_000.0], $candidate['targets'][0]);
+
+        $outcome = app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => $candidate['targets']]], 'pph');
+        $this->assertSame([], $outcome['failed']);
+
+        $invoice->refresh();
+        $this->assertSame('paid', $invoice->status);
+        $this->assertEquals(11_100_000, $invoice->paid);
+        $this->assertEquals(10_900_000, Transaction::where('reference_type', 'invoice')->where('reference_id', $invoice->id)->sum('amount'), 'Hanya uang yang benar-benar masuk.');
+        $this->assertEquals(200_000, $invoice->invoiceMetas()->where('key', 'withholding')->value('value'));
+        $this->assertEquals(10_900_000, $this->account->fresh()->current_balance);
+    }
+
+    public function test_biaya_bank_bisa_ikut_dicatat_supaya_saldo_sama_dengan_bank(): void
+    {
+        $this->user('Finance');
+        $this->account->update(['initial_balance' => 1_000_000]);
+        $this->account->syncBalanceFromTransactions();
+        $invoice = $this->invoice(15_437_235);
+
+        $this->sendDocument($this->klikBca([
+            ['03/11', 'TRSF E-BANKING CR ' . strtoupper($this->client), 15_437_235, 'CR'],
+            ['05/11', 'BIAYA ADM', 10_000, 'DB'],
+        ], opening: 1_000_000));
+
+        $this->assertStringContainsString('Siap dicatat (1)', $this->lastText());
+        $this->assertButton('mut:fees');
+
+        $this->send($this->tap('mut:fees'));
+        $this->assertStringContainsString('Siap dicatat (2)', $this->lastText());
+        $this->assertStringContainsString('Biaya / pajak bank', $this->lastText());
+
+        $this->send($this->tap('mut:ok'));
+
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertEquals(10_000, Transaction::where('payment_account_id', $this->account->id)->where('category', 'bank_fee')->sole()->amount);
+        $this->assertEquals(1_000_000 + 15_437_235 - 10_000, $this->account->fresh()->current_balance);
+        $this->assertStringContainsString('1 biaya/pajak bank dicatat', $this->lastText());
+        $this->assertStringContainsString('saldo akhir di mutasi Rp 16.427.235 ✅', $this->lastText());
+    }
+
     public function test_mutasi_yang_sama_tidak_dicatat_dua_kali_dan_gagal_satu_tidak_menahan_lain(): void
     {
         $user    = $this->user('Finance');

@@ -100,10 +100,13 @@ class BankMutationResource extends Resource
                 'invoice' => ['Invoice ' . (Invoice::withTrashed()->whereKey($target['id'])->value('uuid') ?? "#{$target['id']}"), InvoiceResource::getUrl('view', ['record' => $target['id']])],
                 'expense' => ["Expense #{$target['id']}", ExpenseResource::getUrl('view', ['record' => $target['id']])],
                 'advance' => ["Advance #{$target['id']}", AdvanceResource::getUrl('view', ['record' => $target['id']])],
+                'bank_fee'      => ['Biaya / pajak bank', null],
+                'bank_interest' => ['Bunga / jasa giro bank', null],
                 default   => [ucfirst((string) $target['type']), null],
             };
 
-            $text = e($label) . ' · ' . e(Money::rupiah($target['amount'] ?? 0));
+            $text = e($label) . ' · ' . e(Money::rupiah($target['amount'] ?? 0))
+                . (! empty($target['withholding']) ? ' + potongan PPh 23 ' . e(Money::rupiah($target['withholding'])) : '');
 
             return $url ? '<a href="' . e($url) . '" class="text-primary-600 hover:underline">' . $text . '</a>' : $text;
         });

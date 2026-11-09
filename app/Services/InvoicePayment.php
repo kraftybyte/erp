@@ -104,4 +104,43 @@ class InvoicePayment
             return $invoice;
         });
     }
+
+    /**
+     * Potongan pajak oleh klien (PPh 23): tagihan berkurang tanpa uang masuk,
+     * jadi tanpa transaksi rekening. Dicatat di metadata dan log invoice;
+     * bukti potongnya menyusul dari klien.
+     *
+     * @throws InvoicePaymentException
+     */
+    public function withhold(Invoice $invoice, float $amount, User $by, string $tax = 'PPh 23'): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $amount, $by, $tax) {
+            $invoice = Invoice::lockForUpdate()->find($invoice->getKey());
+
+            if (! $invoice || ! self::isPayable($invoice)) {
+                throw new InvoicePaymentException('Invoice ini sudah lunas, dibatalkan, atau bukan invoice penjualan.');
+            }
+
+            $amount = round($amount, 2);
+
+            if ($amount <= 0 || $amount > self::remaining($invoice)) {
+                throw new InvoicePaymentException("Potongan {$tax} tidak boleh melebihi sisa tagihan.");
+            }
+
+            $newPaid = round((float) $invoice->paid + $amount, 2);
+
+            $invoice->update([
+                'paid'   => $newPaid,
+                'status' => $newPaid >= round($invoice->amountDue(), 2) ? 'paid' : 'partial',
+            ]);
+
+            $invoice->invoiceMetas()->create(['key' => 'withholding', 'value' => $amount]);
+            $invoice->invoiceLogs()->create([
+                'log'  => "Potongan {$tax} " . number_format($amount, 2) . " oleh klien (bukti potong menyusul) By: {$by->name}",
+                'type' => 'payment',
+            ]);
+
+            return $invoice;
+        });
+    }
 }

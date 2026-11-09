@@ -157,6 +157,7 @@ class BankStatementFlow
             'skip'   => $this->skip($chatId, $messageId, $state, (int) $a),
             'sum'    => $this->showSummary($chatId, $messageId, $state),
             'list'   => $this->showList($chatId, $messageId, $state, (int) $a),
+            'fees'   => $this->toggleFees($chatId, $messageId, $state),
             default  => $this->cancel($chatId, $messageId),
         };
     }
@@ -304,7 +305,7 @@ class BankStatementFlow
         $other = array_filter([
             $count('recorded') ? "⏭ sudah tercatat di ERP {$count('recorded')}" : null,
             $count('duplicate') ? "♻️ sudah dicatat dari unggahan sebelumnya {$count('duplicate')}" : null,
-            $count('fee') ? "🏦 biaya/bunga bank {$count('fee')}" : null,
+            $count('fee') && empty($state['fees']) ? "🏦 biaya/bunga bank {$count('fee')}" : null,
             count($state['skipped']) ? '🚫 dilewati ' . count($state['skipped']) : null,
         ]);
 
@@ -324,6 +325,11 @@ class BankStatementFlow
 
         if ($pending) {
             $buttons[] = [['text' => '🟡 Tinjau ' . count($pending) . ' mutasi', 'callback_data' => 'mut:rev']];
+        }
+
+        // Biaya admin/pajak/bunga ikut dicatat supaya saldo ERP sama dengan saldo bank.
+        if ($count('fee')) {
+            $buttons[] = [['text' => empty($state['fees']) ? "🏦 Catat juga biaya/bunga bank ({$count('fee')})" : '🏦 Jangan catat biaya/bunga bank', 'callback_data' => 'mut:fees']];
         }
 
         $buttons[] = array_values(array_filter([
@@ -518,10 +524,16 @@ class BankStatementFlow
             '✅ <b>' . count($outcome['recorded']) . ' mutasi dicatat</b> ke rekening ' . e($account->name),
         ];
 
-        foreach (['invoice' => 'invoice dibayar', 'expense' => 'expense dibayarkan', 'advance' => 'advance dibayarkan'] as $type => $label) {
+        foreach (['invoice' => 'invoice dibayar', 'expense' => 'expense dibayarkan', 'advance' => 'advance dibayarkan', 'bank_fee' => 'biaya/pajak bank dicatat', 'bank_interest' => 'bunga bank dicatat'] as $type => $label) {
             if ($byType->get($type)) {
                 $lines[] = "• {$byType->get($type)} {$label}";
             }
+        }
+
+        $withheld = collect($outcome['recorded'])->flatMap(fn ($item) => $item['targets'])->sum(fn ($target) => $target['withholding'] ?? 0);
+
+        if ($withheld > 0) {
+            $lines[] = '• potongan PPh 23 ' . $this->rupiah($withheld) . ' dicatat di invoice (minta bukti potongnya ke klien)';
         }
 
         $lines[] = 'Saldo rekening di ERP sekarang <b>' . $this->rupiah($account->current_balance) . '</b>'
@@ -554,6 +566,13 @@ class BankStatementFlow
         $this->telegram->sendMessage($chatId, implode("\n", $lines), $buttons);
     }
 
+    private function toggleFees(int|string $chatId, int $messageId, array $state): void
+    {
+        $state['fees'] = empty($state['fees']);
+        $this->save($chatId, $state);
+        $this->showSummary($chatId, $messageId, $state);
+    }
+
     private function cancel(int|string $chatId, int $messageId): void
     {
         $this->forget($chatId);
@@ -582,8 +601,8 @@ class BankStatementFlow
 
             if (isset($state['picked'][$index])) {
                 $selected[$index] = $state['picked'][$index];
-            } elseif ($result['status'] === 'sure') {
-                $selected[$index] = $result['pick'];
+            } elseif ($result['status'] === 'sure' || ($result['status'] === 'fee' && ! empty($state['fees']) && $result['candidates'])) {
+                $selected[$index] = $result['pick'] ?? 0;
             }
         }
 
