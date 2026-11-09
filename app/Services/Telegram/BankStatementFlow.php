@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Models\PaymentAccount;
 use App\Models\User;
+use App\Services\BankStatement\AiReconciler;
 use App\Services\BankStatement\MutationMatcher;
 use App\Services\BankStatement\MutationRecorder;
 use App\Services\BankStatement\StatementReader;
@@ -32,6 +33,7 @@ class BankStatementFlow
         private StatementReader $reader,
         private MutationMatcher $matcher,
         private MutationRecorder $recorder,
+        private ?AiReconciler $ai = null,
     ) {}
 
     public function help(int|string $chatId): void
@@ -235,6 +237,14 @@ class BankStatementFlow
         $state['picked']     = [];
         $state['skipped']    = [];
 
+        // Pendapat kedua: Gemini sebagai konsultan keuangan & pajak senior.
+        if ($this->ai) {
+            $this->telegram->typing($chatId);
+            $review            = $this->ai->review($state['rows'], $state['results']);
+            $state['results']  = $review['results'];
+            $state['ai']       = ['summary' => $review['summary'], 'error' => $review['error']];
+        }
+
         $this->save($chatId, $state);
         $this->showSummary($chatId, $messageId, $state);
     }
@@ -265,6 +275,13 @@ class BankStatementFlow
         if ($account && ($statement['account_number'] ?? null) && ! str_contains(preg_replace('/\D/', '', (string) $account->account_number), preg_replace('/\D/', '', $statement['account_number']))
             && ! str_contains(preg_replace('/\D/', '', $statement['account_number']), preg_replace('/\D/', '', (string) $account->account_number))) {
             $lines[] = '⚠️ Nomor rekening di mutasi (' . e($statement['account_number']) . ') berbeda dengan rekening ERP yang dipilih (' . e((string) $account->account_number) . ').';
+        }
+
+        if ($state['ai']['summary'] ?? null) {
+            $ai      = $state['ai']['summary'];
+            $lines[] = "🤖 Diperiksa AI (konsultan keuangan): setuju {$ai['agree']} · meragukan {$ai['doubt']} · saran baru {$ai['added']}";
+        } elseif ($state['ai']['error'] ?? null) {
+            $lines[] = '🤖 Pemeriksaan AI dilewati: ' . e($state['ai']['error']);
         }
 
         if (($statement['skipped'] ?? 0) > 0) {

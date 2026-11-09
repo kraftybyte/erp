@@ -54,6 +54,7 @@ class FinanceBot
             app(\App\Services\BankStatement\StatementReader::class),
             app(\App\Services\BankStatement\MutationMatcher::class),
             app(\App\Services\BankStatement\MutationRecorder::class),
+            app(\App\Services\BankStatement\AiReconciler::class),
         );
         $this->approvals = new ApprovalFlow($this->telegram, app(\App\Services\SubmissionDecision::class), app(\App\Services\RealisasiService::class));
     }
