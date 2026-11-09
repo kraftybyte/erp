@@ -25,6 +25,7 @@ class Kernel extends ConsoleKernel
         // advance ke karyawan dua kali seminggu (supaya tidak jadi spam).
         $schedule->command('finance:antrean')->weekdays()->at('08:15');
         $schedule->command('advance:pengingat-realisasi')->days([1, 4])->at('09:30');
+        $schedule->command('bot:laporan-mingguan')->weeklyOn(1, '08:05');
     }
 
     /**

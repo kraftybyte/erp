@@ -28,6 +28,7 @@ class FinanceWebhookController extends Controller
         } catch (Throwable $e) {
             // Tetap 200 supaya Telegram tidak mengulang update yang sama terus-menerus.
             report($e);
+            \App\Services\Telegram\AdminAlerts::exception($e, 'bot laporan keuangan');
         }
 
         return response()->json(['ok' => true]);

@@ -94,6 +94,7 @@ class BankStatementFlow
                 $this->process($chatId, $data, $name, $user);
             } catch (Throwable $e) {
                 report($e);
+                AdminAlerts::exception($e, 'mutasi rekening');
                 $this->telegram->sendMessage($chatId, '⚠️ Mutasi gagal diproses. Coba kirim ulang, atau kirim versi CSV/Excel.');
             }
         });

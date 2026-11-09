@@ -158,7 +158,7 @@ class ManagementAlerts
             ->get();
     }
 
-    private function deliver(User $user, string $html, array $actions, string $url): void
+    public function deliver(User $user, string $html, array $actions, string $url): void
     {
         $link    = str_starts_with($url, 'https://') ? [['text' => 'Lihat di ERP', 'url' => $url]] : null;
         $finance = TelegramClient::forFinance();
