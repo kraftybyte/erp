@@ -590,6 +590,66 @@ class BankStatementTest extends TestCase
         $this->assertStringContainsString('PPN (WAPU) + PPh 23', (string) $wapu->invoiceLogs()->latest('id')->value('log'));
     }
 
+    public function test_proforma_ikut_dicari_lalu_dijadikan_invoice_dan_lunas(): void
+    {
+        $user     = $this->user('Finance');
+        $proforma = $this->invoice(8_765_431, ['type' => 'estimate', 'uuid' => '#PI/0132611/' . random_int(80000, 89999), 'status' => 'draft']);
+        $piNumber = $proforma->uuid;
+        $row      = $this->row('in', 8_765_431, 'TRSF E-BANKING CR ' . strtoupper($this->client));
+
+        $result = $this->match([$row])[0];
+        $this->assertSame('sure', $result['status']);
+        $this->assertStringStartsWith('Proforma #PI/', $result['candidates'][$result['pick']]['label']);
+        $this->assertTrue($result['candidates'][$result['pick']]['targets'][0]['convert']);
+
+        $outcome = app(MutationRecorder::class)->record($this->account, $user, [['row' => $row, 'targets' => $result['candidates'][$result['pick']]['targets']]], 'pi');
+        $this->assertSame([], $outcome['failed']);
+        $this->assertSame($piNumber, $outcome['recorded'][0]['targets'][0]['converted_from']);
+
+        $proforma->refresh();
+        $this->assertSame(['sale', 'paid', $piNumber], [$proforma->type, $proforma->status, $proforma->proforma_uuid]);
+        $this->assertStringStartsWith('#SC/', $proforma->uuid);
+    }
+
+    public function test_cari_manual_invoice_untuk_mutasi_tanpa_pasangan_lalu_catat(): void
+    {
+        $this->user('Finance');
+        $invoice = $this->invoice(15_460_000);
+
+        // Sebagian tanpa nama: aturan tidak menemukan pasangan.
+        $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 7_000_000, 'CR']], opening: 0));
+        $this->assertStringContainsString('Tanpa pasangan di ERP (1)', $this->lastText());
+        $this->assertButton('mut:revnone');
+
+        $this->send($this->tap('mut:revnone'));
+        $this->assertStringContainsString('Belum ada kandidat', $this->lastText());
+        $this->assertButton('mut:find:0');
+
+        $this->send($this->tap('mut:find:0'));
+        $this->send($this->text(Str::lower(explode(' ', $this->client)[1])));
+        $this->assertStringContainsString($invoice->uuid, $this->lastText());
+        $this->assertButton("mut:use:0:i:{$invoice->id}");
+
+        $this->send($this->tap("mut:use:0:i:{$invoice->id}"));
+        $this->send($this->tap('mut:sum'));
+        $this->assertStringContainsString('Siap dicatat (1)', $this->lastText());
+
+        $this->send($this->tap('mut:ok'));
+        $invoice->refresh();
+        $this->assertSame('partial', $invoice->status);
+        $this->assertEquals(7_000_000, $invoice->paid);
+    }
+
+    public function test_mutasi_tanpa_pasangan_diberi_petunjuk_invoice_yang_sudah_lunas(): void
+    {
+        $paid = $this->invoice(4_321_987, ['status' => 'paid', 'paid' => 4_321_987]);
+
+        $result = $this->match([$this->row('in', 4_321_987, 'TRSF E-BANKING CR ' . strtoupper($this->client))])[0];
+
+        $this->assertSame('none', $result['status']);
+        $this->assertStringContainsString("Mungkin sudah dicatat: {$paid->uuid}", $result['note']);
+    }
+
     public function test_mutasi_yang_sama_tidak_dicatat_dua_kali_dan_gagal_satu_tidak_menahan_lain(): void
     {
         $user    = $this->user('Finance');

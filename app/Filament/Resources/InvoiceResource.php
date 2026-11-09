@@ -2407,34 +2407,9 @@ class InvoiceResource extends BaseInvoiceResource
                             Invoice $record
                         ) {
 
-                            $newUuid =
-                                Invoice::generateUuid(
-                                    'sale'
-                                );
-
-                            $record->update([
-
-                                'type' =>
-                                    'sale',
-
-                                'uuid' =>
-                                    $newUuid,
-
-                                // Nomor PI tetap tercatat supaya tidak diberikan ke proforma lain.
-                                'proforma_uuid' =>
-                                    $record->uuid,
-
-                                'faktur' =>
-                                    $data[
-                                        'faktur'
-                                    ],
-
-                                'delivery_note_number' =>
-                                    $data[
-                                        'delivery_note_number'
-                                    ]
-                                    ?? null,
-
+                            app(\App\Services\ProformaConversion::class)->toInvoice($record, [
+                                'faktur'               => $data['faktur'] ?? null,
+                                'delivery_note_number' => $data['delivery_note_number'] ?? null,
                             ]);
 
                             Notification::make()

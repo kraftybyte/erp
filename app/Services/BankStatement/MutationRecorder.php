@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\InvoicePayment;
 use App\Services\Payout;
+use App\Services\ProformaConversion;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -34,7 +35,7 @@ class MutationRecorder
 {
     public const SOURCE = 'mutasi rekening';
 
-    public function __construct(private InvoicePayment $payments, private Payout $payout) {}
+    public function __construct(private InvoicePayment $payments, private Payout $payout, private ProformaConversion $proformas) {}
 
     /**
      * @param  array<int, array{row: array, targets: array<int, array{type: string, id: int, amount: float}>}>  $items
@@ -87,6 +88,12 @@ class MutationRecorder
                 $targets[] = $target + ['transaction_id' => $this->bankCharge($account, $by, $mutation, $target, $row, $date)];
 
                 continue;
+            }
+
+            // Proforma yang dibayar klien: dijadikan invoice #SC dulu, lalu dicatat.
+            if ($target['type'] === 'invoice' && Invoice::whereKey($target['id'])->value('type') === 'estimate') {
+                $target['converted_from'] = Invoice::whereKey($target['id'])->value('uuid');
+                $this->proformas->toInvoice(Invoice::findOrFail($target['id']));
             }
 
             match ($target['type']) {

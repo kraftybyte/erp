@@ -154,8 +154,11 @@ class BankStatementFlow
         match ($action) {
             'acc'    => $this->chooseAccount($chatId, $messageId, $state, (int) $a),
             'ok'     => $this->confirm($chatId, $messageId, $state, $user),
-            'rev'    => $this->startReview($chatId, $messageId, $state, all: false),
-            'revall' => $this->startReview($chatId, $messageId, $state, all: true),
+            'rev'     => $this->startReview($chatId, $messageId, $state, 'pending'),
+            'revall'  => $this->startReview($chatId, $messageId, $state, 'all'),
+            'revnone' => $this->startReview($chatId, $messageId, $state, 'none'),
+            'find'    => $this->startFind($chatId, $messageId, $state, (int) $a),
+            'use'     => $this->useFound($chatId, $messageId, $state, (int) $a, (string) $b, (int) ($parts[4] ?? 0)),
             'pick'   => $this->pick($chatId, $messageId, $state, (int) $a, (int) $b),
             'skip'   => $this->skip($chatId, $messageId, $state, (int) $a),
             'sum'    => $this->showSummary($chatId, $messageId, $state),
@@ -314,7 +317,8 @@ class BankStatementFlow
             $lines[] = '❓ <b>Tanpa pasangan di ERP (' . count($none) . ')</b>';
 
             foreach (array_slice($none, 0, 6) as $index) {
-                $lines[] = '• ' . $this->rowHead($rows[$index]) . ' · ' . e(Text::short($rows[$index]['description'], 45));
+                $lines[] = '• ' . $this->rowHead($rows[$index]) . ' · ' . e(Text::short($rows[$index]['description'], 45))
+                    . ($results[$index]['note'] ? "\n   <i>" . e($results[$index]['note']) . '</i>' : '');
             }
 
             if (count($none) > 6) {
@@ -345,6 +349,12 @@ class BankStatementFlow
 
         if ($pending) {
             $buttons[] = [['text' => '🟡 Tinjau ' . count($pending) . ' mutasi', 'callback_data' => 'mut:rev']];
+        }
+
+        $unmatched = array_filter($none, fn ($index) => ! isset($state['picked'][$index]) && ! isset($state['skipped'][$index]));
+
+        if ($unmatched) {
+            $buttons[] = [['text' => '🔎 Cari pasangan ' . count($unmatched) . ' mutasi tanpa pasangan', 'callback_data' => 'mut:revnone']];
         }
 
         // Biaya admin/pajak/bunga ikut dicatat supaya saldo ERP sama dengan saldo bank.
@@ -419,15 +429,22 @@ class BankStatementFlow
     // Tinjau
     // =================================================================
 
-    private function startReview(int|string $chatId, int $messageId, array $state, bool $all): void
+    /**
+     * $mode: 'pending' (perlu dipilih, belum diputuskan), 'all' (juga yang
+     * pasti, untuk diperiksa), atau 'none' (tanpa pasangan, untuk dicari manual).
+     */
+    private function startReview(int|string $chatId, int $messageId, array $state, string $mode): void
     {
         $state['queue'] = array_values(array_keys(array_filter(
             $state['results'],
-            fn ($result) => $result['status'] === 'review' || ($all && $result['status'] === 'sure')
+            fn ($result) => match ($mode) {
+                'none'  => $result['status'] === 'none',
+                'all'   => in_array($result['status'], ['review', 'sure'], true),
+                default => $result['status'] === 'review',
+            }
         )));
 
-        // Tanpa "semua": hanya yang belum diputuskan.
-        if (! $all) {
+        if ($mode !== 'all') {
             $state['queue'] = array_values(array_filter($state['queue'], fn ($index) => ! isset($state['picked'][$index]) && ! isset($state['skipped'][$index])));
         }
 
@@ -457,7 +474,9 @@ class BankStatementFlow
             $this->rowHead($row, year: true),
             '<i>' . e(Text::short($row['description'], 300)) . '</i>',
             '',
-            $row['direction'] === 'in' ? 'Pembayaran invoice yang mana?' : 'Pembayaran expense/advance yang mana?',
+            $result['candidates']
+                ? ($row['direction'] === 'in' ? 'Pembayaran invoice yang mana?' : 'Pembayaran expense/advance yang mana?')
+                : 'Belum ada kandidat.' . ($result['note'] ? "\n<i>" . e($result['note']) . '</i>' : '') . "\nTekan <b>🔎 Cari</b> lalu ketik nomor, nama klien/PIC, atau nominal.",
         ];
 
         $buttons = [];
@@ -476,12 +495,168 @@ class BankStatementFlow
             ]];
         }
 
+        $buttons[] = [['text' => $row['direction'] === 'in' ? '🔎 Cari invoice / proforma lain' : '🔎 Cari expense / advance lain', 'callback_data' => "mut:find:{$index}"]];
         $buttons[] = [
             ['text' => '🚫 Jangan dicatat', 'callback_data' => "mut:skip:{$index}"],
             ['text' => '◀️ Ringkasan', 'callback_data' => 'mut:sum'],
         ];
 
         $this->show($chatId, $messageId, implode("\n", $lines), $buttons);
+    }
+
+    // =================================================================
+    // Cari manual
+    // =================================================================
+
+    public function awaitingText(int|string $chatId): bool
+    {
+        return isset($this->state($chatId)['finding']);
+    }
+
+    public function stopFinding(int|string $chatId): void
+    {
+        if ($state = $this->state($chatId)) {
+            unset($state['finding']);
+            $this->save($chatId, $state);
+        }
+    }
+
+    private function startFind(int|string $chatId, int $messageId, array $state, int $index): void
+    {
+        if (! isset($state['rows'][$index])) {
+            return;
+        }
+
+        $state['finding'] = $index;
+        $this->save($chatId, $state);
+        $row = $state['rows'][$index];
+
+        $this->show($chatId, $messageId, '🔎 <b>Cari ' . ($row['direction'] === 'in' ? 'invoice / proforma' : 'expense / advance') . '</b> untuk ' . $this->rowHead($row) . "\n<i>" . e(Text::short($row['description'], 120)) . "</i>\n\n"
+            . ($row['direction'] === 'in'
+                ? 'Ketik nomor invoice (cukup sebagian, mis. <i>00012</i>), nama klien/PIC (mis. <i>nestory</i>), atau nominal (mis. <i>15jt</i>).'
+                : 'Ketik ID pengajuan (mis. <i>45</i>), nama karyawan, atau nominal.'), [
+            [['text' => '◀️ Kembali', 'callback_data' => 'mut:sum']],
+        ]);
+    }
+
+    /**
+     * Kata kunci pencarian manual: hasil diurutkan menurut kecocokan dengan
+     * kata kunci dan dengan nominal mutasinya.
+     */
+    public function handleText(int|string $chatId, string $text): void
+    {
+        $state = $this->state($chatId);
+        $index = $state['finding'] ?? null;
+
+        if ($index === null || ! isset($state['rows'][$index])) {
+            return;
+        }
+
+        $row   = $state['rows'][$index];
+        $lines = ['🔎 Hasil untuk <i>' . e(Text::short($text, 40)) . '</i> · mutasi ' . $this->rowHead($row), ''];
+        $rows  = [];
+
+        if ($row['direction'] === 'in') {
+            foreach ($this->matcher->searchInvoices($text, $row) as $number => $found) {
+                $invoice = $found['invoice'];
+                $label   = $this->matcher->invoiceLabel($invoice, $found['remaining']);
+                $lines[] = ($number + 1) . '. ' . e($label)
+                    . ($found['open'] ? '' : ' — <i>sudah Lunas</i>')
+                    . ($found['explanation'] ? "\n   ✓ " . e($found['explanation']['reason']) : ($found['open'] ? "\n   • nominal mutasi tidak cocok dengan sisa tagihannya" : ''));
+
+                if ($found['open']) {
+                    $rows[] = [['text' => ($number + 1) . '. ' . Text::short($label, 45), 'callback_data' => "mut:use:{$index}:i:{$invoice->id}"]];
+                }
+            }
+        } else {
+            foreach ($this->matcher->searchPayees($text, $row) as $number => $found) {
+                $code    = $found['payee'] instanceof \App\Models\Expense ? 'e' : 'a';
+                $lines[] = ($number + 1) . '. ' . e($found['label']);
+                $rows[]  = [['text' => ($number + 1) . '. ' . Text::short($found['label'], 45), 'callback_data' => "mut:use:{$index}:{$code}:{$found['payee']->id}"]];
+            }
+        }
+
+        if (count($lines) === 2) {
+            $lines[] = 'Tidak ada yang cocok. Coba kata lain: sebagian nomor, nama klien/PIC, atau nominal.';
+        } else {
+            $lines[] = '';
+            $lines[] = 'Pilih yang benar, atau ketik kata kunci lain.';
+        }
+
+        $rows[] = [['text' => '◀️ Kembali ke tinjau', 'callback_data' => 'mut:rev'], ['text' => '📋 Ringkasan', 'callback_data' => 'mut:sum']];
+
+        $this->telegram->sendMessage($chatId, implode("\n", $lines), $rows);
+    }
+
+    /**
+     * Hasil pencarian dipilih: menjadi kandidat terpilih baris ini. Nominal
+     * mutasi dijelaskan seperti pencocokan otomatis (potongan PPh 23, WAPU,
+     * biaya transfer); di bawah sisa tagihan menjadi pembayaran sebagian.
+     */
+    private function useFound(int|string $chatId, int $messageId, array $state, int $index, string $code, int $id): void
+    {
+        $row = $state['rows'][$index] ?? null;
+
+        if (! $row) {
+            return;
+        }
+
+        if ($code === 'i') {
+            $invoice   = \App\Models\Invoice::with('deal')->find($id);
+            $remaining = $invoice ? \App\Services\InvoicePayment::remaining($invoice) : 0;
+
+            if (! $invoice || $invoice->status === 'paid' || $remaining <= 0) {
+                $this->telegram->sendMessage($chatId, 'Invoice ini sudah lunas atau tidak ditemukan.');
+
+                return;
+            }
+
+            if ($row['amount'] > $remaining + 1) {
+                $this->telegram->sendMessage($chatId, '⚠️ Nominal mutasi ' . $this->rupiah($row['amount']) . ' melebihi sisa tagihan ' . $this->rupiah($remaining) . '. Pilih invoice lain, atau catat sebagian di ERP.');
+
+                return;
+            }
+
+            $explanation = $this->matcher->explainAmount($invoice, $remaining, $row['amount'], true);
+            $target      = $this->matcher->invoiceTarget($invoice, round($row['amount'], 2))
+                + (($explanation['withholding'] ?? 0) > 0 ? ['withholding' => $explanation['withholding'], 'withholding_label' => $explanation['label']] : []);
+            $candidate = [
+                'targets'    => [$target],
+                'label'      => '🔎 ' . $this->matcher->invoiceLabel($invoice, $remaining),
+                'note'       => $explanation['note'] ?? null,
+                'identity'   => true,
+                'days'       => null,
+                'confidence' => null,
+                'reasons'    => array_values(array_filter(['🔎 dipilih lewat pencarian', isset($explanation['reason']) ? '✓ ' . $explanation['reason'] : null])),
+            ];
+        } else {
+            $payee = $code === 'e' ? \App\Models\Expense::with('user')->find($id) : \App\Models\Advance::with('user')->find($id);
+
+            if (! $payee || $payee->status !== 'Disetujui' || $row['amount'] > (float) $payee->amount + 1) {
+                $this->telegram->sendMessage($chatId, 'Pengajuan ini sudah dibayarkan, tidak ditemukan, atau nominalnya lebih kecil dari mutasi.');
+
+                return;
+            }
+
+            $candidate = [
+                'targets'    => [['type' => $code === 'e' ? 'expense' : 'advance', 'id' => $payee->id, 'amount' => round($row['amount'], 2)]],
+                'label'      => '🔎 ' . ($code === 'e' ? 'Expense' : 'Advance') . " #{$payee->id} · " . trim(($payee->user?->firstname ?? '') . ' ' . ($payee->user?->lastname ?? '')),
+                'note'       => null,
+                'identity'   => true,
+                'days'       => null,
+                'confidence' => null,
+                'reasons'    => ['🔎 dipilih lewat pencarian'],
+            ];
+        }
+
+        $state['results'][$index]['candidates'][] = $candidate;
+        $state['results'][$index]['status']       = $state['results'][$index]['status'] === 'none' ? 'review' : $state['results'][$index]['status'];
+        $state['picked'][$index]                  = array_key_last($state['results'][$index]['candidates']);
+        unset($state['skipped'][$index], $state['finding']);
+
+        $this->telegram->sendMessage($chatId, '✅ Dipilih: ' . e($candidate['label']) . ($candidate['note'] ? "\n<i>→ " . e($candidate['note']) . '</i>' : ''));
+
+        isset($state['queue']) ? $this->next($chatId, $messageId, $state) : $this->showSummary($chatId, null, $state);
     }
 
     private function pick(int|string $chatId, int $messageId, array $state, int $index, int $candidate): void
