@@ -11,8 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('advances', 'category')) {
+            return; // database lama yang kolomnya sudah ditambah di luar migrasi
+        }
+
         Schema::table('advances', function (Blueprint $table) {
-            $table->string('category', 100)->nullable()->after('keterangan_advance');
+            $column = $table->string('category', 100)->nullable();
+            Schema::hasColumn('advances', 'keterangan_advance') && $column->after('keterangan_advance');
         });
     }
 

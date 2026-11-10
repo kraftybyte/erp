@@ -11,14 +11,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('contract_items', function (Blueprint $table) {
-            $table->unsignedBigInteger('parent_id')->nullable()->after('contract_id');
-            $table->boolean('is_category_header')->default(false)->after('parent_id');
+        // Database lama bisa sudah punya kolomnya (diubah di luar migrasi).
+        $addParent = ! Schema::hasColumn('contract_items', 'parent_id');
+        $addHeader = ! Schema::hasColumn('contract_items', 'is_category_header');
 
-            $table->foreign('parent_id')
-                  ->references('id')
-                  ->on('contract_items')
-                  ->onDelete('cascade');
+        Schema::table('contract_items', function (Blueprint $table) use ($addParent, $addHeader) {
+            if ($addParent) {
+                $table->unsignedBigInteger('parent_id')->nullable()->after('contract_id');
+            }
+
+            if ($addHeader) {
+                $table->boolean('is_category_header')->default(false)->after('parent_id');
+            }
+
+            if ($addParent) {
+                $table->foreign('parent_id')
+                      ->references('id')
+                      ->on('contract_items')
+                      ->onDelete('cascade');
+            }
         });
     }
 

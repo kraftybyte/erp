@@ -12,14 +12,27 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('contracts', function (Blueprint $table) {
-            $table->string('document_title')->nullable()->after('contract_number');
-            $table->longText('opening_text')->nullable()->after('document_title');
-            $table->json('articles')->nullable()->after('opening_text');
-            $table->longText('closing_text')->nullable()->after('articles');
-            $table->string('header_image')->nullable()->after('closing_text');
-            $table->string('footer_image')->nullable()->after('header_image');
-        });
+        // Hanya kolom yang belum ada (database lama bisa sudah punya sebagian).
+        $columns = [
+            'document_title' => fn (Blueprint $table) => $table->string('document_title')->nullable(),
+            'opening_text'   => fn (Blueprint $table) => $table->longText('opening_text')->nullable(),
+            'articles'       => fn (Blueprint $table) => $table->json('articles')->nullable(),
+            'closing_text'   => fn (Blueprint $table) => $table->longText('closing_text')->nullable(),
+            'header_image'   => fn (Blueprint $table) => $table->string('header_image')->nullable(),
+            'footer_image'   => fn (Blueprint $table) => $table->string('footer_image')->nullable(),
+        ];
+        $after = Schema::hasColumn('contracts', 'contract_number') ? 'contract_number' : null;
+
+        foreach ($columns as $name => $define) {
+            if (! Schema::hasColumn('contracts', $name)) {
+                Schema::table('contracts', function (Blueprint $table) use ($define, $after) {
+                    $column = $define($table);
+                    $after && $column->after($after);
+                });
+            }
+
+            $after = $name;
+        }
     }
 
     public function down(): void

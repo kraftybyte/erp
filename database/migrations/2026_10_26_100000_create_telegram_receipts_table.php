@@ -11,6 +11,10 @@ return new class extends Migration
         // Struk yang sudah masuk ERP lewat bot Telegram. file_unique_id sama
         // untuk file yang persis sama walau dikirim ulang/di-forward, jadi
         // struk yang sama tidak bisa diajukan dua kali.
+        if (Schema::hasTable('telegram_receipts')) {
+            return;
+        }
+
         Schema::create('telegram_receipts', function (Blueprint $table) {
             $table->id();
             $table->string('file_unique_id', 64)->unique();

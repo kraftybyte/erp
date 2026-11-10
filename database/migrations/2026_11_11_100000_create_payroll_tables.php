@@ -13,7 +13,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('payroll_components', function (Blueprint $table) {
+        if (! Schema::hasTable('payroll_components')) Schema::create('payroll_components', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('name', 100);
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('payslips', function (Blueprint $table) {
+        if (! Schema::hasTable('payslips')) Schema::create('payslips', function (Blueprint $table) {
             $table->id();
             // Slip adalah catatan keuangan: tetap ada walau akun karyawannya dihapus.
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
@@ -51,7 +51,7 @@ return new class extends Migration
             $table->index(['period', 'status']);
         });
 
-        Schema::create('payslip_items', function (Blueprint $table) {
+        if (! Schema::hasTable('payslip_items')) Schema::create('payslip_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('payslip_id')->constrained()->cascadeOnDelete();
             $table->string('name', 100);

@@ -8,10 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
+        $addChat   = ! Schema::hasColumn('users', 'telegram_chat_id');
+        $addLinked = ! Schema::hasColumn('users', 'telegram_linked_at');
+
+        Schema::table('users', function (Blueprint $table) use ($addChat, $addLinked) {
             // Satu akun Telegram hanya boleh terhubung ke satu user ERP.
-            $table->string('telegram_chat_id', 32)->nullable()->unique()->after('phone');
-            $table->timestamp('telegram_linked_at')->nullable()->after('telegram_chat_id');
+            if ($addChat) {
+                $column = $table->string('telegram_chat_id', 32)->nullable()->unique();
+                Schema::hasColumn('users', 'phone') && $column->after('phone');
+            }
+
+            if ($addLinked) {
+                $table->timestamp('telegram_linked_at')->nullable()->after('telegram_chat_id');
+            }
         });
     }
 
