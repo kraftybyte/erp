@@ -1,54 +1,72 @@
 <?php
 
-
 namespace App\Services;
 
+use App\Models\Transaction;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 
-use Carbon\Carbon;
-use App\Models\Invoice;
-use App\Models\Expense;
-use App\Models\Advance;
-use App\Models\Leads;
-use App\Models\Deal;
-
-
+/**
+ * Riwayat bulanan untuk analisa keuangan: bulan-bulan penuh yang sudah lewat,
+ * ditambah bulan berjalan sampai hari ini (partial). Definisinya sama dengan
+ * laporan bot keuangan:
+ * - billed: invoice penjualan menurut tanggal invoice, sebesar yang ditagih
+ *   (DP = nilai DP, pelunasan = sisa setelah DP), tanpa proforma dan yang batal;
+ * - expenses: pengajuan expense menurut tanggal pengajuan, tanpa yang ditolak;
+ * - cash_in / cash_out: transaksi kas yang dicatat di ERP, menurut tanggalnya.
+ */
 class TrendEngine
 {
-public function getMonthlyHistory(int $months = 6): array
-{
-$now = Carbon::now();
-$history = [];
+    public function __construct(private FinanceOverview $finance) {}
 
+    /**
+     * @return list<array{month: string, label: string, partial: bool, billed: float, expenses: float, cash_in: float, cash_out: float}>
+     */
+    public function getMonthlyHistory(int $months = 6, ?CarbonInterface $today = null): array
+    {
+        $today   = CarbonImmutable::parse($today ?? now())->startOfDay();
+        $history = [];
 
-for ($i = $months - 1; $i >= 0; $i--) {
-$start = $now->copy()->subMonths($i)->startOfMonth();
-$end = $start->copy()->endOfMonth();
+        for ($i = $months; $i >= 0; $i--) {
+            $start = $today->startOfMonth()->subMonthsNoOverflow($i);
+            $end   = $i === 0 ? $today : $start->endOfMonth();
 
+            $history[] = $this->month(ReportPeriod::between($start, $end), $i === 0);
+        }
 
-$history[] = [
-'month' => $start->format('Y-m'),
-// Yang ditagih invoice penjualan (Invoice::amountDue()), tanpa proforma dan yang dibatalkan.
-'revenue' => Invoice::with('parentInvoice')->where('type', 'sale')->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'cancelled'))
-    ->whereBetween('created_at', [$start, $end])->get()->sum(fn (Invoice $invoice) => $invoice->amountDue()),
-'expenses' => Expense::whereBetween('created_at', [$start, $end])->sum('amount'),
-'advances' => Advance::whereBetween('created_at', [$start, $end])->sum('amount'),
-'leads' => Leads::whereBetween('created_at', [$start, $end])->count(),
-'deals' => Deal::whereBetween('created_at', [$start, $end])->count(),
-];
-}
+        return $history;
+    }
 
+    /**
+     * Rata-rata per bulan dari $months bulan penuh terakhir (bulan berjalan
+     * tidak ikut); null bila belum ada bulan penuh.
+     */
+    public static function runRate(array $history, string $key, int $months = 3): ?float
+    {
+        $full = array_slice(array_values(array_filter($history, fn (array $month) => ! $month['partial'])), -$months);
 
-return $history;
-}
+        return $full ? round(array_sum(array_column($full, $key)) / count($full), 2) : null;
+    }
 
+    private function month(ReportPeriod $period, bool $partial): array
+    {
+        $finance = $this->finance->forPeriod($period);
 
-public function forecastNextMonth(array $history, string $key): float
-{
-$values = collect($history)->pluck($key)->filter(fn($v) => $v > 0);
-if ($values->count() < 2) return 0;
+        return [
+            'month'    => $period->from->format('Y-m'),
+            'label'    => $period->from->locale('id')->translatedFormat('M Y'),
+            'partial'  => $partial,
+            'billed'   => round($finance->invoiceTotals()['total']['amount'], 2),
+            'expenses' => round($finance->expenses()['total']['amount'], 2),
+            'cash_in'  => self::cash($period, Transaction::TYPE_IN),
+            'cash_out' => self::cash($period, Transaction::TYPE_OUT),
+        ];
+    }
 
-
-$growth = ($values->last() - $values->first()) / $values->first();
-return round($values->last() * (1 + $growth), 2);
-}
+    public static function cash(ReportPeriod $period, string $type, ?string $reference = null): float
+    {
+        return round((float) $period->apply(Transaction::query()->where('type', $type), 'transaction_date')
+            ->when($reference, fn ($query) => $query->where('reference_type', $reference))
+            ->sum('amount'), 2);
+    }
 }

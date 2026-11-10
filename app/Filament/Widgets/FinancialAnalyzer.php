@@ -30,7 +30,7 @@ class FinancialAnalyzer extends Widget
 
     public function generate(): void
     {
-        Artisan::call('financial:analyze');
+        Artisan::call('financial:analyze', ['--no-telegram' => true]);
         $this->report = FinancialAiReport::latest()->first();
     }
 

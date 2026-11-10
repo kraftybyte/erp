@@ -7,6 +7,7 @@ use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\FinanceAdvisor;
 use App\Services\FinanceExport;
 use App\Services\FinanceOverview;
 use App\Services\InvoicePayment;
@@ -182,6 +183,13 @@ class FinanceBot
         $this->payment->forget($chatId);
         Cache::forget($this->periodAwaitKey($chatId));
 
+        // /analisa [pertanyaan], atau pertanyaan yang diketik langsung.
+        if ($command === 'analisa' || (! $match && self::looksLikeQuestion($text))) {
+            $this->sendAnalysis($chatId, $command === 'analisa' ? $args : $text);
+
+            return;
+        }
+
         if (in_array($command, ['bantuan', 'help'], true)) {
             $this->telegram->sendMessage($chatId, $this->helpText());
 
@@ -228,6 +236,14 @@ class FinanceBot
 
         if (str_starts_with($data, 'apv:') || str_starts_with($data, 'rlz:')) {
             $this->approvals->handleCallback($callback, $user);
+
+            return;
+        }
+
+        if ($data === 'fin:analisa') {
+            $this->telegram->answerCallback($callback['id'], 'Menyusun analisa…');
+            $this->forgetInputs($chatId);
+            $this->sendAnalysis($chatId, '');
 
             return;
         }
@@ -416,6 +432,7 @@ class FinanceBot
             [$button('ringkasan'), $button('invoice')],
             [$button('expense'), $button('advance')],
             [$button('piutang'), $button('pending')],
+            [['text' => '🧭 Analisa & prioritas', 'callback_data' => 'fin:analisa']],
             [['text' => '💳 Catat pembayaran invoice', 'callback_data' => 'pay:list']],
             [['text' => "⬇️ Unduh Excel ({$period})", 'callback_data' => 'fin:excel']],
         ];
@@ -682,6 +699,28 @@ class FinanceBot
         }
     }
 
+    /**
+     * Analisa asisten keuangan (FinanceAdvisor); $question kosong = analisa umum.
+     */
+    private function sendAnalysis(int|string $chatId, string $question): void
+    {
+        $this->telegram->typing($chatId);
+
+        $advisor = app(FinanceAdvisor::class);
+
+        $this->telegram->sendMessage($chatId, $advisor->message($advisor->analyze($question)));
+    }
+
+    /**
+     * Teks bebas yang berupa pertanyaan ("berapa piutang yang telat?"), bukan
+     * sapaan atau kata kunci: dijawab asisten keuangan, bukan ringkasan.
+     */
+    private static function looksLikeQuestion(string $text): bool
+    {
+        return count(preg_split('/\s+/u', trim($text))) >= 2
+            && (str_contains($text, '?') || preg_match('/^(kenapa|mengapa|berapa|apa|apakah|bagaimana|gimana|siapa|kapan|mana|tolong|coba|bisakah|analisa|analisis)\b/iu', trim($text)));
+    }
+
     private function forgetInputs(int|string $chatId): void
     {
         $this->approvals->forget($chatId);
@@ -701,6 +740,7 @@ class FinanceBot
         /advance – advance per project: cair, realisasi, sisa
         /piutang – invoice yang belum dibayar
         /pending – pengajuan yang menunggu diproses
+        /analisa – status keuangan, prioritas minggu ini, dan langkahnya. Bisa bertanya langsung, mis. <code>/analisa kenapa kas bulan ini minus?</code> atau ketik pertanyaannya saja
 
         <b>Periode &amp; file</b>
         /periode – ganti periode, mis. <code>/periode oktober 2026</code>

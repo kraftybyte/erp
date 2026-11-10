@@ -26,6 +26,7 @@ class TelegramWebhookManager
     ];
 
     public const FINANCE_COMMANDS = [
+        ['command' => 'analisa',   'description' => 'Status keuangan & prioritas minggu ini (AI)'],
         ['command' => 'ringkasan', 'description' => 'Invoice masuk, expense, advance'],
         ['command' => 'invoice',   'description' => 'Invoice DP, full payment, belum dibayarkan'],
         ['command' => 'piutang',   'description' => 'Yang belum dibayar & belum ditagih'],

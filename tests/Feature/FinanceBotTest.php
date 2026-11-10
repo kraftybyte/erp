@@ -191,6 +191,30 @@ class FinanceBotTest extends TestCase
     // Helper
     // =================================================================
 
+    public function test_analisa_lewat_perintah_tombol_dan_pertanyaan(): void
+    {
+        // Tanpa Gemini (kunci di .env juga dikosongkan): prioritas dari aturan sistem.
+        config(['services.gemini.key' => null]);
+        $this->user('Finance');
+
+        $this->send($this->text('/analisa'));
+        $this->assertStringContainsString('Analisa keuangan', $this->lastText());
+        $this->assertStringContainsString('Angka kunci', $this->lastText());
+        $this->assertStringContainsString('Prioritas dari aturan sistem', $this->lastText());
+
+        // Pertanyaan yang diketik langsung dijawab asisten, bukan ringkasan.
+        $this->send($this->text('berapa piutang yang telat?'));
+        $this->assertStringContainsString('❓ <i>berapa piutang yang telat?</i>', $this->lastText());
+
+        $this->send($this->text('halo'));
+        $this->assertStringContainsString('Ringkasan keuangan', $this->lastText());
+
+        $this->send($this->tap('fin:analisa'));
+        $this->assertStringContainsString('Analisa keuangan', $this->lastText());
+
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'generativelanguage'));
+    }
+
     private function user(string $role): User
     {
         $user = User::forceCreate([
