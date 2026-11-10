@@ -207,6 +207,12 @@ class MetricsEngine
                 continue;
             }
 
+            // Klien kadang langsung membayar harga penuh lewat invoice DP: tidak ada sisa yang perlu ditagih.
+            $unbilled = round((float) $dp->grand_total - max($dp->amountDue(), (float) $dp->paid), 2);
+            if ($unbilled <= 1) {
+                continue;
+            }
+
             $final = $legacy->first(fn (Invoice $final) => self::sameClient($final, $dp)
                 && abs((float) $final->grand_total - (float) $dp->grand_total) < 1
                 && (! $final->date || ! $dp->date || $final->date >= $dp->date));
@@ -220,7 +226,7 @@ class MetricsEngine
             $open->push([
                 'invoice'       => (string) $dp->uuid,
                 'client'        => ClientLabel::invoice($dp),
-                'unbilled'      => round((float) $dp->grand_total - $dp->amountDue(), 2),
+                'unbilled'      => $unbilled,
                 'days_since_dp' => $dp->date ? (int) CarbonImmutable::parse($dp->date)->startOfDay()->diffInDays($today) : null,
                 'project_done'  => $dp->projects->contains(fn ($project) => in_array(Str::lower((string) $project->status), self::PROJECT_DONE, true)),
             ]);
