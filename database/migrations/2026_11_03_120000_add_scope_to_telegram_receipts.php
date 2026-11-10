@@ -15,6 +15,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('telegram_receipts', 'scope')) {
+            return; // sudah diubah (database lama yang diubah di luar migrasi)
+        }
+
         Schema::table('telegram_receipts', function (Blueprint $table) {
             $table->string('scope', 40)->default('pengajuan')->after('file_unique_id');
         });

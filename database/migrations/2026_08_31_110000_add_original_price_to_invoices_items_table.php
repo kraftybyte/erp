@@ -11,8 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('invoices_items', 'original_price')) {
+            return; // database lama yang kolomnya sudah ditambah di luar migrasi
+        }
+
         Schema::table('invoices_items', function (Blueprint $table) {
-            $table->decimal('original_price', 15, 2)->nullable()->after('price');
+            $column = $table->decimal('original_price', 15, 2)->nullable();
+            Schema::hasColumn('invoices_items', 'price') && $column->after('price');
         });
     }
 
