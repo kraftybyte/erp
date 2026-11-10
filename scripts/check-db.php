@@ -163,6 +163,47 @@ echo 'Satu DP punya lebih dari satu pelunasan: ' . ($twice->isEmpty() ? 'tidak a
 $fromNotes = $finals->filter(fn (Invoice $i) => ! $i->parent_invoice_id && $i->settledDp());
 echo 'Pelunasan lama (DP dibaca dari catatan, tanpa tautan): ' . ($fromNotes->isEmpty() ? 'tidak ada' : $list($fromNotes->map(fn ($i) => "{$i->uuid} DP {$i->settledDp()['percent']}%"))) . "\n";
 
+// Pelunasan lama: angka dari catatan dibandingkan dengan Total invoice itu sendiri,
+// dan invoice DP yang kemungkinan pasangannya (deal/klien sama, nominal DP cocok)
+// supaya bisa ditautkan dari ERP. Hanya nomor dokumen dan nominal.
+$dps = $invoices->where('type', 'sale')->filter(fn (Invoice $i) => $i->dpPercentage() !== null);
+$pairOf = function (Invoice $final) use ($dps, $children) {
+    $dp      = $final->settledDp();
+    $company = mb_strtolower(trim((string) $final->nama_perusahaan));
+
+    return $dps->filter(fn (Invoice $i) => ! $children->has($i->id)
+            && (($final->deal_id && $i->deal_id === $final->deal_id) || ($company !== '' && mb_strtolower(trim((string) $i->nama_perusahaan)) === $company))
+            && (abs($i->amountDue() - $dp['amount']) <= 1 || abs((float) $i->grand_total - (float) $final->grand_total) <= 1))
+        ->sortBy(fn (Invoice $i) => abs($i->amountDue() - $dp['amount']));
+};
+
+if ($fromNotes->isNotEmpty()) {
+    echo "Rincian pelunasan lama:\n";
+
+    foreach ($fromNotes as $final) {
+        $dp    = $final->settledDp();
+        $pairs = $pairOf($final);
+        $off   = abs($dp['full'] - (float) $final->grand_total) > 1;
+
+        echo "   {$final->uuid} [{$final->status}] Total " . $rupiah($final->grand_total)
+            . " · catatan: DP {$dp['percent']}% " . $rupiah($dp['amount']) . ' → harga penuh ' . $rupiah($dp['full'])
+            . ' · ditagih ' . $rupiah($final->amountDue()) . ' · dibayar ' . $rupiah($final->paid)
+            . ($off ? ' · ⚠️ harga penuh di catatan ≠ Total' : '')
+            . ' · pasangan DP: ' . ($pairs->isEmpty() ? 'tidak ketemu' : $pairs->take(3)->map(fn ($i) => "{$i->uuid} [{$i->status}] DP " . $rupiah($i->amountDue()) . ' dari ' . $rupiah($i->grand_total))->implode(' / ')) . "\n";
+    }
+}
+
+// DP lunas tanpa pelunasan tertaut: apakah ada pelunasan lama yang kemungkinan miliknya.
+if ($waiting->isNotEmpty()) {
+    echo "DP lunas tanpa pelunasan tertaut, dicocokkan dengan pelunasan lama:\n";
+
+    foreach ($waiting->sortBy('date') as $dpInvoice) {
+        $match = $fromNotes->first(fn (Invoice $final) => $pairOf($final)->contains('id', $dpInvoice->id));
+        echo "   {$dpInvoice->uuid} DP {$dpInvoice->dpPercentage()}% " . $rupiah($dpInvoice->amountDue()) . ' dari ' . $rupiah($dpInvoice->grand_total)
+            . ' · dibayar ' . $rupiah($dpInvoice->paid) . ' → ' . ($match ? "kemungkinan pelunasannya {$match->uuid} [{$match->status}]" : 'pelunasan belum ada') . "\n";
+    }
+}
+
 $section('Pemakaian bot 7 hari terakhir (struk tercatat)');
 $rows = DB::table('telegram_receipts')
     ->where('created_at', '>=', now()->subDays(7)->startOfDay())
