@@ -71,7 +71,12 @@ class MetricsEngineTest extends TestCase
         $old    = $this->invoice(['type_payment' => 'dp_50', 'grand_total' => 6_000_000, 'paid' => 3_000_000, 'status' => 'paid', 'nama_perusahaan' => $client]);
         $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 6_000_000, 'status' => 'pending', 'nama_perusahaan' => $client, 'notes' => 'DP: 50% - Rp 3.000.000']);
 
+        // DP yang dibayar harga penuh: tidak ada pelunasan yang perlu ditagih.
+        $full = $this->invoice(['type_payment' => 'dp_50', 'grand_total' => 4_500_000, 'paid' => 4_500_000, 'status' => 'paid']);
+
         $after = $this->snapshot();
+
+        $this->assertNull(collect($after['dp_unbilled']['top'])->firstWhere('invoice', $full->uuid));
 
         $row = collect($after['dp_unbilled']['top'])->firstWhere('invoice', $open->uuid);
         $this->assertNotNull($row);
