@@ -19,12 +19,17 @@
 #
 #   bash migrate-cwp.sh update /home/AKUN/public_html/FOLDER
 #
+# Memperbarui ERP versi lama yang sudah terpasang (data situs itu tetap):
+#
+#   bash migrate-cwp.sh upgrade ~/erp.domain.com    # backup → kode baru → composer update → migrate
+#   bash migrate-cwp.sh rollback ~/erp.domain.com   # kembali ke kondisi sebelum upgrade terakhir
+#
 # Opsi lewat variabel lingkungan (melewati pertanyaan): CWP_USER, DOMAIN, SITE,
 # SRC (user@host server lama), SRC_PORT, SRC_PATH, DB_NAME, DB_USER, DB_PASS,
 # PHP, MOVE_BOTS=y|n, ENABLE_CRON=y|n, ASSUME_YES=1.
 set -euo pipefail
 
-REPO_TARBALL=https://codeload.github.com/kraftybyte/erp/tar.gz/refs/heads/main
+REPO_TARBALL=${REPO_TARBALL:-https://codeload.github.com/kraftybyte/erp/tar.gz/refs/heads/main}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/erp-migrate.XXXXXX")
 cleanup() {
     [ -S "$WORK/ssh-master" ] && ssh -o "ControlPath=$WORK/ssh-master" -O exit dummy >/dev/null 2>&1 || true
@@ -69,6 +74,11 @@ check_extensions() {
     [ -z "$missing" ] || die "Ekstensi PHP belum aktif: ${missing}. Aktifkan di CWP: PHP Settings → PHP-FPM Selector → extensions."
 }
 
+# Huruf/angka acak (lewat PHP: tr </dev/urandom | head kena SIGPIPE di bawah pipefail).
+random_text() {
+    "$PHP" -r '$c = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"; $s = ""; for ($i = 0; $i < (int) $argv[1]; $i++) { $s .= $c[random_int(0, strlen($c) - 1)]; } echo $s;' "$1"
+}
+
 # Tanpa pipefail: grep -q berhenti lebih awal dan perintah di depannya kena SIGPIPE.
 contains() { # contains "pola" perintah...
     local pattern=$1
@@ -95,13 +105,17 @@ env_value() { # env_value FILE KEY
     grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
+# Composer terbaru selalu diunduh: composer bawaan server bisa versi lama (1.x).
+# Composer 2.9+ menolak paket yang punya security advisory, termasuk semua
+# Laravel 11 yang dipakai ERP ini (juga di produksi). Penolakan itu dimatikan
+# hanya untuk proses ini lewat COMPOSER_HOME sementara; pengaturan composer
+# server tidak diubah.
 composer_run() {
-    if command -v composer >/dev/null 2>&1 && composer --version >/dev/null 2>&1; then
-        (cd "$SITE" && COMPOSER_ALLOW_SUPERUSER=1 "$PHP" "$(command -v composer)" "$@")
-    else
-        [ -f "$WORK/composer.phar" ] || curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o "$WORK/composer.phar"
-        (cd "$SITE" && COMPOSER_ALLOW_SUPERUSER=1 "$PHP" "$WORK/composer.phar" "$@")
-    fi
+    [ -f "$WORK/composer.phar" ] || curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o "$WORK/composer.phar"
+    mkdir -p "$WORK/composer-home"
+    [ -f "$WORK/composer-home/config.json" ] || echo '{"config":{"policy":{"advisories":{"block":false}}}}' > "$WORK/composer-home/config.json"
+    (cd "$SITE" && COMPOSER_HOME="$WORK/composer-home" COMPOSER_CACHE_DIR="${COMPOSER_CACHE_DIR:-$HOME/.cache/composer}" \
+        COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_MEMORY_LIMIT=-1 "$PHP" -d memory_limit=-1 "$WORK/composer.phar" "$@")
 }
 
 # Salin kode GitHub ke folder situs; .env, storage/, vendor/, public/storage,
@@ -182,6 +196,201 @@ if [ "${1:-}" = update ]; then
 fi
 
 # =====================================================================
+# upgrade / rollback: ERP versi lama yang sudah terpasang, datanya tetap
+# =====================================================================
+
+# Folder kode yang diganti penuh (file yang sudah dihapus di versi baru ikut
+# hilang; sisa modul lama bisa membuat error). Isi lain di akar situs (.env,
+# storage, backup .sql/.zip, file lain) tidak disentuh.
+CODE_DIRS=(app bootstrap config database lang public resources routes stubs scripts tests)
+
+db_env() { # db_env FILE → "host port user database" (password lewat MYSQL_PWD)
+    local file=$1 port
+    local host
+    port=$(env_value "$file" DB_PORT)
+    host=$(env_value "$file" DB_HOST)
+    printf '%s\n' "${host:-localhost}" "${port:-3306}" "$(env_value "$file" DB_USERNAME)" "$(env_value "$file" DB_DATABASE)"
+}
+
+site_mysql() { # site_mysql PROGRAM [args...]: mysql/mysqldump dengan kredensial .env situs
+    local prog=$1 host port user db
+    shift
+    { read -r host; read -r port; read -r user; read -r db; } < <(db_env "$SITE/.env")
+    MYSQL_PWD=$(env_value "$SITE/.env" DB_PASSWORD) "$prog" -h "$host" -P "$port" -u "$user" "$@" "$db"
+}
+
+# PHP yang dipakai website (bukan CLI) harus 8.3+: dicek lewat file sementara.
+web_php_check() {
+    local url probe version
+    url=$(env_value "$SITE/.env" APP_URL); url=${url%/}
+    probe="erp-php-$(random_text 12).php"
+    echo '<?php echo PHP_VERSION;' > "$SITE/public/$probe"
+    version=$(curl -sk --max-time 20 "$url/$probe" 2>/dev/null | head -c 20 || true)
+    rm -f "$SITE/public/$probe"
+
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+ ]]; then
+        info "PHP website tidak bisa dicek lewat $url (lanjut; pastikan PHP domain ini 8.3+ di CWP)."
+    elif ! "$PHP" -r 'exit(version_compare($argv[1], "8.3.0", ">=") ? 0 : 1);' "$version"; then
+        die "Website $url memakai PHP $version; versi baru butuh 8.3+. Ganti di CWP: PHP Settings → PHP-FPM Selector (domain ini), lalu jalankan lagi. Belum ada yang diubah."
+    else
+        info "PHP website: $version"
+    fi
+}
+
+restore_backup() { # restore_backup BACKUP_DIR
+    local backup=$1 table
+    say "Mengembalikan kondisi sebelum upgrade ($backup)"
+    # public/storage (tautan ke upload) dan bootstrap/cache dibiarkan.
+    for dir in "${CODE_DIRS[@]}"; do
+        case "$dir" in
+            public)    find "${SITE:?}/public" -mindepth 1 -maxdepth 1 ! -name storage -exec rm -rf {} + 2>/dev/null ;;
+            bootstrap) find "${SITE:?}/bootstrap" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + 2>/dev/null ;;
+            *)         rm -rf "${SITE:?}/$dir" ;;
+        esac
+    done
+    rm -f "$SITE"/bootstrap/cache/*.php
+    # File di akar folder yang baru ditambahkan versi baru (yang lama ada di code.tar.gz).
+    if [ -f "$backup/new-root-files.txt" ]; then
+        while read -r file; do [ -n "$file" ] && rm -f "${SITE:?}/$file"; done < "$backup/new-root-files.txt"
+    fi
+    tar xzf "$backup/code.tar.gz" -C "$SITE"
+    if [ -d "$backup/vendor.old" ]; then rm -rf "$SITE/vendor"; mv "$backup/vendor.old" "$SITE/vendor"; fi
+    [ -f "$backup/composer.lock" ] && cp "$backup/composer.lock" "$SITE/composer.lock"
+
+    # Database persis seperti sebelum upgrade: tabel baru (mis. dari migrasi) ikut dihapus.
+    { echo 'SET FOREIGN_KEY_CHECKS=0;'
+      site_mysql mysql -N -e 'SHOW TABLES' | while read -r table; do echo "DROP TABLE IF EXISTS \`$table\`;"; done
+      echo 'SET FOREIGN_KEY_CHECKS=1;'
+    } | site_mysql mysql
+    gunzip -c "$backup/database.sql.gz" | site_mysql mysql
+
+    (cd "$SITE" && "$PHP" artisan optimize:clear >/dev/null 2>&1; "$PHP" artisan up >/dev/null 2>&1) || true
+    fix_permissions
+    info "Kode, paket, dan database kembali seperti sebelum upgrade."
+}
+
+if [ "${1:-}" = upgrade ] || [ "${1:-}" = rollback ]; then
+    MODE=$1
+    SITE=${2:-${SITE:-}}
+    [ -n "$SITE" ] && [ -f "$SITE/.env" ] && [ -f "$SITE/artisan" ] || die "Pemakaian: bash migrate-cwp.sh $MODE /path/ke/folder/website"
+    SITE=$(cd "$SITE" && pwd)
+    CWP_USER=${CWP_USER:-$(stat -c %U "$SITE" 2>/dev/null || id -un)}
+    BACKUPS="$HOME/erp-upgrade"
+    PHP=$(pick_php)
+
+    if [ "$MODE" = rollback ]; then
+        BACKUP=${3:-$(ls -d "$BACKUPS"/backup-* 2>/dev/null | sort | tail -1)}
+        [ -n "$BACKUP" ] && [ -f "$BACKUP/database.sql.gz" ] && [ -f "$BACKUP/code.tar.gz" ] || die "Backup upgrade tidak ditemukan di $BACKUPS."
+        (cd "$SITE" && "$PHP" artisan down >/dev/null 2>&1 || true)
+        restore_backup "$BACKUP"
+        say "SELESAI: rollback dari $BACKUP"
+        exit 0
+    fi
+
+    say "Upgrade ERP di $SITE (data tetap)"
+    info "PHP: $("$PHP" -r 'echo PHP_VERSION;') ($PHP)"
+    check_extensions
+    for tool in mysqldump mysql rsync curl tar gzip; do
+        command -v "$tool" >/dev/null 2>&1 || die "Perintah '$tool' tidak ada di server ini."
+    done
+    site_mysql mysql -e 'SELECT 1' >/dev/null || die "Tidak bisa masuk ke database situs dengan kredensial di .env."
+    web_php_check
+
+    say "Mengunduh kode terbaru dari GitHub"
+    mkdir -p "$WORK/code"
+    curl -fsSL "$REPO_TARBALL" | tar xz --strip-components=1 -C "$WORK/code" || die "Kode tidak bisa diunduh dari GitHub; belum ada yang diubah."
+    [ -f "$WORK/code/artisan" ] || die "Unduhan kode tidak lengkap; belum ada yang diubah."
+    root_files=()
+    for file in $(ls -A "$WORK/code"); do
+        [ -f "$WORK/code/$file" ] && [ "$file" != .env ] && [ "$file" != .htaccess ] && root_files+=("$file")
+    done
+
+    BACKUP="$BACKUPS/backup-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$BACKUP"
+    chmod 700 "$BACKUPS" "$BACKUP"
+
+    say "Backup (di luar folder website)"
+    site_mysql mysqldump --single-transaction --quick --no-tablespaces | gzip > "$BACKUP/database.sql.gz"
+    contains 'CREATE TABLE' gunzip -c "$BACKUP/database.sql.gz" || die "Backup database gagal; upgrade dibatalkan, belum ada yang diubah."
+    existing=()
+    for dir in "${CODE_DIRS[@]}"; do [ -e "$SITE/$dir" ] && existing+=("$dir"); done
+    : > "$BACKUP/new-root-files.txt"
+    for file in "${root_files[@]}"; do
+        if [ -e "$SITE/$file" ]; then existing+=("$file"); else echo "$file" >> "$BACKUP/new-root-files.txt"; fi
+    done
+    (cd "$SITE" && tar czf "$BACKUP/code.tar.gz" --exclude=public/storage --exclude=bootstrap/cache "${existing[@]}") || die "Backup kode gagal; belum ada yang diubah."
+    [ -f "$SITE/composer.lock" ] && cp "$SITE/composer.lock" "$BACKUP/composer.lock"
+    info "Database: $(du -h "$BACKUP/database.sql.gz" | cut -f1) · kode: $(du -h "$BACKUP/code.tar.gz" | cut -f1) → $BACKUP"
+
+    # Sejak sini setiap kegagalan mengembalikan kondisi semula.
+    rollback_on_error() {
+        local status=$?
+        trap - ERR
+        [ "$status" -eq 0 ] && return
+        set +e   # kembalikan sebanyak mungkin walau satu langkah gagal
+        printf '\n\033[31mUpgrade gagal (langkah di atas).\033[0m\n' >&2
+        restore_backup "$BACKUP"
+        exit "$status"
+    }
+    trap rollback_on_error ERR
+    # Kegagalan yang terdeteksi langsung memulihkan backup (set -e di dalam
+    # fungsi keluar sebelum trap ERR sempat jalan).
+    die() {
+        printf '\n\033[31mGAGAL: %s\033[0m\n' "$*" >&2
+        trap - ERR
+        set +e
+        restore_backup "$BACKUP"
+        exit 1
+    }
+
+    (cd "$SITE" && "$PHP" artisan down >/dev/null 2>&1 || true)
+
+    say "Memasang kode baru"
+    for dir in "${CODE_DIRS[@]}"; do
+        [ -d "$WORK/code/$dir" ] || continue
+        mkdir -p "$SITE/$dir"
+        rsync -a --delete --exclude=/storage --exclude=/.well-known --exclude=/cache/ "$WORK/code/$dir/" "$SITE/$dir/"
+    done
+    # File di akar folder (artisan, composer.json, …); .env dan .htaccess situs tetap.
+    rsync -a --exclude='*/' --exclude=/.env --exclude=/.htaccess "$WORK/code/" "$SITE/"
+    mkdir -p "$SITE"/storage/{app/public,framework/{cache/data,sessions,views,testing},logs} "$SITE/bootstrap/cache"
+    rm -f "$SITE/composer.lock" "$SITE"/bootstrap/cache/*.php
+    info "Kode diganti; .env, storage, dan file lain di akar folder tetap."
+
+    say "Paket (composer update, beberapa menit)"
+    mv "$SITE/vendor" "$BACKUP/vendor.old" 2>/dev/null || true
+    if ! composer_run update --no-dev --optimize-autoloader --no-interaction --no-progress > "$WORK/composer.log" 2>&1; then
+        tail -20 "$WORK/composer.log"
+        die "composer update gagal."
+    fi
+    info "Paket terpasang."
+
+    say "Database (migrate)"
+    if ! (cd "$SITE" && "$PHP" artisan migrate --force > "$WORK/migrate.log" 2>&1); then
+        tail -20 "$WORK/migrate.log"
+        die "php artisan migrate gagal."
+    fi
+    grep -cE 'DONE' "$WORK/migrate.log" | sed 's/^/   Migrasi dijalankan: /' || true
+
+    trap - ERR
+    (cd "$SITE" && { [ -e public/storage ] || "$PHP" artisan storage:link >/dev/null 2>&1; }; "$PHP" artisan optimize:clear >/dev/null 2>&1; "$PHP" artisan permission:cache-reset >/dev/null 2>&1; "$PHP" artisan up >/dev/null 2>&1) || true
+    fix_permissions
+
+    say "Pemeriksaan"
+    url=$(env_value "$SITE/.env" APP_URL); url=${url%/}
+    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 20 "$url/admin/login" 2>/dev/null || true)
+    if [ "$code" = 200 ]; then
+        info "$url/admin/login → 200"
+    else
+        info "$url/admin/login → HTTP ${code:-000}. Lihat $SITE/storage/logs/laravel.log; kembali ke versi lama: bash $0 rollback $SITE"
+    fi
+
+    say "SELESAI: ERP di $SITE sudah versi terbaru, data tetap."
+    info "Backup sebelum upgrade: $BACKUP (hapus bila sudah yakin; rollback: bash $0 rollback $SITE)"
+    exit 0
+fi
+
+# =====================================================================
 # Migrasi
 # =====================================================================
 say "Migrasi ERP ke CWP"
@@ -236,7 +445,7 @@ DB_NAME=${DB_NAME:-}; DB_USER=${DB_USER:-}; DB_PASS=${DB_PASS:-}
 if [ "$(id -u)" = 0 ] && mysql -e 'SELECT 1' >/dev/null 2>&1; then
     DB_NAME=${DB_NAME:-${CWP_USER}_erp}
     DB_USER=${DB_USER:-${CWP_USER}_erp}
-    DB_PASS=${DB_PASS:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)}
+    DB_PASS=${DB_PASS:-$(random_text 24)}
     if mysql -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME'" | grep -qv '^0$'; then
         die "Database $DB_NAME sudah berisi tabel. Hapus dulu di CWP (MySQL Manager) atau set DB_NAME lain."
     fi

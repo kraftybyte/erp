@@ -104,6 +104,10 @@ php artisan key:generate
 # upload, dan vendor disalin dari server lama lewat SSH; server lama hanya dibaca.
 bash scripts/migrate-cwp.sh                 # di server CWP (sebaiknya root)
 bash scripts/migrate-cwp.sh update <folder> # perbarui kode situs CWP
+# ERP versi lama yang sudah terpasang (datanya tetap): backup → kode baru → composer update → migrate,
+# gagal di langkah mana pun = otomatis kembali; backup di ~/erp-upgrade.
+bash scripts/migrate-cwp.sh upgrade <folder>
+bash scripts/migrate-cwp.sh rollback <folder>
 
 # Scheduled reminders (app/Console/Kernel.php); the server needs a cron every minute
 bash scripts/schedule-run.sh          # = php artisan schedule:run
