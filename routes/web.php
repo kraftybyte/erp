@@ -84,6 +84,13 @@ Route::middleware(['auth'])->group(function () {
         ->name('thermal.pdf');
 });
 
+// Template Excel untuk Import karyawan (HR → Employee); izin Shield create/update user.
+Route::get('/import-template/karyawan', function (\App\Services\EmployeeImport $import) {
+    abort_unless(auth()->user()->can('create', \App\Models\User::class) || auth()->user()->can('update_user'), 403);
+
+    return response()->download($import->template(), 'Template Import Karyawan.xlsx')->deleteFileAfterSend();
+})->middleware('auth')->name('import-template.employees');
+
 // Template Excel untuk tombol "Import dari Excel" di quotation & invoice.
 Route::get('/import-template/{type}', function (ItemImportTemplate $template, string $type) {
     $path = tempnam(sys_get_temp_dir(), 'template-');

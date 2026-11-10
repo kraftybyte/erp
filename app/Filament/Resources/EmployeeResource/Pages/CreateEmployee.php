@@ -20,6 +20,18 @@ class CreateEmployee extends CreateRecord
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $data['username'] = self::uniqueUsername($data);
+        $data['password'] = Str::random(40);
+
+        return $data;
+    }
+
+    /**
+     * Username dari email (atau nama), unik di tabel users. Dipakai juga
+     * Import Excel karyawan.
+     */
+    public static function uniqueUsername(array $data): string
+    {
         $base = Str::of(Str::before((string) ($data['email'] ?? ''), '@'))
             ->whenEmpty(fn () => Str::of(($data['firstname'] ?? '') . ' ' . ($data['lastname'] ?? '')))
             ->lower()
@@ -34,10 +46,7 @@ class CreateEmployee extends CreateRecord
             $username = "{$base}{$i}";
         }
 
-        $data['username'] = $username;
-        $data['password'] = Str::random(40);
-
-        return $data;
+        return $username;
     }
 
     protected function getRedirectUrl(): string
