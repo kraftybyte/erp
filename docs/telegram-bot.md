@@ -240,10 +240,43 @@ Setup:
    Hubungkan Telegram). ID chat pribadi sama di semua bot, jadi bot laporan
    langsung mengenalinya. Role diperiksa ulang di setiap pesan dan tombol.
 
-Perintah: `/ringkasan`, `/invoice`, `/piutang`, `/advance`, `/expense`, `/pending`,
+Perintah: `/analisa`, `/ringkasan`, `/invoice`, `/piutang`, `/advance`, `/expense`, `/pending`,
 `/periode`, `/excel`, `/bayar`. Setelah perintah baru ditambahkan, daftarkan ulang webhook
 (Settings → Integrasi → Simpan, atau `php artisan telegram:webhook --finance`)
 supaya menu perintah di Telegram ikut diperbarui.
+
+### Asisten keuangan (`/analisa`)
+
+`/analisa` (atau tombol **🧭 Analisa & prioritas**) mengirim status keuangan
+(🟢 sehat / 🟡 waspada / 🔴 kritis), 3–4 prioritas dengan langkah, PIC, dan
+tenggatnya, lalu angka kunci bulan berjalan dibanding tanggal yang sama bulan lalu.
+Bisa bertanya: `/analisa kenapa kas bulan ini minus?`, atau ketik pertanyaannya
+langsung (teks yang diawali kenapa/berapa/apa/bagaimana/… atau berisi `?`).
+Hasil yang sama dikirim otomatis setiap Senin 09:00 (`financial:analyze`, butuh
+cron `schedule:run`) dan disimpan di tabel `financial_ai_reports`.
+
+Cara kerjanya (`App\Services\FinanceAdvisor`):
+
+1. **Fakta dihitung sistem** (`App\Services\MetricsEngine`, definisinya sama
+   dengan laporan di atas): uang masuk/keluar dari transaksi rekening, ditagih
+   (DP sebesar DP-nya), piutang semua invoice yang belum lunas berikut umurnya
+   dari jatuh tempo, DP lunas yang belum dibuatkan pelunasan (ditandai bila
+   project-nya sudah selesai), proforma dan quotation approved yang belum
+   menjadi tagihan, expense, advance yang belum dipertanggungjawabkan, pengajuan
+   yang menunggu, saldo kas dibanding rata-rata uang keluar 3 bulan, dan
+   catatan data (mis. invoice dibayar tanpa transaksi rekening).
+2. **Aturan** menandai temuan dan menetapkan status, tanpa AI. Mis. piutang
+   lewat jatuh tempo lebih dari 60 hari atau saldo kurang dari sebulan
+   pengeluaran = kritis.
+3. **Gemini** mengurutkan prioritas dan menulis langkahnya. Setiap butir
+   diperiksa: nominal (`Rp 12.500.000` persis, atau `Rp 12,5 jt` dalam batas
+   pembulatannya) dan nomor invoice/quotation harus ada di fakta; yang tidak
+   ada dibuang dan jumlahnya disebut di pesan. Bila Gemini mati atau semua
+   butirnya dibuang, prioritas diambil dari aturan.
+
+Kas hanya mencakup transaksi yang dicatat di ERP: gaji atau biaya yang tidak
+dicatat tidak ikut, jadi asisten tidak menyimpulkan laba bersih. Pratinjau tanpa
+mengirim: `php artisan financial:analyze --dry-run`.
 
 ### Mencatat pembayaran invoice (`/bayar`)
 
@@ -314,6 +347,8 @@ berbeda dari bot.
 | `app/Http/Controllers/TelegramWebhookController.php` | Cek secret, teruskan update ke bot |
 | `app/Services/Telegram/TelegramBot.php` | Alur percakapan, tombol, pembuatan record |
 | `app/Services/Telegram/FinanceBot.php` | Bot laporan keuangan |
+| `app/Services/FinanceAdvisor.php` | Asisten keuangan `/analisa`: temuan, status, prioritas AI yang diperiksa ulang, pesan |
+| `app/Services/MetricsEngine.php`, `TrendEngine.php`, `PromptEngine.php` | Fakta keuangan, riwayat bulanan, dan prompt asisten keuangan |
 | `app/Services/Telegram/InvoicePaymentFlow.php` | Alur `/bayar` di bot laporan keuangan |
 | `app/Services/InvoicePayment.php` | Pencatatan pembayaran invoice (ERP & Telegram) |
 | `app/Services/Telegram/SubmissionParser.php` | Pesan → isian (Gemini, atau aturan sederhana) |

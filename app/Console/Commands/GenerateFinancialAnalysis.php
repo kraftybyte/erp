@@ -2,86 +2,58 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\FinancialAiReport;
-use App\Services\MetricsEngine;
-use App\Services\TrendEngine;
-use App\Services\PromptEngine;
-use App\Services\GeminiService;
-use Illuminate\Support\Facades\Log;
+use App\Services\FinanceAdvisor;
+use App\Services\Telegram\ManagementAlerts;
+use Carbon\CarbonImmutable;
+use Illuminate\Console\Command;
 
+/**
+ * Analisa keuangan mingguan (Senin 09:00, lihat Kernel): disimpan di
+ * financial_ai_reports dan dikirim ke Director/Finance/super_admin lewat bot
+ * keuangan. Isinya sama dengan /analisa di bot.
+ */
 class GenerateFinancialAnalysis extends Command
 {
-    protected $signature = 'financial:analyze';
-    protected $description = 'Generate AI business intelligence snapshot & forecast';
+    protected $signature = 'financial:analyze
+        {--dry-run : Tampilkan analisanya tanpa menyimpan dan tanpa mengirim}
+        {--no-telegram : Simpan saja, tanpa mengirim ke Telegram}';
 
-    public function handle()
+    protected $description = 'Analisa keuangan: fakta dari ERP, prioritas dari AI yang diperiksa ulang';
+
+    public function handle(FinanceAdvisor $advisor, ManagementAlerts $alerts): int
     {
-        try {
-            // ================= ENGINE INIT =================
-            $metricsEngine = new MetricsEngine();
-            $trendEngine = new TrendEngine();
-            $promptEngine = new PromptEngine();
-            $ai = new GeminiService();
+        $analysis = $advisor->analyze();
+        $message  = $advisor->message($analysis);
 
-            // ================= DATA =================
-            $metrics = $metricsEngine->generateSnapshot();
-            $history = $trendEngine->getMonthlyHistory(6);
+        if ($this->option('dry-run')) {
+            $this->line(html_entity_decode(strip_tags($message), ENT_QUOTES));
 
-            $metrics['forecast'] = [
-                'next_month' => [
-                    'revenue' => $trendEngine->forecastNextMonth($history, 'revenue'),
-                    'expenses' => $trendEngine->forecastNextMonth($history, 'expenses'),
-                    'leads' => $trendEngine->forecastNextMonth($history, 'leads'),
-                    'deals' => $trendEngine->forecastNextMonth($history, 'deals'),
-                ],
-                'history' => $history,
-            ];
-
-            // ================= PROMPT =================
-            $prompt = $promptEngine->build($metrics, 'forecast');
-
-            // ================= AI =================
-            $rawAnalysis = $ai->analyze($prompt);
-
-            // ================= CLEAN OUTPUT =================
-            $analysis = $this->cleanAiOutput($rawAnalysis);
-
-            // ================= SAVE =================
-            FinancialAiReport::create([
-                'analysis' => $analysis,
-                'metrics' => json_encode($metrics, JSON_PRETTY_PRINT),
-                'period_start' => $metrics['period']['start'],
-                'period_end' => $metrics['period']['end'],
-                'version' => 'v1-forecast',
-            ]);
-
-            $this->info('AI Business Intelligence Report generated successfully!');
-        } catch (\Throwable $e) {
-            Log::error('AI Financial Analysis Failed', [
-                'error' => $e->getMessage(),
-            ]);
-
-            $this->error('Failed to generate AI report. Check logs.');
+            return self::SUCCESS;
         }
-    }
 
-    /**
-     * Bersihkan output AI:
-     * - Potong semua teks sebelum STATUS:
-     * - Pastikan maksimal 5 baris
-     */
-    protected function cleanAiOutput(string $text): string
-    {
-        $text = trim($text);
+        $today = CarbonImmutable::parse($analysis['facts']['period']['today']);
 
-        // Potong sebelum STATUS:
-        $text = preg_replace('/^.*?(STATUS:)/is', 'STATUS:', $text);
+        FinancialAiReport::create([
+            'analysis'     => FinanceAdvisor::plainSummary($analysis),
+            'metrics'      => $analysis,
+            'period_start' => $today->startOfMonth()->toDateString(),
+            'period_end'   => $today->toDateString(),
+            'version'      => 'v2-advisor',
+        ]);
 
-        // Batasi ke 5 baris
-        $lines = preg_split('/\r\n|\r|\n/', $text);
-        $lines = array_slice($lines, 0, 5);
+        if ($analysis['ai_error']) {
+            $this->warn("AI tidak dipakai: {$analysis['ai_error']}. Prioritas dari aturan sistem.");
+        }
 
-        return trim(implode("\n", $lines));
+        if ($this->option('no-telegram')) {
+            $this->info('Analisa disimpan.');
+
+            return self::SUCCESS;
+        }
+
+        $this->info('Analisa disimpan dan dikirim ke ' . $alerts->toManagers($message) . ' orang.');
+
+        return self::SUCCESS;
     }
 }
