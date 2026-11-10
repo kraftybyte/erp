@@ -101,8 +101,8 @@ set_env() {
     ' "$1" "$2" "$3"
 }
 
-env_value() { # env_value FILE KEY
-    grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+env_value() { # env_value FILE KEY (.env berformat Windows/CRLF juga: \r dibuang)
+    grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- | tr -d '\r' | sed -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
 # Composer terbaru selalu diunduh: composer bawaan server bisa versi lama (1.x).
@@ -477,7 +477,7 @@ grep -q '^APP_KEY=base64:' "$WORK/old.env" || die "APP_KEY tidak ditemukan di .e
 remote bash -s -- "$SRC_PATH" > "$WORK/db.sql.gz" <<'REMOTE'
 set -o pipefail
 cd "$1" || exit 1
-v() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+v() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- | tr -d '\r' | sed -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
 extra=""
 mysqldump --help 2>/dev/null | grep -c -- '--set-gtid-purged' >/dev/null && extra="--set-gtid-purged=OFF"
 port=$(v DB_PORT)
