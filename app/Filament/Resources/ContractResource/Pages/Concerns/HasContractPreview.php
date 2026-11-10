@@ -99,6 +99,34 @@ trait HasContractPreview
         ];
     }
 
+    /**
+     * Wakil perusahaan kita di pembukaan dan kolom tanda tangan. Kontrak baru
+     * langsung diisi bawaan dari Pengaturan, jadi mengganti bawaan nanti tidak
+     * mengubah kontrak yang sudah dibuat; dikosongkan berarti memakai bawaan.
+     */
+    protected static function agencySignatorySection(bool $prefill): Section
+    {
+        $default = ContractTemplateService::defaultAgencySignatory();
+
+        return Section::make('Penanda Tangan Pihak Pertama')
+            ->icon('heroicon-o-pencil-square')
+            ->description('Wakil perusahaan kita di kontrak. Kosongkan untuk memakai bawaan dari Pengaturan → Contract Template.')
+            ->collapsed()
+            ->columns(2)
+            ->schema([
+                TextInput::make('agency_signatory_name')
+                    ->label('Nama Penanda Tangan')
+                    ->default($prefill ? $default['name'] : null)
+                    ->placeholder($default['name'] ?? 'mis. Budi Santoso')
+                    ->maxLength(255),
+                TextInput::make('agency_signatory_title')
+                    ->label('Jabatan Penanda Tangan')
+                    ->default($prefill ? $default['title'] : null)
+                    ->placeholder($default['title'])
+                    ->maxLength(255),
+            ]);
+    }
+
     public function getMaxContentWidth(): MaxWidth
     {
         return MaxWidth::Full;
@@ -138,7 +166,7 @@ trait HasContractPreview
             };
         }
 
-        // Edit: kolom yang tidak ada di form (mis. penanda tangan agensi) dari kontrak tersimpan.
+        // Edit: kolom yang tidak ada di form diambil dari kontrak tersimpan.
         $attributes = array_merge(
             $this->record instanceof Contract ? Arr::only($this->record->getAttributes(), $fillable) : [],
             Arr::only(array_map($this->blankToNull(...), $data), $fillable),
