@@ -21,6 +21,7 @@ class TelegramWebhookManager
         ['command' => 'realisasi', 'description' => 'Laporkan pemakaian advance'],
         ['command' => 'listadvance', 'description' => 'Daftar advance terbuka & ID-nya'],
         ['command' => 'status',  'description' => 'Pengajuan terakhir & progres advance'],
+        ['command' => 'slip',    'description' => 'Slip gaji terakhir (PDF)'],
         ['command' => 'batal',   'description' => 'Batalkan draft'],
         ['command' => 'bantuan', 'description' => 'Cara pakai'],
     ];

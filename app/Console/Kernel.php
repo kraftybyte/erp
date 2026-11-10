@@ -26,6 +26,9 @@ class Kernel extends ConsoleKernel
         $schedule->command('finance:antrean')->weekdays()->at('08:15');
         $schedule->command('advance:pengingat-realisasi')->days([1, 4])->at('09:30');
         $schedule->command('bot:laporan-mingguan')->weeklyOn(1, '08:05');
+
+        // Slip gaji: dicek setiap hari, bekerja pada tanggal di Settings → General → Gaji.
+        $schedule->command('gaji:buat')->dailyAt('07:00');
     }
 
     /**

@@ -52,7 +52,7 @@ protected static function boot() {
 - CRM → Leads, Client, Product, Quotation, Contract
 - Project → Project, Task Kanban, Timeline
 - Finance → Expense, Advance, Budget, Invoice, Analytics, Faktur (rekap faktur pajak keluaran + nota/struk masukan), Mutasi Rekening (riwayat mutasi yang dicatat lewat /mutasi di bot keuangan; logika di `app/Services/BankStatement/`)
-- HR → Employee, Absence
+- HR → Employee (bagian Gaji: komponen tetap per karyawan), Absence, Slip Gaji (slip bulanan draft → final & kirim Telegram → dibayar; logika di `app/Services/Payroll.php`, jadwal `gaji:buat`, pengaturan di Settings → General → Gaji)
 
 ### Color Helper Usage
 ```php

@@ -6,6 +6,7 @@ use Filament\Facades\Filament;
 use App\Http\Controllers\QuotationPdfController;
 use App\Http\Controllers\WablasController;
 use App\Http\Controllers\InvoicePdfController;
+use App\Http\Controllers\PayslipPdfController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\ThermalPrintController;
@@ -32,6 +33,10 @@ Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
 });
 
 // Invoice PDF Download (protected with auth + rate limiting)
+Route::get('/payslips/{payslip}/pdf', [PayslipPdfController::class, 'download'])
+    ->name('payslip.pdf')
+    ->middleware(['auth', 'throttle:pdf-downloads']);
+
 Route::get('/invoices/{invoice}/download', [InvoicePdfController::class, 'download'])
     ->name('invoices.download')
     ->middleware(['auth', 'throttle:pdf-downloads']);

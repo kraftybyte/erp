@@ -87,6 +87,14 @@ diselesaikan tanpa pengembalian sisa.
   sebagai **Realisasi belum dibayar ke karyawan** di /ringkasan, /advance, antrean
   harian, dan /analisa.
 
+### Slip gaji (`/slip`)
+
+Karyawan mengetik `/slip` untuk menerima PDF slip gaji terakhirnya yang sudah
+final, atau `/slip oktober 2026` untuk bulan tertentu. Slip juga dikirim otomatis
+ke Telegram karyawan saat Finance menekan **Final & kirim** di HR → Slip Gaji
+(bisa dimatikan di Settings → General → Gaji). Draft tidak pernah terlihat oleh
+karyawan.
+
 ### Banyak struk sekaligus
 
 Kirim beberapa foto sebagai **album** dengan satu caption, atau kirim foto
