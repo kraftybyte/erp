@@ -72,12 +72,18 @@ class FinanceOverview
      */
     public function advances(): array
     {
+        // Bayar paralel yang belum dibayar sama sekali masih "belum dibayarkan"
+        // walau realisasinya sudah berjalan; yang sudah dibayar memakai paid apa adanya.
+        $realizing = implode(', ', array_map(fn ($status) => DB::getPdo()->quote($status), array_diff(self::ADVANCE_DISBURSED, [Advance::STATUS_SELESAI])));
+
         $buckets = $this->buckets($this->inPeriod(Advance::query()), [
             'pending'   => [Advance::STATUS_PENDING],
             'approved'  => [Advance::STATUS_DISETUJUI],
             'disbursed' => self::ADVANCE_DISBURSED,
             'rejected'  => [Advance::STATUS_DITOLAK],
-        ], paidBucket: 'disbursed');
+        ], paidBucket: 'disbursed',
+            status: "case when pay_parallel = 1 and coalesce(paid, 0) <= 0 and status in ({$realizing}) then " . DB::getPdo()->quote(Advance::STATUS_DISETUJUI) . ' else status end',
+            paid: 'case when pay_parallel = 1 then coalesce(paid, 0) when paid > 0 then paid else amount end');
 
         $open = $this->openAdvances();
 
@@ -88,6 +94,8 @@ class FinanceOverview
             'returned'    => (float) $this->returnedPerAdvance()->when($ids !== null, fn ($rows) => $rows->only($ids))->sum(),
             'outstanding' => ['count' => $open->where('outstanding', '>', 0)->count(), 'amount' => (float) $open->sum('outstanding')],
             'overrun'     => ['count' => $open->where('overrun', '>', 0)->count(), 'amount' => (float) $open->sum('overrun')],
+            // Bayar paralel: realisasi yang belum dibayar ke karyawan (utang ke karyawan).
+            'owed'        => ['count' => $open->where('owed', '>', 0)->count(), 'amount' => (float) $open->sum('owed')],
         ];
     }
 
@@ -106,16 +114,21 @@ class FinanceOverview
             ->whereIn('status', array_diff(self::ADVANCE_DISBURSED, [Advance::STATUS_SELESAI]))
             ->get()
             ->map(function (Advance $advance) use ($realized, $returned) {
-                $disbursed = $this->paidAmount($advance->paid, $advance->amount);
-                $balance   = $disbursed - (float) ($realized[$advance->id] ?? 0) - (float) ($returned[$advance->id] ?? 0);
+                $disbursed = $this->advanceDisbursed($advance);
+                $real      = (float) ($realized[$advance->id] ?? 0);
+                $balance   = $disbursed - $real - (float) ($returned[$advance->id] ?? 0);
 
                 return [
                     'advance'     => $advance,
                     'disbursed'   => $disbursed,
-                    'realized'    => (float) ($realized[$advance->id] ?? 0),
+                    'realized'    => $real,
                     'returned'    => (float) ($returned[$advance->id] ?? 0),
                     'outstanding' => max($balance, 0),
-                    'overrun'     => max(-$balance, 0),
+                    // Bayar paralel: realisasi di atas yang disetujui (belum dibayar = owed, bukan kelebihan).
+                    'overrun'     => $advance->paysParallel()
+                        ? ($advance->overrun_approved_by ? 0.0 : max(round($real - max((float) $advance->amount, $disbursed), 2), 0))
+                        : max(-$balance, 0),
+                    'owed'        => $advance->paysParallel() ? self::owedFor($advance, $real, $disbursed) : 0.0,
                 ];
             })
             ->sortByDesc('outstanding')
@@ -226,16 +239,17 @@ class FinanceOverview
      * @param  array<string, array<int, string>>  $groups
      * @return array<string, array{count: int, amount: float}>
      */
-    private function buckets(Builder $query, array $groups, string $paidBucket): array
+    private function buckets(Builder $query, array $groups, string $paidBucket, string $status = 'status', string $paid = 'case when paid > 0 then paid else amount end'): array
     {
         // toBase(): only()/except() pada Eloquent Collection menyaring menurut
         // primary key model, bukan key koleksi, sehingga status tidak pernah cocok.
+        // Alias bucket_status: GROUP BY status di MySQL membaca kolom, bukan ekspresi.
         $rows = $query
-            ->selectRaw('status, count(*) as n, sum(amount) as amount, sum(case when paid > 0 then paid else amount end) as paid_amount')
-            ->groupBy('status')
+            ->selectRaw("{$status} as bucket_status, count(*) as n, sum(amount) as amount, sum({$paid}) as paid_amount")
+            ->groupBy('bucket_status')
             ->get()
             ->toBase()
-            ->keyBy('status');
+            ->keyBy('bucket_status');
 
         $result = [];
         $known  = [];
@@ -263,6 +277,27 @@ class FinanceOverview
     private function paidAmount(mixed $paid, mixed $amount): float
     {
         return (float) $paid > 0 ? (float) $paid : (float) $amount;
+    }
+
+    /**
+     * Yang sudah dicairkan ke pengaju. Data lama kadang tidak mengisi paid,
+     * jadi nominal pengajuan dipakai; bayar paralel memakai paid apa adanya
+     * (realisasinya boleh berjalan sebelum ada pembayaran).
+     */
+    private function advanceDisbursed(Advance $advance): float
+    {
+        return $advance->paysParallel() ? (float) $advance->paid : $this->paidAmount($advance->paid, $advance->amount);
+    }
+
+    /**
+     * Realisasi yang belum dibayar ke pengaju, dalam batas yang disetujui (atau
+     * seluruh realisasi bila kelebihannya disetujui). Sama dengan AdvanceParallel::owed().
+     */
+    private static function owedFor(Advance $advance, float $realized, float $paid): float
+    {
+        $cap = $advance->overrun_approved_by ? max((float) $advance->amount, $realized) : (float) $advance->amount;
+
+        return max(round(min($realized, $cap) - $paid, 2), 0.0);
     }
 
     /**
@@ -377,7 +412,7 @@ class FinanceOverview
             ->get()
             ->map(function (Advance $advance) use ($realized, $returned) {
                 $disbursed = in_array($advance->status, self::ADVANCE_DISBURSED, true)
-                    ? $this->paidAmount($advance->paid, $advance->amount)
+                    ? $this->advanceDisbursed($advance)
                     : 0.0;
                 $real = (float) ($realized[$advance->id] ?? 0);
                 $back = (float) ($returned[$advance->id] ?? 0);

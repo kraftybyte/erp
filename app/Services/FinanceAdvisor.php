@@ -260,6 +260,19 @@ class FinanceAdvisor
             );
         }
 
+        if (($advances['owed']['count'] ?? 0) > 0) {
+            $add(
+                'advance_belum_dibayar',
+                'info',
+                'Bayar realisasi advance ke karyawan',
+                "{$advances['owed']['count']} advance bayar paralel punya realisasi yang belum dibayar ke karyawan: {$rp($advances['owed']['amount'])}.",
+                'Bayar lewat ERP (Realisasi → Bayar) atau unggah mutasi transfernya di /mutasi, lalu selesaikan advance-nya.',
+                'Finance',
+                'minggu ini',
+                $advances['owed']['amount'],
+            );
+        }
+
         if ($advances['overrun']['count'] > 0) {
             $add(
                 'advance_lebih',

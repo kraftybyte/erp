@@ -48,7 +48,7 @@ class AiReconciler
 
         $invoices = MutationMatcher::openInvoices()->sortByDesc('id')->take(self::MAX_INVOICES)->keyBy('id');
         $expenses = Expense::with('user')->where('status', 'Disetujui')->get()->keyBy('id');
-        $advances = Advance::with('user')->where('status', Advance::STATUS_DISETUJUI)->get()->keyBy('id');
+        $advances = MutationMatcher::payees()->whereInstanceOf(Advance::class)->keyBy('id');
 
         $answer = $this->ask($rows, $indexes, $invoices, $expenses, $advances);
 
@@ -120,7 +120,7 @@ class AiReconciler
         ])->values()->all();
 
         $payees = $expenses->map(fn (Expense $expense) => ['type' => 'expense', 'id' => $expense->id, 'employee' => $this->name($expense->user), 'amount' => (float) $expense->amount, 'date' => (string) $expense->submission_date, 'description' => Text::short((string) $expense->keterangan_expense, 80)])
-            ->concat($advances->map(fn (Advance $advance) => ['type' => 'advance', 'id' => $advance->id, 'employee' => $this->name($advance->user), 'amount' => (float) $advance->amount, 'date' => (string) $advance->submission_date, 'description' => Text::short((string) $advance->keterangan_advance, 80)]))
+            ->concat($advances->map(fn (Advance $advance) => ['type' => 'advance', 'id' => $advance->id, 'employee' => $this->name($advance->user), 'amount' => MutationMatcher::payeeAmount($advance), 'date' => (string) $advance->submission_date, 'description' => Text::short((string) $advance->keterangan_advance, 80)]))
             ->values()->all();
 
         $data = json_encode(['mutations' => $mutations, 'open_invoices' => $openInvoices, 'approved_payouts' => $payees], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -224,7 +224,7 @@ class AiReconciler
             } else {
                 $payee = ($type === 'expense' ? $expenses : $advances)->get($id);
 
-                if (! $payee || $withholding > 0 || $amount > (float) $payee->amount + self::TOLERANCE) {
+                if (! $payee || $withholding > 0 || $amount > MutationMatcher::payeeLimit($payee) + self::TOLERANCE) {
                     return null;
                 }
             }

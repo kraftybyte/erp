@@ -53,7 +53,9 @@ class AdvanceObserver
                 NotifHelper::send(
                     $user,
                     'Advance Disetujui ✅',
-                    "Pengajuan advance {$nominal} kamu telah disetujui. Menunggu pembayaran dari Finance.",
+                    $advance->pay_parallel
+                        ? "Pengajuan advance {$nominal} kamu telah disetujui. Struk pembelian bisa langsung dikirim sebagai realisasi; Finance membayar sesuai realisasi."
+                        : "Pengajuan advance {$nominal} kamu telah disetujui. Menunggu pembayaran dari Finance.",
                     'heroicon-o-check-circle',
                     'success',
                     $url,

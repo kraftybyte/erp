@@ -79,7 +79,7 @@ class PromptEngine
         - dp_unbilled: DP sudah lunas tapi invoice pelunasan belum dibuat; unbilled = sisa nilai pekerjaan; project_done = project sudah selesai sehingga pelunasan seharusnya sudah bisa ditagih.
         - pipeline: proforma yang menunggu dibayar; quotation approved yang belum dijadikan invoice; quotation pending maksimal 90 hari.
         - expenses: pengajuan expense pada periode (tanpa yang ditolak); top_categories = kategori terbesar.
-        - advances: dana advance di karyawan yang belum dipertanggungjawabkan; stale = lebih dari 14 hari; overrun = realisasi melebihi dana.
+        - advances: dana advance di karyawan yang belum dipertanggungjawabkan; stale = lebih dari 14 hari; overrun = realisasi melebihi dana; owed = realisasi advance bayar paralel (petty cash) yang belum dibayar ke karyawan, yaitu utang perusahaan ke karyawan.
         - pending: pengajuan yang menunggu disetujui/dibayar; oldest_days = umur yang terlama.
         - history: per bulan; partial = bulan berjalan.
 

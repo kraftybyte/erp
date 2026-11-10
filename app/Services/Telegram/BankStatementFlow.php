@@ -733,7 +733,11 @@ class BankStatementFlow
         } else {
             $payee = $code === 'e' ? \App\Models\Expense::with('user')->find($id) : \App\Models\Advance::with('user')->find($id);
 
-            if (! $payee || $payee->status !== 'Disetujui' || $row['amount'] > (float) $payee->amount + 1) {
+            // Disetujui, atau advance bayar paralel yang realisasinya belum dibayar seluruhnya.
+            $payable = $payee && ($payee->status === 'Disetujui'
+                || ($payee instanceof \App\Models\Advance && \App\Services\AdvanceParallel::allows($payee) && in_array($payee->status, \App\Services\AdvanceParallel::REALIZING, true)));
+
+            if (! $payable || $row['amount'] > \App\Services\BankStatement\MutationMatcher::payeeLimit($payee) + 1) {
                 $this->telegram->sendMessage($chatId, 'Pengajuan ini sudah dibayarkan, tidak ditemukan, atau nominalnya lebih kecil dari mutasi.');
 
                 return;
@@ -1198,7 +1202,7 @@ class BankStatementFlow
         }
 
         $what      = $payee instanceof Expense ? $payee->keterangan_expense : $payee->keterangan_advance;
-        $requested = (float) $payee->amount;
+        $requested = \App\Services\BankStatement\MutationMatcher::payeeAmount($payee);
         $name      = $payee->user ? (trim("{$payee->user->firstname} {$payee->user->lastname}") ?: (string) $payee->user->username) : '-';
 
         return array_values(array_filter([
@@ -1206,7 +1210,9 @@ class BankStatementFlow
             $items > 0 ? '   🗒 ' . e(Text::short((string) $what, 90)) . ($payee->category ? ' · 🏷 ' . e($payee->category) : '') : null,
             $items > 0 ? '   🗓 diajukan ' . $this->day((string) $payee->submission_date, year: true) . ($payee->project ? ' · 📁 ' . e(Text::short((string) $payee->project->nama_project, 40)) : '') : null,
             '   ✍️ Dibayarkan <b>' . $this->rupiah($target['amount']) . '</b>'
-                . ((float) $target['amount'] < $requested - 1 ? ' dari pengajuan ' . $this->rupiah($requested) . ' (sebagian)' : ' = nominal pengajuan'),
+                . ($payee instanceof \App\Models\Advance && $payee->status !== 'Disetujui'
+                    ? ' · bayar paralel: realisasi belum dibayar ' . $this->rupiah($requested)
+                    : ((float) $target['amount'] < $requested - 1 ? ' dari pengajuan ' . $this->rupiah($requested) . ' (sebagian)' : ' = nominal pengajuan')),
         ]));
     }
 

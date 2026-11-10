@@ -1523,7 +1523,7 @@ class TelegramBot
                 $messageId,
                 $draft,
                 "🧾 <b>Draft Realisasi — {$count} struk</b>\nMenjadi 1 batch dengan {$count} item, masing-masing dengan struknya sendiri.\n\n"
-                    . '💸 Advance #' . $advance->id . ': <b>' . $this->advanceName($advance) . '</b> — ' . $this->rupiah($advance->paid) . "\n"
+                    . '💸 Advance #' . $advance->id . ': <b>' . $this->advanceName($advance) . '</b> — ' . e($advance->fundLabel()) . "\n"
                     . ($advance->user_id !== $user->id ? '👤 Pengaju: ' . e($this->name($advance->user)) . "\n" : '')
                     . ($advance->project ? '📁 Project: ' . $this->projectLines($advance->project) . "\n" : '')
                     . "\n" . $this->receiptLines($draft) . "\n"
@@ -1709,7 +1709,7 @@ class TelegramBot
         }
 
         $remaining = $this->advances->remaining($advance);
-        $lines[]   = '   💸 Cair ' . $this->rupiah($advance->paid)
+        $lines[]   = '   💸 ' . e($advance->fundLabel())
             . ($remaining < 0 ? ' · melebihi <b>' . $this->rupiah(-$remaining) . '</b>' : ' · sisa <b>' . $this->rupiah($remaining) . '</b>');
 
         if ($blocked = $this->advances->blockedReason($advance)) {
@@ -1730,7 +1730,7 @@ class TelegramBot
     private function realisasiDetails(Draft $draft, Advance $advance, float $remaining, User $user): string
     {
         return implode("\n", array_filter([
-            '💸 Advance #' . $advance->id . ': <b>' . $this->advanceName($advance) . '</b> — ' . $this->rupiah($advance->paid),
+            '💸 Advance #' . $advance->id . ': <b>' . $this->advanceName($advance) . '</b> — ' . e($advance->fundLabel()),
             $advance->user_id !== $user->id ? '👤 Pengaju: ' . e($this->name($advance->user)) : null,
             $advance->project ? '📁 Project: ' . $this->projectLines($advance->project) : null,
             '🗒 Item: ' . e($draft->description),
@@ -1822,10 +1822,12 @@ class TelegramBot
 
         $advance->refresh();
         $evaluation = $this->realisasi->evaluateStatus($advance);
-        $percent    = (float) $advance->paid > 0 ? round($evaluation['total_realisasi'] / (float) $advance->paid * 100) : 0;
+        $basis      = $advance->realisasiBasis();
+        $percent    = $basis > 0 ? round($evaluation['total_realisasi'] / $basis * 100) : 0;
 
         $position = match ($evaluation['status']) {
             'exact_match' => 'Total realisasi sudah sama dengan advance. Finance akan menyelesaikannya.',
+            'unpaid'      => 'Realisasi ' . $this->rupiah($evaluation['unpaid']) . ' menunggu dibayar Finance (bayar paralel).',
             'under_run'   => 'Sisa ' . $this->rupiah($evaluation['remaining']) . '. Kirim struk berikutnya, atau kembalikan sisanya ke Finance.',
             'over_run'    => 'Melebihi advance ' . $this->rupiah($evaluation['overrun']) . '. Menunggu persetujuan Finance.',
             default       => '',
@@ -1844,7 +1846,7 @@ class TelegramBot
                     ? $this->receiptLines($draft) . "\nTotal: " . $this->rupiah($draft->total()) . "\n\n"
                     : 'Item: ' . e($draft->description) . ' — ' . $this->rupiah($draft->amount) . "\n"
                         . 'Lampiran: ' . $this->attachmentLabel($draft) . "\n\n")
-                . 'Terealisasi ' . $this->rupiah($evaluation['total_realisasi']) . ' dari ' . $this->rupiah($advance->paid) . " ({$percent}%).\n"
+                . 'Terealisasi ' . $this->rupiah($evaluation['total_realisasi']) . ' dari ' . $this->rupiah($basis) . " ({$percent}%).\n"
                 . $position,
             $buttons
         );
@@ -2294,11 +2296,13 @@ class TelegramBot
         if ($open->isNotEmpty()) {
             $progress = $open->map(function (Advance $advance) {
                 $realized = $this->advances->realized($advance);
-                $percent  = (float) $advance->paid > 0 ? round($realized / (float) $advance->paid * 100) : 0;
+                $basis    = $advance->realisasiBasis();
+                $percent  = $basis > 0 ? round($realized / $basis * 100) : 0;
 
                 return '🧾 #' . $advance->id . ' · ' . $this->advanceName($advance) . "\n"
                     . ($advance->project ? '📁 ' . e($this->projectLabel($advance->project)) . "\n" : '')
-                    . 'Terealisasi ' . $this->rupiah($realized) . ' dari ' . $this->rupiah($advance->paid) . " ({$percent}%)";
+                    . 'Terealisasi ' . $this->rupiah($realized) . ' dari ' . $this->rupiah($basis) . " ({$percent}%)"
+                    . ($advance->paysParallel() ? ' · dibayar ' . $this->rupiah($advance->paid) : '');
             });
 
             $message .= "\n\n<b>Advance yang perlu direalisasi</b>\n\n" . $progress->implode("\n\n")

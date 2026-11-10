@@ -399,6 +399,13 @@ class ManageGeneral extends SettingsPage
                                                 ->mapWithKeys(fn (User $user) => [$user->id => trim("{$user->firstname} {$user->lastname}") . " ({$user->username})"]))
                                             ->placeholder('Belum ada: semua pengajuan menunggu persetujuan'),
                                     ]),
+                                Forms\Components\Section::make('Advance bayar paralel (petty cash)')
+                                    ->description('Karyawan belanja dulu, struknya langsung masuk sebagai realisasi advance project yang sudah Disetujui tanpa menunggu dibayar. Finance membayar kapan saja, sekaligus atau bertahap, sampai yang dibayar sama dengan yang direalisasi; tidak ada pengembalian sisa.')
+                                    ->schema([
+                                        Forms\Components\Toggle::make('advance_parallel_payment')
+                                            ->label('Realisasi boleh sebelum advance dibayar')
+                                            ->helperText('Berlaku untuk advance baru dan advance Disetujui yang belum dibayar. Advance yang sudah berjalan dengan bayar paralel tetap memakai aturannya walau ini dimatikan.'),
+                                    ]),
                             ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')
                             ->schema([

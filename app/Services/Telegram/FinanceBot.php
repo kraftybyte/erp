@@ -461,6 +461,7 @@ class FinanceBot
             'Total: <b>' . $this->rupiah($a['total']['amount']) . '</b>',
             'Belum dibayarkan: <b>' . $this->rupiah($advanceUnpaid['amount']) . "</b> ({$advanceUnpaid['count']})",
             'Belum dipertanggungjawabkan: ' . $this->rupiah($a['outstanding']['amount']) . " ({$a['outstanding']['count']})",
+            ...($a['owed']['count'] ? ['Realisasi belum dibayar ke karyawan: <b>' . $this->rupiah($a['owed']['amount']) . "</b> ({$a['owed']['count']})"] : []),
             '',
             '<i>ℹ️ Invoice dihitung dari tanggal invoice, tanpa proforma dan yang dibatalkan.',
             'Expense dan advance dihitung dari tanggal pengajuan, tanpa yang ditolak.</i>',
@@ -554,6 +555,10 @@ class FinanceBot
             'Belum dibayarkan: <b>' . $this->rupiah($unpaid['amount']) . "</b> ({$unpaid['count']})",
             'Belum dipertanggungjawabkan: <b>' . $this->rupiah($a['outstanding']['amount']) . "</b> ({$a['outstanding']['count']})",
         ];
+
+        if ($a['owed']['count']) {
+            $lines[] = '💳 Realisasi belum dibayar ke karyawan (bayar paralel): <b>' . $this->rupiah($a['owed']['amount']) . "</b> ({$a['owed']['count']})";
+        }
 
         if ($a['overrun']['count']) {
             $lines[] = '⚠️ Melebihi dana: ' . $this->amount($a['overrun'], 'advance') . ' — menunggu persetujuan Finance';

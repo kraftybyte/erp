@@ -4,6 +4,7 @@ namespace App\Services\BankStatement;
 
 use App\Helpers\ClientLabel;
 use App\Models\Advance;
+use App\Services\AdvanceParallel;
 use App\Models\BankMutation;
 use App\Models\Expense;
 use App\Models\Invoice;
@@ -110,9 +111,7 @@ class MutationMatcher
 
         // Proforma ikut dicari: klien sering mentransfer berdasarkan proforma sebelum invoicenya dibuat.
         $invoices = self::openInvoices();
-        $payees = Expense::with('user')->where('status', 'Disetujui')->get()
-            ->concat(Advance::with('user')->where('status', 'Disetujui')->get())
-            ->values();
+        $payees = self::payees();
 
         $this->indexContent($invoices);
 
@@ -465,18 +464,18 @@ class MutationMatcher
         $amount  = \App\Services\Telegram\AmountParser::parse($query);
         $results = [];
 
-        $payees = Expense::with('user')->where('status', 'Disetujui')->get()->concat(Advance::with('user')->where('status', 'Disetujui')->get());
+        $payees = self::payees();
 
         foreach ($payees as $payee) {
             $score = ($digits !== '' && ! $amount && (string) $payee->id === $digits ? 100 : 0)
                 + 40 * $this->nameScore($words, $this->userTokens($payee->user))
-                + ($amount && abs((float) $payee->amount - $amount) <= self::TOLERANCE ? 60 : 0);
+                + ($amount && abs(self::payeeAmount($payee) - $amount) <= self::TOLERANCE ? 60 : 0);
 
             if ($score === 0) {
                 continue;
             }
 
-            $score    += abs((float) $payee->amount - $row['amount']) <= self::TOLERANCE ? 30 : 0;
+            $score    += abs(self::payeeAmount($payee) - $row['amount']) <= self::TOLERANCE ? 30 : 0;
             $results[] = ['payee' => $payee, 'label' => $this->payeeLabel($payee), 'score' => $score];
         }
 
@@ -1150,7 +1149,7 @@ class MutationMatcher
         $candidates = [];
 
         foreach ($payees as $payee) {
-            $requested = (float) $payee->amount;
+            $requested = self::payeeAmount($payee);
             $name      = $this->nameScore($words, $this->userTokens($payee->user));
             $exact     = abs($amount - $requested) <= self::TOLERANCE;
             $partial   = ! $exact && $amount < $requested && $name > 0;
@@ -1201,13 +1200,13 @@ class MutationMatcher
                     continue;
                 }
 
-                foreach ($this->subsets($group->values()->all(), fn ($payee) => (float) $payee->amount, $amount) as $subset) {
+                foreach ($this->subsets($group->values()->all(), fn ($payee) => self::payeeAmount($payee), $amount) as $subset) {
                     $name = $this->nameScore($words, $this->userTokens($subset[0]->user));
                     $days = $this->daysAfter($row['date'], collect($subset)->max('submission_date'));
                     [$dateScore, $dateReason] = $this->dateEvidence($days, 'pengajuan terbaru diajukan');
 
                     $candidates[] = [
-                        'targets'  => array_map(fn ($payee) => ['type' => $this->type($payee), 'id' => $payee->id, 'amount' => (float) $payee->amount], $subset),
+                        'targets'  => array_map(fn ($payee) => ['type' => $this->type($payee), 'id' => $payee->id, 'amount' => self::payeeAmount($payee)], $subset),
                         'label'    => count($subset) . ' pengajuan ' . $this->userName($subset[0]->user) . ': ' . implode(', ', array_map(fn ($payee) => ucfirst($this->type($payee)) . " #{$payee->id}", $subset)),
                         'note'     => 'satu transfer untuk ' . count($subset) . ' pengajuan',
                         'identity' => $name > 0,
@@ -1235,7 +1234,44 @@ class MutationMatcher
     {
         $what = $payee instanceof Expense ? $payee->keterangan_expense : $payee->keterangan_advance;
 
-        return ucfirst($this->type($payee)) . " #{$payee->id} · " . $this->userName($payee->user) . ' · ' . Text::short((string) $what, 40) . $this->dated($payee->submission_date) . ' · ' . $this->rupiah($payee->amount);
+        return ucfirst($this->type($payee)) . " #{$payee->id} · " . $this->userName($payee->user) . ' · ' . Text::short((string) $what, 40) . $this->dated($payee->submission_date) . ' · '
+            . ($payee instanceof Advance && $payee->status !== Advance::STATUS_DISETUJUI
+                ? 'realisasi belum dibayar ' . $this->rupiah(self::payeeAmount($payee))
+                : $this->rupiah(self::payeeAmount($payee)));
+    }
+
+    /**
+     * Pengajuan karyawan yang bisa dibayar dari transfer keluar: expense dan
+     * advance yang Disetujui, ditambah advance bayar paralel yang realisasinya
+     * belum dibayar seluruhnya (pembayaran bertahap).
+     *
+     * @return Collection<int, Expense|Advance>
+     */
+    public static function payees(): Collection
+    {
+        $advances = AdvanceParallel::wherePayable(Advance::with(['user', 'realizasis.items']))->get()
+            ->filter(fn (Advance $advance) => $advance->status === Advance::STATUS_DISETUJUI || AdvanceParallel::payable($advance) > 0);
+
+        return Expense::with('user')->where('status', 'Disetujui')->get()->concat($advances)->values();
+    }
+
+    /**
+     * Nominal yang diharapkan ditransfer: nominal pengajuan, atau untuk advance
+     * bayar paralel realisasi yang belum dibayar (sisa yang disetujui bila belum ada).
+     */
+    public static function payeeAmount(Expense|Advance $payee): float
+    {
+        return $payee instanceof Advance && ($payee->paysParallel() || $payee->status !== Advance::STATUS_DISETUJUI)
+            ? AdvanceParallel::suggested($payee)
+            : (float) $payee->amount;
+    }
+
+    /** Batas nominal yang boleh dibayar ke pengajuan ini. */
+    public static function payeeLimit(Expense|Advance $payee): float
+    {
+        return $payee instanceof Advance && ($payee->paysParallel() || $payee->status !== Advance::STATUS_DISETUJUI)
+            ? AdvanceParallel::payable($payee)
+            : (float) $payee->amount;
     }
 
     private function userTokens(?User $user): array

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\PayoutException;
+use App\Helpers\Money;
+use App\Helpers\NotifHelper;
 use App\Models\Advance;
 use App\Models\Expense;
 use App\Models\PaymentAccount;
@@ -63,17 +65,27 @@ class Payout
     }
 
     /**
+     * Bayar advance. Alur biasa: sekali dari Disetujui, status menjadi
+     * Dibayarkan. Bayar paralel (AdvanceParallel): boleh berkali-kali selama
+     * advance belum selesai, sampai yang disetujui (atau total realisasi bila
+     * kelebihannya disetujui); kolom paid menjumlahkan semua pembayaran dan
+     * status realisasinya tidak berubah.
+     *
      * @param  array{reference_number?: ?string, attachment_pay?: ?string}  $extra
      *
      * @throws PayoutException
      */
     public function advance(Advance $advance, float $amount, PaymentAccount $account, ?User $by, array $extra = [], ?Carbon $paidAt = null): Advance
     {
-        return DB::transaction(function () use ($advance, $amount, $account, $by, $extra, $paidAt) {
-            $advance = $this->lockPayable(Advance::class, $advance->getKey());
-            $account = $this->lockAccount($account);
-            $amount  = $this->checkAmount($amount, (float) $advance->amount);
-            $paidAt ??= now();
+        $paidAt ??= now();
+        $topUp  = false;
+
+        $advance = DB::transaction(function () use ($advance, $amount, $account, $by, $extra, $paidAt, &$topUp) {
+            $advance  = $this->lockAdvance($advance->getKey());
+            $account  = $this->lockAccount($account);
+            $topUp    = $advance->status !== Advance::STATUS_DISETUJUI;
+            $parallel = $topUp || $advance->paysParallel();
+            $amount   = $parallel ? $this->checkParallelAmount($amount, $advance) : $this->checkAmount($amount, (float) $advance->amount);
 
             Transaction::create([
                 'payment_account_id' => $account->id,
@@ -90,15 +102,77 @@ class Payout
             $account->syncBalanceFromTransactions();
 
             $advance->update([
-                'status'             => 'Dibayarkan',
+                'status'             => $topUp ? $advance->status : Advance::STATUS_DIBAYARKAN,
                 'paid_by'            => $by?->id,
-                'paid'               => $amount,
+                'paid'               => $parallel ? round((float) $advance->paid + $amount, 2) : $amount,
                 'payment_account_id' => $account->id,
-                'paid_at'            => $paidAt,
+                // Tanggal pembayaran pertama; pembayaran berikutnya ada di transaksinya.
+                'paid_at'            => $parallel && $advance->paid_at ? $advance->paid_at : $paidAt,
+                'pay_parallel'       => $parallel,
             ] + array_intersect_key($extra, array_flip(['reference_number', 'attachment_pay'])));
 
             return $advance;
         });
+
+        // Status tidak berubah, jadi observer tidak memberi tahu pengaju: kabari di sini.
+        if ($topUp && $advance->user) {
+            $realized = $advance->realizedTotal();
+
+            NotifHelper::send(
+                $advance->user,
+                'Pembayaran Advance 💰',
+                'Advance #' . $advance->id . ' dibayar lagi ' . Money::rupiah($amount) . ' oleh ' . ($by ? trim("{$by->firstname} {$by->lastname}") : 'Finance')
+                    . '. Total dibayar ' . Money::rupiah($advance->paid) . ', realisasi ' . Money::rupiah($realized) . '.',
+                'heroicon-o-banknotes',
+                'success',
+                '/admin/advances',
+                telegram: true
+            );
+        }
+
+        return $advance;
+    }
+
+    /**
+     * Advance yang boleh dibayar: Disetujui, atau bayar paralel yang sedang
+     * direalisasi (pembayaran bertahap).
+     */
+    private function lockAdvance(int|string $id): Advance
+    {
+        $advance = Advance::lockForUpdate()->find($id);
+
+        if (! $advance) {
+            throw new PayoutException('Pengajuan tidak ditemukan.');
+        }
+
+        if ($advance->status === Advance::STATUS_DISETUJUI
+            || (AdvanceParallel::allows($advance) && in_array($advance->status, AdvanceParallel::REALIZING, true))) {
+            return $advance;
+        }
+
+        throw new PayoutException($advance->status === Advance::STATUS_DIBAYARKAN
+            ? 'Pengajuan ini sudah dibayarkan.'
+            : "Pengajuan berstatus \"{$advance->status}\" dan tidak bisa dibayarkan.");
+    }
+
+    private function checkParallelAmount(float $amount, Advance $advance): float
+    {
+        $amount  = round($amount, 2);
+        $payable = AdvanceParallel::payable($advance);
+
+        if ($amount <= 0) {
+            throw new PayoutException('Nominal yang dibayarkan harus lebih dari nol.');
+        }
+
+        if ($payable <= 0) {
+            throw new PayoutException('Advance ini sudah dibayar penuh sebesar yang disetujui. Bila realisasinya lebih, setujui kelebihannya dulu.');
+        }
+
+        if ($amount > $payable + 0.01) {
+            throw new PayoutException('Nominal melebihi yang masih bisa dibayarkan (Rp ' . number_format($payable, 0, ',', '.') . ').');
+        }
+
+        return $amount;
     }
 
     /**

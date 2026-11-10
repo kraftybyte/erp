@@ -12,6 +12,7 @@ use App\Models\Advance;
 use App\Models\PaymentAccount;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\AdvanceParallel;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -203,7 +204,8 @@ class AdvanceResource extends Resource
                         return Money::rupiah($record->realizasis->flatMap->items->sum('subtotal'));
                     })
                     ->description(function (Advance $record): ?string {
-                        $paid = (float) $record->paid;
+                        // Bayar paralel: dibanding yang disetujui, karena pembayarannya menyusul.
+                        $paid = $record->realisasiBasis();
                         if ($paid <= 0) {
                             return null;
                         }
@@ -226,10 +228,11 @@ class AdvanceResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (Advance $record) => $record->getStatusLabel())
                     ->color(fn (Advance $record) => $record->getStatusBadgeClass())
-                    ->description(fn (Advance $record) => match ($record->status) {
-                        Advance::STATUS_DITOLAK    => Str::limit((string) $record->rejection_reason, 60) ?: null,
-                        Advance::STATUS_DIBAYARKAN => $record->paidBy ? 'oleh ' . $record->paidBy->fullName : null,
-                        default                    => null,
+                    ->description(fn (Advance $record) => match (true) {
+                        $record->status === Advance::STATUS_DITOLAK => Str::limit((string) $record->rejection_reason, 60) ?: null,
+                        $record->paysParallel() && $record->status !== Advance::STATUS_SELESAI => 'bayar paralel · dibayar ' . Money::rupiah($record->paid),
+                        $record->status === Advance::STATUS_DIBAYARKAN => $record->paidBy ? 'oleh ' . $record->paidBy->fullName : null,
+                        default => null,
                     })
                     ->wrap(),
             ])
@@ -259,16 +262,13 @@ class AdvanceResource extends Resource
                 ->color('gray')
                 ->label('Realisasi')
                 ->url(fn ($record) => '/admin/advances/' . $record->id . '/realisasi')
-                ->visible(fn ($record) => in_array($record->status, [
-                    Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER,
-                    Advance::STATUS_READY_TO_CLOSE, Advance::STATUS_SELESAI,
-                ], true)),
+                ->visible(fn ($record) => $record->status === Advance::STATUS_SELESAI || AdvanceParallel::isOpen($record)),
 
                 Tables\Actions\Action::make('convert_to_pay')
                     ->button()
                     ->size('xs')
                     ->color('warning')
-                    ->label('Bayarkan Pengajuan')
+                    ->label(fn (Advance $record) => $record->status === Advance::STATUS_DISETUJUI ? 'Bayarkan Pengajuan' : 'Bayar Realisasi')
                     ->action(function ($record, array $data) {
                         // Status dibaca ulang di bawah kunci baris: hidden() hanya berlaku
                         // saat halaman di-render, jadi dua orang bisa menekan bersamaan.
@@ -302,10 +302,14 @@ class AdvanceResource extends Resource
                             ->minValue(1)
                             // Batas atas mengikuti nominal yang diajukan. Pesan errornya sudah
                             // ada sejak awal, tapi aturannya tidak pernah terpasang.
-                            ->maxValue(fn($record) => (float) $record->amount)
+                            // Bayar paralel: bertahap, sampai sisa yang boleh dibayar.
+                            ->maxValue(fn(Advance $record) => static::maxPayment($record))
                             ->prefix('Rp')
-                            ->default(fn($record) => $record->amount)
-                            ->helperText(fn($record) => 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
+                            ->default(fn(Advance $record) => static::paysInStages($record) ? AdvanceParallel::suggested($record) : $record->amount)
+                            ->helperText(fn(Advance $record) => static::paysInStages($record)
+                                ? 'Sudah dibayar Rp ' . number_format((float) $record->paid, 0, ',', '.') . ' · realisasi Rp ' . number_format($record->realizedTotal(), 0, ',', '.')
+                                    . ' · maksimal Rp ' . number_format(static::maxPayment($record), 0, ',', '.') . '.'
+                                : 'Maksimal Rp ' . number_format((float) $record->amount, 0, ',', '.') . ' sesuai pengajuan.')
                             ->formatStateUsing(fn($state) => Money::inputValue($state))
                             ->validationMessages([
                                 'lte' => 'Nominal yang dibayarkan tidak boleh lebih dari jumlah pengeluaran yang diajukan.',
@@ -331,12 +335,12 @@ class AdvanceResource extends Resource
                         ->requiresConfirmation()
                         ->color('success')
                         ->icon('heroicon-o-credit-card')
-                        // Hanya advance yang sudah disetujui dan belum dibayar. Dulu tombolnya
-                        // juga muncul pada advance yang sedang direalisasi (sudah dibayar);
-                        // aksinya menolak, tapi tombolnya menyesatkan.
-                        ->hidden(fn($record) =>
+                        // Advance yang disetujui dan belum dibayar, atau bayar paralel yang
+                        // masih punya sisa yang boleh dibayar. Dulu tombolnya juga muncul pada
+                        // advance yang sudah dibayar penuh; aksinya menolak, tapi menyesatkan.
+                        ->hidden(fn(Advance $record) =>
                         !Auth::user()?->can('restore_advance') ||
-                        $record->status !== Advance::STATUS_DISETUJUI
+                        ! ($record->status === Advance::STATUS_DISETUJUI || (static::paysInStages($record) && AdvanceParallel::payable($record) > 0))
                     ),
 
                 /*
@@ -458,5 +462,21 @@ class AdvanceResource extends Resource
             'edit' => Pages\EditAdvance::route('/{record}/edit'),
             'realisasi' => Pages\RealisasiAdvance::route('/{record}/realisasi'),
         ];
+    }
+
+    /**
+     * Advance bayar paralel yang sedang direalisasi: dibayar bertahap.
+     */
+    private static function paysInStages(Advance $record): bool
+    {
+        return $record->status !== Advance::STATUS_DISETUJUI && AdvanceParallel::allows($record)
+            && in_array($record->status, AdvanceParallel::REALIZING, true);
+    }
+
+    private static function maxPayment(Advance $record): float
+    {
+        return static::paysInStages($record) || $record->paysParallel()
+            ? AdvanceParallel::payable($record)
+            : (float) $record->amount;
     }
 }
