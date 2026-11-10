@@ -13,17 +13,17 @@
         {{-- Ringkasan: diajukan, dicairkan, terealisasi, sisa. --}}
         <x-filament::section>
             <div class="flex flex-col gap-5">
-                <dl @class(['rl-figures', 'is-4' => $paid > 0])>
+                <dl @class(['rl-figures', 'is-4' => $shown])>
                     <div class="rl-figure">
                         <dt>Diajukan</dt>
                         <dd>{{ \App\Helpers\Money::rupiah($record->amount) }}</dd>
                         <p>{{ $date($record->submission_date) }}</p>
                     </div>
-                    @if($paid > 0)
+                    @if($shown)
                         <div class="rl-figure">
-                            <dt>Dicairkan</dt>
+                            <dt>{{ $parallel ? 'Dibayar' : 'Dicairkan' }}</dt>
                             <dd>{{ \App\Helpers\Money::rupiah($paid) }}</dd>
-                            <p>{{ $date($record->paid_at) }}</p>
+                            <p>{{ $parallel ? 'bayar paralel' : $date($record->paid_at) }}</p>
                         </div>
                         <div class="rl-figure">
                             <dt>Terealisasi</dt>
@@ -31,14 +31,14 @@
                             <p>{{ \App\Helpers\Money::qty(round($progress, 1)) }}% · {{ $batchCount }} batch</p>
                         </div>
                         <div class="rl-figure">
-                            <dt>{{ $over ? 'Kelebihan' : 'Sisa' }}</dt>
+                            <dt>{{ $parallel ? ($over ? 'Belum dibayar' : 'Lebih dibayar') : ($over ? 'Kelebihan' : 'Sisa') }}</dt>
                             <dd @class(['is-over' => $over])>{{ \App\Helpers\Money::rupiah($remaining) }}</dd>
-                            <p>{{ $over ? 'melebihi advance' : 'belum direalisasi' }}</p>
+                            <p>{{ $parallel ? ($over ? 'realisasi yang belum dibayar' : 'dibayar − realisasi') : ($over ? 'melebihi advance' : 'belum direalisasi') }}</p>
                         </div>
                     @endif
                 </dl>
 
-                @if($paid > 0)
+                @if($shown)
                     <div @class(['rl-progress', 'is-over' => $over]) role="progressbar" aria-label="Progres realisasi"
                          aria-valuenow="{{ round($progress) }}" aria-valuemin="0" aria-valuemax="100">
                         <span style="width: {{ min(max($progress, 0), 100) }}%"></span>

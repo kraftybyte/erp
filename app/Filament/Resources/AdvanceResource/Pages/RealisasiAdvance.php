@@ -8,9 +8,14 @@ use App\Models\Advance;
 use App\Models\Realisasi;
 use App\Models\RealisasiItem;
 use App\Models\RealisasiFile;
+use App\Exceptions\PayoutException;
+use App\Models\PaymentAccount;
+use App\Services\AdvanceParallel;
+use App\Services\Payout;
 use App\Services\RealisasiService;
 use App\Services\ReceiptScanner;
 use Filament\Actions\Action;
+use Filament\Forms;
 use Filament\Resources\Pages\Page;
 use Filament\Notifications\Notification;
 use Illuminate\Http\UploadedFile;
@@ -39,6 +44,7 @@ class RealisasiAdvance extends Page
     public $batches = [];
     public float $totalRealisasi = 0;
     public float $remaining = 0;
+    public float $overrun = 0;
     public float $progressPercentage = 0;
     public string $status = '';
     public string $statusMessage = '';
@@ -62,12 +68,13 @@ class RealisasiAdvance extends Page
         $this->refreshStats();
     }
 
-    /** Advance sudah dicairkan dan belum ditutup: realisasinya masih berjalan. */
-    private const OPEN_STATUSES = [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER, Advance::STATUS_READY_TO_CLOSE];
-
+    /**
+     * Advance sudah dicairkan (atau Disetujui untuk bayar paralel) dan belum
+     * ditutup: realisasinya masih berjalan.
+     */
     private function isOpen(): bool
     {
-        return in_array($this->record->refresh()->status, self::OPEN_STATUSES, true);
+        return AdvanceParallel::isOpen($this->record->refresh());
     }
 
     private function isFinance(): bool
@@ -126,7 +133,7 @@ class RealisasiAdvance extends Page
     {
         $over      = fn () => $this->status === 'over_run';
         $approved  = fn () => (bool) $this->record->overrun_approved_by;
-        $financeOk = fn () => $this->isFinance() && in_array($this->record->status, self::OPEN_STATUSES, true);
+        $financeOk = fn () => $this->isFinance() && AdvanceParallel::isOpen($this->record);
 
         return [
             Action::make('view')
@@ -141,9 +148,41 @@ class RealisasiAdvance extends Page
                 ->visible(fn () => $financeOk() && $over() && ! $approved())
                 ->requiresConfirmation()
                 ->modalHeading('Setujui kelebihan realisasi?')
-                ->modalDescription(fn () => 'Realisasi melebihi advance Rp ' . number_format(abs($this->remaining), 0, ',', '.') . '. Setelah disetujui, advance bisa diselesaikan.')
+                ->modalDescription(fn () => 'Realisasi melebihi advance Rp ' . number_format($this->overrun, 0, ',', '.') . '. Setelah disetujui, advance bisa diselesaikan'
+                    . ($this->record->paysParallel() ? ' setelah kelebihannya dibayar.' : '.'))
                 ->modalSubmitActionLabel('Setujui')
                 ->action(fn () => $this->approveOverrun()),
+
+            // Bayar paralel: Finance membayar realisasi yang sudah masuk, bertahap.
+            Action::make('pay')
+                ->label(fn () => 'Bayar ' . $this->rupiahShort(AdvanceParallel::suggested($this->record)))
+                ->color('warning')
+                ->icon('heroicon-o-banknotes')
+                ->visible(fn () => $financeOk() && $this->record->paysParallel() && $this->record->status !== Advance::STATUS_DISETUJUI
+                    && AdvanceParallel::payable($this->record) > 0 && in_array($this->status, ['unpaid', 'over_run'], true))
+                ->modalHeading('Bayar realisasi advance')
+                ->modalDescription(fn () => 'Sudah dibayar Rp ' . number_format((float) $this->record->paid, 0, ',', '.')
+                    . ' · realisasi Rp ' . number_format($this->totalRealisasi, 0, ',', '.')
+                    . ' · disetujui Rp ' . number_format((float) $this->record->amount, 0, ',', '.') . '.')
+                ->form([
+                    Forms\Components\DatePicker::make('paid_at')->label('Tanggal pembayaran')->default(now())->required(),
+                    Forms\Components\TextInput::make('amount')
+                        ->label('Nominal')
+                        ->numeric()
+                        ->prefix('Rp')
+                        ->required()
+                        ->minValue(1)
+                        ->default(fn () => AdvanceParallel::suggested($this->record))
+                        ->maxValue(fn () => AdvanceParallel::payable($this->record))
+                        ->helperText(fn () => 'Maksimal Rp ' . number_format(AdvanceParallel::payable($this->record), 0, ',', '.') . '.'),
+                    Forms\Components\Select::make('payment_account_id')
+                        ->label('Dari rekening')
+                        ->options(fn () => PaymentAccount::active()->orderBy('name')->pluck('name', 'id'))
+                        ->default(fn () => $this->record->payment_account_id)
+                        ->required(),
+                    Forms\Components\TextInput::make('reference_number')->label('Nomor referensi')->placeholder('Opsional'),
+                ])
+                ->action(fn (array $data) => $this->pay($data)),
 
             Action::make('return')
                 ->label('Catat Pengembalian Sisa')
@@ -179,7 +218,8 @@ class RealisasiAdvance extends Page
             'requester'  => $record->user?->fullName ?? $record->user?->name ?? '-',
             'paidAt'     => $record->paid_at ?? $record->updated_at,
             'canAdd'     => $this->canChangeRealisasi() && $record->canRealisasi(),
-            'canDelete'  => $this->isFinance() && in_array($record->status, self::OPEN_STATUSES, true),
+            'canDelete'  => $this->isFinance() && AdvanceParallel::isOpen($record),
+            'parallel'   => $record->paysParallel() || ($record->status === Advance::STATUS_DISETUJUI && AdvanceParallel::allows($record)),
             'statusNote' => $this->statusNote(),
         ];
     }
@@ -199,11 +239,19 @@ class RealisasiAdvance extends Page
                 'color' => 'success', 'title' => 'Advance selesai',
                 'body'  => 'Realisasi sudah ditutup Finance dan tidak bisa diubah lagi.',
             ],
-            ! in_array($this->record->status, self::OPEN_STATUSES, true) => [
+            ! AdvanceParallel::isOpen($this->record) => [
                 'color' => 'gray', 'title' => 'Advance belum dicairkan',
                 'body'  => 'Realisasi bisa diisi setelah advance berstatus Dibayarkan.',
             ],
+            $this->batches === [] && $this->record->status === Advance::STATUS_DISETUJUI => [
+                'color' => 'info', 'title' => 'Bayar paralel: belum dibayar',
+                'body'  => 'Struk pembelian bisa langsung dicatat sebagai realisasi. Finance membayar sesuai realisasi, sekaligus atau bertahap.',
+            ],
             $this->batches === [] => null,
+            $this->status === 'unpaid' => [
+                'color' => 'warning', 'title' => 'Realisasi ' . $rupiah($this->remaining) . ' belum dibayar',
+                'body'  => 'Finance tinggal membayarkannya ke pengaju lewat tombol Bayar; setelah itu advance bisa diselesaikan.',
+            ],
             $this->status === 'exact_match' => [
                 'color' => 'success', 'title' => 'Realisasi pas dengan advance',
                 'body'  => 'Tidak ada sisa maupun kelebihan. Finance tinggal menyelesaikan advance ini.',
@@ -213,7 +261,7 @@ class RealisasiAdvance extends Page
                 'body'  => 'Finance tinggal menyelesaikan advance ini.',
             ],
             $this->status === 'over_run' => [
-                'color' => 'warning', 'title' => 'Realisasi melebihi advance ' . $rupiah($this->remaining),
+                'color' => 'warning', 'title' => 'Realisasi melebihi advance ' . $rupiah($this->overrun),
                 'body'  => 'Menunggu persetujuan Finance. Batch baru ditahan sampai kelebihannya disetujui.',
             ],
             default => [
@@ -261,6 +309,7 @@ class RealisasiAdvance extends Page
         $this->batches = $service->batchesForDisplay($this->record);
         $evaluation = $service->evaluateStatus($this->record);
         $this->status = $evaluation['status'];
+        $this->overrun = (float) $evaluation['overrun'];
         $this->statusMessage = $evaluation['message'];
     }
 
@@ -526,6 +575,46 @@ class RealisasiAdvance extends Page
                 ->icon('heroicon-o-x-circle')
                 ->send();
         }
+    }
+
+    /**
+     * Bayar paralel: catat pembayaran realisasi (Payout, jalur yang sama dengan
+     * tombol Bayarkan di daftar advance dan mutasi rekening).
+     */
+    public function pay(array $data): void
+    {
+        if (! $this->isFinance() || $this->refuseClosed()) {
+            return;
+        }
+
+        try {
+            app(Payout::class)->advance(
+                $this->record,
+                (float) $data['amount'],
+                PaymentAccount::findOrFail($data['payment_account_id']),
+                auth()->user(),
+                ['reference_number' => $data['reference_number'] ?? null],
+                \Illuminate\Support\Carbon::parse($data['paid_at']),
+            );
+        } catch (PayoutException $e) {
+            Notification::make()->title('Pembayaran gagal dicatat')->body($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        $this->record->refresh();
+        $this->refreshStats();
+
+        Notification::make()
+            ->title('Pembayaran dicatat')
+            ->body('Total dibayar Rp ' . number_format((float) $this->record->paid, 0, ',', '.') . '. Pengaju sudah diberi tahu.')
+            ->success()
+            ->send();
+    }
+
+    private function rupiahShort(float $amount): string
+    {
+        return 'Rp ' . number_format($amount, 0, ',', '.');
     }
 
     public function finishAdvance(): void

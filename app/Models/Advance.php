@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AdvanceParallel;
 use App\Services\AutoApproval;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,7 +19,14 @@ class Advance extends Model
     protected static function boot(): void
     {
         parent::boot();
-        static::creating(fn (Advance $advance) => AutoApproval::apply($advance));
+        static::creating(function (Advance $advance) {
+            AutoApproval::apply($advance);
+
+            // Selama bayar paralel menyala, advance baru langsung memakai alurnya.
+            if (AdvanceParallel::enabled()) {
+                $advance->pay_parallel = true;
+            }
+        });
         static::observe(AdvanceObserver::class);
     }
 
@@ -54,6 +62,7 @@ class Advance extends Model
         'overrun_approved_by',
         'overrun_approved_at',
         'paid_at',
+        'pay_parallel',
     ];
 
     protected $casts = [
@@ -64,6 +73,7 @@ class Advance extends Model
         'deleted_at' => 'datetime',
         'paid_at' => 'datetime',
         'attachments' => 'array',
+        'pay_parallel' => 'boolean',
     ];
 
     protected $dates = ['deleted_at'];
@@ -110,21 +120,58 @@ class Advance extends Model
 
     public function canRealisasi(): bool
     {
-        // Can realize if status is "Dibayarkan" (first batch)
-        // Or if status is "Sudah di-Realisasi User" and overrun is approved or not exceeded
+        // Batch pertama: setelah dibayar, atau sejak Disetujui untuk bayar paralel.
         if ($this->status === self::STATUS_DIBAYARKAN) {
             return true;
         }
 
+        if ($this->status === self::STATUS_DISETUJUI) {
+            return AdvanceParallel::allows($this);
+        }
+
+        // Batch berikutnya: selama belum melebihi dasar realisasi, atau kelebihannya sudah disetujui.
         if ($this->status === self::STATUS_REALIZED_USER) {
             $totalRealisasi = $this->realizasis->sum(fn($r) => $r->items->sum('subtotal'));
-            $remaining = (float) $this->paid - $totalRealisasi;
 
-            // Can add more if not overrun, or if overrun is approved
-            return $remaining >= 0 || $this->overrun_approved_by;
+            return $this->realisasiBasis() - $totalRealisasi >= 0 || $this->overrun_approved_by;
         }
 
         return false;
+    }
+
+    public function paysParallel(): bool
+    {
+        return (bool) $this->pay_parallel;
+    }
+
+    /**
+     * Dana yang menjadi acuan realisasi: yang dicairkan, atau untuk bayar
+     * paralel nominal yang disetujui (pembayarannya menyusul).
+     */
+    public function realisasiBasis(): float
+    {
+        return $this->paysParallel() ? max((float) $this->amount, (float) $this->paid) : (float) $this->paid;
+    }
+
+    /** Total realisasi; memakai relasi yang sudah dimuat bila ada. */
+    public function realizedTotal(): float
+    {
+        return $this->relationLoaded('realizasis')
+            ? (float) $this->realizasis->sum(fn ($batch) => $batch->items->sum('subtotal'))
+            : app(\App\Services\RealisasiService::class)->getTotalRealisasi($this);
+    }
+
+    /**
+     * "Cair Rp 5.000.000", atau untuk bayar paralel "Disetujui Rp 5.000.000 ·
+     * dibayar Rp 2.000.000".
+     */
+    public function fundLabel(): string
+    {
+        $rupiah = fn ($amount) => 'Rp ' . number_format((float) $amount, 0, ',', '.');
+
+        return $this->paysParallel()
+            ? 'Disetujui ' . $rupiah($this->amount) . ' · dibayar ' . $rupiah($this->paid)
+            : 'Cair ' . $rupiah($this->paid);
     }
 
     public function isEditable(): bool
@@ -178,14 +225,14 @@ class Advance extends Model
      */
     public function getProgressPercentage(): float
     {
-        $paid = (float) $this->paid;
+        $basis = $this->realisasiBasis();
 
-        if ($paid <= 0) {
+        if ($basis <= 0) {
             return 0.0;
         }
 
         $totalRealisasi = $this->realizasis->flatMap->items->sum('subtotal');
 
-        return round(min(($totalRealisasi / $paid) * 100, 100), 2);
+        return round(min(($totalRealisasi / $basis) * 100, 100), 2);
     }
 }

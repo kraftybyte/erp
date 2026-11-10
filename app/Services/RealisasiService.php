@@ -107,9 +107,11 @@ class RealisasiService
                 $this->attachFiles($firstItem, $files);
             }
 
-            // Update advance status if this is the first batch
+            // Update advance status if this is the first batch. Realisasi sebelum
+            // dibayar (bayar paralel) menandai advance-nya memakai alur itu.
             if ($isFirstBatch) {
-                $advance->update(['status' => Advance::STATUS_REALIZED_USER]);
+                $advance->update(['status' => Advance::STATUS_REALIZED_USER]
+                    + ($advance->status === Advance::STATUS_DISETUJUI ? ['pay_parallel' => true] : []));
             }
 
             return $batch;
@@ -139,11 +141,16 @@ class RealisasiService
             return;
         }
 
+        // Bayar paralel: realisasi boleh sejak Disetujui, pembayaran menyusul.
+        if ($advance->status === Advance::STATUS_DISETUJUI && AdvanceParallel::allows($advance)) {
+            return;
+        }
+
         // Can add more batches if status is "Sudah di-Realisasi User" and overrun is not active
         if ($advance->status === Advance::STATUS_REALIZED_USER) {
             // If overrun exists and not approved, cannot add more
             $totalRealisasi = $this->getTotalRealisasi($advance);
-            $remaining = (float) $advance->paid - $totalRealisasi;
+            $remaining = $advance->realisasiBasis() - $totalRealisasi;
 
             if ($remaining < 0 && !$advance->overrun_approved_by) {
                 throw new \InvalidArgumentException('Realisasi melebihi advance. Finance harus menyetujui overrun terlebih dahulu.');
@@ -272,11 +279,13 @@ class RealisasiService
      */
     public function getProgressPercentage(Advance $advance): float
     {
-        if ((float) $advance->paid <= 0) {
+        $basis = $advance->realisasiBasis();
+
+        if ($basis <= 0) {
             return 0;
         }
         $totalRealisasi = $this->getTotalRealisasi($advance);
-        return round(($totalRealisasi / (float) $advance->paid) * 100, 1);
+        return round(($totalRealisasi / $basis) * 100, 1);
     }
 
     /**
@@ -287,6 +296,10 @@ class RealisasiService
      */
     public function evaluateStatus(Advance $advance): array
     {
+        if ($advance->paysParallel()) {
+            return $this->evaluateParallel($advance);
+        }
+
         $totalRealisasi = $this->getTotalRealisasi($advance);
         $advanceAmount = (float) $advance->paid;
         $remaining = $advanceAmount - $totalRealisasi;
@@ -319,6 +332,64 @@ class RealisasiService
         }
 
         return $result;
+    }
+
+    /**
+     * Bayar paralel: realisasi dibandingkan dengan yang disetujui (kelebihan),
+     * lalu dengan yang sudah dibayar. remaining = dibayar − realisasi, seperti
+     * alur biasa; unpaid = realisasi yang belum dibayar ke pengaju.
+     *
+     * - empty: belum ada realisasi maupun pembayaran
+     * - over_run: realisasi melebihi yang disetujui, belum disetujui Finance
+     * - exact_match: dibayar = realisasi, siap diselesaikan
+     * - under_run: dibayar lebih dari realisasi (tambah realisasi atau kembalikan)
+     * - unpaid: realisasi belum dibayar seluruhnya, Finance membayarkan
+     */
+    private function evaluateParallel(Advance $advance): array
+    {
+        $realized = $this->getTotalRealisasi($advance);
+        $paid     = (float) $advance->paid;
+        $overrun  = round($realized - max((float) $advance->amount, $paid), 2);
+        $balance  = round($paid - $realized, 2);
+        $rupiah   = fn (float $amount) => 'Rp ' . number_format(abs($amount), 0, ',', '.');
+
+        $result = [
+            'total_realisasi' => $realized,
+            'remaining'       => $balance,
+            'overrun'         => 0,
+            'unpaid'          => max(-$balance, 0),
+            'status'          => 'unknown',
+            'message'         => '',
+            'actions'         => [],
+        ];
+
+        return match (true) {
+            $realized <= 0 && $paid <= 0 => array_merge($result, [
+                'status'  => 'empty',
+                'message' => 'Belum ada realisasi maupun pembayaran. Struk pembelian bisa langsung dikirim; Finance membayar sesuai realisasi.',
+            ]),
+            $overrun >= self::EXACT_MATCH_TOLERANCE && ! $advance->overrun_approved_by => array_merge($result, [
+                'status'  => 'over_run',
+                'overrun' => $overrun,
+                'message' => 'Realisasi melebihi yang disetujui ' . $rupiah($overrun) . '. Butuh persetujuan Finance.',
+                'actions' => ['approve_overrun'],
+            ]),
+            abs($balance) < self::EXACT_MATCH_TOLERANCE => array_merge($result, [
+                'status'  => 'exact_match',
+                'message' => 'Yang dibayar sama dengan realisasi. Siap untuk diselesaikan.',
+                'actions' => ['finish'],
+            ]),
+            $balance > 0 => array_merge($result, [
+                'status'  => 'under_run',
+                'message' => 'Sudah dibayar ' . $rupiah($balance) . ' lebih dari realisasi: tambah realisasi atau kembalikan sisanya.',
+                'actions' => ['return'],
+            ]),
+            default => array_merge($result, [
+                'status'  => 'unpaid',
+                'message' => 'Realisasi ' . $rupiah($balance) . ' belum dibayar ke pengaju. Finance membayarkan lewat tombol Bayar.',
+                'actions' => ['pay'],
+            ]),
+        };
     }
 
     /**
@@ -458,9 +529,11 @@ class RealisasiService
             throw new \InvalidArgumentException('Anda tidak memiliki izin untuk menyetujui overrun.');
         }
 
-        // Check if there's actually an overrun
-        $remaining = $this->getRemainingAmount($advance);
-        if ($remaining >= 0) {
+        // Check if there's actually an overrun (bayar paralel: dibanding yang disetujui)
+        $over = $advance->paysParallel()
+            ? $this->getTotalRealisasi($advance) - $advance->realisasiBasis() > 0
+            : $this->getRemainingAmount($advance) < 0;
+        if (! $over) {
             throw new \InvalidArgumentException('Tidak ada overrun yang perlu disetujui.');
         }
 
@@ -479,6 +552,11 @@ class RealisasiService
      */
     public function isReadyToClose(Advance $advance): bool
     {
+        // Bayar paralel: selesai bila yang dibayar sama dengan realisasi.
+        if ($advance->paysParallel()) {
+            return $this->evaluateStatus($advance)['status'] === 'exact_match';
+        }
+
         // If overrun was approved, it's ready
         if ($advance->overrun_approved_by) {
             return true;
@@ -565,7 +643,11 @@ class RealisasiService
             // notifikasi "Advance Sudah Dibayarkan" yang keliru ke pemiliknya.
             if (in_array($advance->status, [Advance::STATUS_REALIZED_USER, Advance::STATUS_REALIZING, Advance::STATUS_READY_TO_CLOSE], true)) {
                 $advance->updateQuietly([
-                    'status' => $advance->realizasis()->exists() ? Advance::STATUS_REALIZED_USER : Advance::STATUS_DIBAYARKAN,
+                    'status' => match (true) {
+                        $advance->realizasis()->exists()                       => Advance::STATUS_REALIZED_USER,
+                        $advance->paysParallel() && (float) $advance->paid <= 0 => Advance::STATUS_DISETUJUI,
+                        default                                                => Advance::STATUS_DIBAYARKAN,
+                    },
                 ]);
             }
         });

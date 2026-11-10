@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Helpers\ClientLabel;
 use App\Models\Advance;
+use App\Services\AdvanceParallel;
 use App\Models\User;
 use App\Services\RealisasiService;
 use Illuminate\Support\Collection;
@@ -31,9 +32,8 @@ class OpenAdvances
      */
     public function forUser(User $user): Collection
     {
-        return Advance::with('project.deal', 'itemAdvance')
+        return AdvanceParallel::whereRealizable(Advance::with('project.deal', 'itemAdvance'), self::OPEN_STATUSES)
             ->where('user_id', $user->id)
-            ->whereIn('status', self::OPEN_STATUSES)
             ->latest('id')
             ->get();
     }
@@ -55,8 +55,7 @@ class OpenAdvances
             return $this->forUser($user);
         }
 
-        return Advance::with('project.deal', 'user', 'itemAdvance')
-            ->whereIn('status', self::OPEN_STATUSES)
+        return AdvanceParallel::whereRealizable(Advance::with('project.deal', 'user', 'itemAdvance'), self::OPEN_STATUSES)
             ->orderByRaw('user_id = ? desc', [$user->id])
             ->latest('id')
             ->get();
@@ -146,8 +145,12 @@ class OpenAdvances
         return $this->realisasi->getTotalRealisasi($advance);
     }
 
+    /**
+     * Sisa yang masih bisa direalisasi: dari yang dicairkan, atau untuk bayar
+     * paralel dari yang disetujui (pembayarannya menyusul).
+     */
     public function remaining(Advance $advance): float
     {
-        return (float) $advance->paid - $this->realized($advance);
+        return $advance->realisasiBasis() - $this->realized($advance);
     }
 }

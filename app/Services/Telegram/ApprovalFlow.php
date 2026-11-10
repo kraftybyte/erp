@@ -208,14 +208,15 @@ class ApprovalFlow
         foreach ($advances->slice($page * self::PAGE, self::PAGE) as $advance) {
             $evaluation = $this->realisasi->evaluateStatus($advance);
             $icon       = $this->statusIcon($advance, $evaluation);
-            $percent    = (float) $advance->paid > 0 ? round($evaluation['total_realisasi'] / (float) $advance->paid * 100) : 0;
+            $basis      = $advance->realisasiBasis();
+            $percent    = $basis > 0 ? round($evaluation['total_realisasi'] / $basis * 100) : 0;
 
             $lines[] = "{$icon} <b>#{$advance->id}</b> · " . e($this->name($advance->user)) . " · {$percent}% · " . e(Text::short((string) $advance->keterangan_advance, 50));
             $rows[]  = [['text' => "{$icon} #{$advance->id} · " . Text::short($this->name($advance->user), 14) . " · {$percent}%", 'callback_data' => "rlz:open:{$advance->id}"]];
         }
 
         $lines[] = '';
-        $lines[] = '✅ siap diselesaikan · ⚠️ kelebihan perlu disetujui · ⏳ masih ada sisa';
+        $lines[] = '✅ siap diselesaikan · ⚠️ kelebihan perlu disetujui · 💳 realisasi belum dibayar · ⏳ masih ada sisa';
 
         $rows[] = array_values(array_filter([
             $page > 0 ? ['text' => '⬅️ Sebelumnya', 'callback_data' => 'rlz:list:' . ($page - 1)] : null,
@@ -241,8 +242,9 @@ class ApprovalFlow
             '👤 ' . e($this->name($advance->user)) . ' · 📁 ' . e(Text::short(ClientLabel::project($advance->project), 60)),
             '🗒 ' . e(Text::short((string) $advance->keterangan_advance, 150)),
             '',
-            'Cair ' . $this->rupiah($advance->paid) . ($advance->paymentAccount ? ' dari ' . e($advance->paymentAccount->name) : '') . ' · terealisasi <b>' . $this->rupiah($evaluation['total_realisasi']) . '</b>',
+            e($advance->fundLabel()) . ($advance->paymentAccount ? ' dari ' . e($advance->paymentAccount->name) : '') . ' · terealisasi <b>' . $this->rupiah($evaluation['total_realisasi']) . '</b>',
             $this->statusIcon($advance, $evaluation) . ' ' . e($evaluation['message']) . ($advance->overrun_approved_by ? ' (kelebihan sudah disetujui)' : ''),
+            $evaluation['status'] === 'unpaid' ? '<i>Bayar lewat ERP (Realisasi → Bayar), atau unggah mutasi transfernya di /mutasi.</i>' : null,
             '',
             '<b>Batch realisasi</b>',
         ];
@@ -280,7 +282,7 @@ class ApprovalFlow
             $rows[] = [['text' => 'Lihat di ERP', 'url' => $link]];
         }
 
-        $this->show($chatId, $messageId, implode("\n", $lines), $rows);
+        $this->show($chatId, $messageId, implode("\n", array_filter($lines, fn ($line) => $line !== null)), $rows);
     }
 
     private function confirmReturn(int|string $chatId, int $messageId, int $id): void
@@ -339,6 +341,7 @@ class ApprovalFlow
         return match (true) {
             $this->realisasi->isReadyToClose($advance) => '✅',
             $evaluation['status'] === 'over_run'      => '⚠️',
+            $evaluation['status'] === 'unpaid'        => '💳',
             default                                   => '⏳',
         };
     }

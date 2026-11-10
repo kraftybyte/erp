@@ -44,7 +44,7 @@ Bot : 🧾 Draft Realisasi
 
 - Kata `realisasi`/`lpj`/`pertanggungjawaban`, atau perintah `/realisasi`.
 - Hanya advance **milik pengirim** berstatus Dibayarkan / Sedang di-Realisasi User
-  yang ditawarkan. Dicocokkan dari project di pesan; bila beberapa cocok, bot
+  (dan Disetujui, bila bayar paralel menyala) yang ditawarkan. Dicocokkan dari project di pesan; bila beberapa cocok, bot
   menampilkan daftar bernomor lengkap dengan PIC dan sisa dananya.
 - Satu struk = satu batch (satu item) lewat `RealisasiService::createBatch`, jadi
   aturan ERP tetap berlaku: batch pertama mengubah status advance dan memberi
@@ -54,6 +54,29 @@ Bot : 🧾 Draft Realisasi
   masih punya advance terbuka ditanyakan dulu ("dibayar dari advance itu?").
   Expense yang ditulis jelas tetap diberi peringatan dan tombol "Jadikan realisasi".
 - `/status` menampilkan progres setiap advance terbuka.
+
+**Bayar paralel (petty cash).** Settings → General → Persetujuan → *Advance
+bayar paralel*. Selama menyala, advance yang sudah **Disetujui** langsung
+ditawarkan untuk realisasi tanpa menunggu dibayar: karyawan belanja dulu, struknya
+masuk ke advance project-nya. Finance membayar kapan saja, sekaligus atau bertahap
+(daftar advance → **Bayar Realisasi**, halaman Realisasi → **Bayar**, atau `/mutasi`
+untuk transfer ke karyawan), sampai yang dibayar = yang direalisasi; advance lalu
+diselesaikan tanpa pengembalian sisa.
+
+- Advance ditandai `pay_parallel` saat dibuat selama setting menyala, atau saat
+  realisasi pertamanya masuk sebelum dibayar / dibayar bertahap. Tandanya menetap:
+  mematikan setting tidak mengubah advance yang sudah berjalan
+  (`App\Services\AdvanceParallel`).
+- Acuan realisasi = nominal yang **disetujui**. Realisasi di atasnya tetap butuh
+  persetujuan kelebihan; setelah disetujui, batas pembayaran naik sampai total realisasi.
+- Total pembayaran tidak boleh melebihi batas itu (`Payout::advance`). Setiap
+  pembayaran tercatat sebagai transaksi keluar sendiri, dan pengaju diberi tahu.
+- Status realisasi: *belum dibayar* (💳, Finance membayarkan), *pas* (siap selesai),
+  *lebih dibayar* (tambah realisasi atau kembalikan sisanya), *kelebihan* (⚠️).
+- Laporan: advance bayar paralel yang belum dibayar sama sekali masih dihitung
+  "belum dibayarkan", bukan "dicairkan"; realisasi yang belum dibayar tampil
+  sebagai **Realisasi belum dibayar ke karyawan** di /ringkasan, /advance, antrean
+  harian, dan /analisa.
 
 ### Banyak struk sekaligus
 

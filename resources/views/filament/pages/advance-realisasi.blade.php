@@ -14,21 +14,40 @@
         <x-filament::section>
             <div class="flex flex-col gap-5">
                 <dl class="rl-figures">
-                    <div class="rl-figure">
-                        <dt>Dicairkan</dt>
-                        <dd>{{ $rp($record->paid) }}</dd>
-                        <p>{{ $paidAt ? \Carbon\Carbon::parse($paidAt)->locale('id')->translatedFormat('j M Y') : '—' }}</p>
-                    </div>
-                    <div class="rl-figure">
-                        <dt>Terealisasi</dt>
-                        <dd>{{ $rp($totalRealisasi) }}</dd>
-                        <p>{{ rtrim(rtrim(number_format($progress, 1, ',', '.'), '0'), ',') }}% · {{ $batchCount }} batch</p>
-                    </div>
-                    <div class="rl-figure">
-                        <dt>{{ $over ? 'Kelebihan' : 'Sisa' }}</dt>
-                        <dd @class(['is-over' => $over])>{{ $rp($remaining) }}</dd>
-                        <p>{{ $over ? 'melebihi advance' : 'belum direalisasi' }}</p>
-                    </div>
+                    @if($parallel)
+                        {{-- Bayar paralel: realisasi dulu, pembayaran menyusul sampai sama dengan realisasi. --}}
+                        <div class="rl-figure">
+                            <dt>Dibayar</dt>
+                            <dd>{{ $rp($record->paid) }}</dd>
+                            <p>dari {{ $rp($record->amount) }} disetujui</p>
+                        </div>
+                        <div class="rl-figure">
+                            <dt>Terealisasi</dt>
+                            <dd>{{ $rp($totalRealisasi) }}</dd>
+                            <p>{{ rtrim(rtrim(number_format($progress, 1, ',', '.'), '0'), ',') }}% · {{ $batchCount }} batch</p>
+                        </div>
+                        <div class="rl-figure">
+                            <dt>{{ $over ? 'Belum dibayar' : ($remaining > 0 ? 'Lebih dibayar' : 'Selisih') }}</dt>
+                            <dd @class(['is-over' => $over])>{{ $rp($remaining) }}</dd>
+                            <p>{{ $over ? 'realisasi yang belum dibayar' : ($remaining > 0 ? 'dibayar melebihi realisasi' : 'dibayar = realisasi') }}</p>
+                        </div>
+                    @else
+                        <div class="rl-figure">
+                            <dt>Dicairkan</dt>
+                            <dd>{{ $rp($record->paid) }}</dd>
+                            <p>{{ $paidAt ? \Carbon\Carbon::parse($paidAt)->locale('id')->translatedFormat('j M Y') : '—' }}</p>
+                        </div>
+                        <div class="rl-figure">
+                            <dt>Terealisasi</dt>
+                            <dd>{{ $rp($totalRealisasi) }}</dd>
+                            <p>{{ rtrim(rtrim(number_format($progress, 1, ',', '.'), '0'), ',') }}% · {{ $batchCount }} batch</p>
+                        </div>
+                        <div class="rl-figure">
+                            <dt>{{ $over ? 'Kelebihan' : 'Sisa' }}</dt>
+                            <dd @class(['is-over' => $over])>{{ $rp($remaining) }}</dd>
+                            <p>{{ $over ? 'melebihi advance' : 'belum direalisasi' }}</p>
+                        </div>
+                    @endif
                 </dl>
 
                 <div @class(['rl-progress', 'is-over' => $over]) role="progressbar" aria-label="Progres realisasi"

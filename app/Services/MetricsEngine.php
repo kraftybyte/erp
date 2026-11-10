@@ -325,6 +325,8 @@ class MetricsEngine
             'outstanding' => self::bucket($rows, 'outstanding'),
             'stale'       => self::bucket($rows->filter(fn (array $row) => ($row['days'] ?? 0) > self::STALE_ADVANCE_DAYS), 'outstanding'),
             'overrun'     => self::bucket($open->where('overrun', '>', 0), 'overrun'),
+            // Bayar paralel: realisasi yang belum dibayar ke karyawan.
+            'owed'        => self::bucket($open->where('owed', '>', 0), 'owed'),
             'top'         => $rows->sortByDesc('outstanding')->take(3)->values()->all(),
         ];
     }

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\AdvanceResource\Pages;
 use App\Filament\Resources\AdvanceResource;
 use App\Helpers\ClientLabel;
 use App\Models\Advance;
+use App\Services\AdvanceParallel;
 use App\Services\RealisasiService;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
@@ -14,9 +15,6 @@ class ViewAdvance extends ViewRecord
     protected static string $resource = AdvanceResource::class;
 
     protected static string $view = 'filament.resources.advance-resource.pages.view-advance';
-
-    /** Sudah dicairkan dan belum ditutup: realisasinya masih bisa diubah. */
-    private const OPEN_STATUSES = [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZING, Advance::STATUS_REALIZED_USER, Advance::STATUS_READY_TO_CLOSE];
 
     public function getTitle(): string
     {
@@ -34,7 +32,8 @@ class ViewAdvance extends ViewRecord
 
     protected function getHeaderActions(): array
     {
-        $open = fn () => in_array($this->record->status, self::OPEN_STATUSES, true);
+        // Sudah dicairkan (atau Disetujui untuk bayar paralel) dan belum ditutup.
+        $open = fn () => AdvanceParallel::isOpen($this->record);
 
         return [
             Actions\EditAction::make()->color('gray'),
@@ -56,18 +55,24 @@ class ViewAdvance extends ViewRecord
         $record    = $this->record->loadMissing(['user', 'paidBy', 'paymentAccount', 'project.deal']);
         $service   = app(RealisasiService::class);
         $paid      = (float) $record->paid;
-        $realisasi = $paid > 0 ? $service->getTotalRealisasi($record) : 0.0;
+        $parallel  = $record->paysParallel();
+        // Bayar paralel: realisasi boleh ada sebelum dibayar.
+        $shown     = $paid > 0 || $parallel;
+        $realisasi = $shown ? $service->getTotalRealisasi($record) : 0.0;
 
         return [
             'requester' => $record->user?->fullName ?? '-',
             'paid'      => $paid,
+            'parallel'  => $parallel,
+            'shown'     => $shown,
             'realisasi' => $realisasi,
             'remaining' => $paid - $realisasi,
-            'progress'  => $paid > 0 ? $service->getProgressPercentage($record) : 0.0,
-            'batches'   => $paid > 0 ? $service->batchesForDisplay($record) : [],
+            'progress'  => $shown ? $service->getProgressPercentage($record) : 0.0,
+            'batches'   => $shown ? $service->batchesForDisplay($record) : [],
             'project'   => $record->project ? ClientLabel::project($record->project) : null,
             'emptyText' => match (true) {
-                $paid <= 0                                   => 'Realisasi bisa dicatat setelah advance dicairkan.',
+                $record->status === Advance::STATUS_DISETUJUI && AdvanceParallel::allows($record) => 'Belum ada realisasi. Bayar paralel: struk pembelian bisa langsung dicatat lewat Kelola Realisasi, pembayarannya menyusul.',
+                ! $shown                                     => 'Realisasi bisa dicatat setelah advance dicairkan.',
                 $record->status === Advance::STATUS_SELESAI  => 'Advance ini diselesaikan tanpa batch realisasi.',
                 default                                      => 'Belum ada pengeluaran yang dicatat. Catat lewat tombol Kelola Realisasi di atas.',
             },

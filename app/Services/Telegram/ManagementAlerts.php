@@ -97,7 +97,8 @@ class ManagementAlerts
 
         $advance    = $batch->advance;
         $evaluation = $this->realisasi->evaluateStatus($advance);
-        $paid       = (float) $advance->paid;
+        // Bayar paralel: dibanding yang disetujui, karena pembayarannya menyusul.
+        $paid       = $advance->realisasiBasis();
         $percent    = $paid > 0 ? round($evaluation['total_realisasi'] / $paid * 100) : 0;
 
         $lines = [
@@ -109,6 +110,7 @@ class ManagementAlerts
             'Terealisasi ' . $this->rupiah($evaluation['total_realisasi']) . ' dari ' . $this->rupiah($paid) . " ({$percent}%)",
             match ($evaluation['status']) {
                 'exact_match' => '✅ Pas dengan dana yang cair: siap diselesaikan.',
+                'unpaid'      => '💳 Bayar paralel: realisasi ' . $this->rupiah($evaluation['unpaid']) . ' belum dibayar ke pengaju (dibayar ' . $this->rupiah($advance->paid) . ').',
                 'over_run'    => '⚠️ Melebihi ' . $this->rupiah($evaluation['overrun']) . ($advance->overrun_approved_by ? ' (sudah disetujui).' : ': perlu persetujuan kelebihan.'),
                 default       => '⏳ Sisa ' . $this->rupiah($evaluation['remaining']) . '.',
             },

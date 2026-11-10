@@ -291,12 +291,13 @@ class PembayaranIntegritasTest extends TestCase
 
     public function test_form_pembayaran_memasang_batas_maksimal(): void
     {
+        // Advance: nominal pengajuan, atau sisa yang boleh dibayar untuk bayar paralel (bertahap).
         foreach ([
-            'AdvanceResource' => app_path('Filament/Resources/AdvanceResource.php'),
-            'ExpenseResource' => app_path('Filament/Resources/ExpenseResource.php'),
-        ] as $nama => $berkas) {
+            'AdvanceResource' => [app_path('Filament/Resources/AdvanceResource.php'), '->maxValue(fn(Advance $record) => static::maxPayment($record))'],
+            'ExpenseResource' => [app_path('Filament/Resources/ExpenseResource.php'), '->maxValue(fn($record) => (float) $record->amount)'],
+        ] as $nama => [$berkas, $aturan]) {
             $this->assertStringContainsString(
-                '->maxValue(fn($record) => (float) $record->amount)',
+                $aturan,
                 file_get_contents($berkas),
                 "{$nama} harus membatasi nominal pembayaran; pesan errornya sudah ada sejak awal "
                 . 'tapi aturannya tidak pernah terpasang.'

@@ -27,7 +27,10 @@ class FinanceQueueDigest extends Command
         $pending  = $decisions->pending();
         $verify   = Advance::where('status', Advance::STATUS_REALIZED_USER)->get();
         $ready    = $verify->filter(fn (Advance $advance) => $realisasi->isReadyToClose($advance))->count();
-        $overrun  = $verify->filter(fn (Advance $advance) => ! $advance->overrun_approved_by && $realisasi->getRemainingAmount($advance) < 0)->count();
+        $states   = $verify->map(fn (Advance $advance) => $realisasi->evaluateStatus($advance));
+        $overrun  = $verify->filter(fn (Advance $advance, int $i) => ! $advance->overrun_approved_by && $states[$i]['status'] === 'over_run')->count();
+        // Bayar paralel: realisasi yang belum dibayar ke karyawan.
+        $unpaid   = $states->filter(fn (array $state) => $state['status'] === 'unpaid');
         $expenses = Expense::where('status', 'Disetujui')->get();
         $advances = Advance::where('status', Advance::STATUS_DISETUJUI)->get();
 
@@ -44,7 +47,7 @@ class FinanceQueueDigest extends Command
             '☀️ <b>Antrean Finance hari ini</b> · ' . today()->locale('id')->translatedFormat('l, j M Y'),
             '',
             "📝 Menunggu persetujuan: <b>{$pending->count()}</b>" . ($pending->isNotEmpty() ? " · {$rupiah($pending->sum('amount'))}" . ($oldest > 0 ? " · terlama {$oldest} hari" : '') : ''),
-            "🧾 Realisasi menunggu verifikasi: <b>{$verify->count()}</b>" . ($verify->isNotEmpty() ? " · ✅ siap selesai {$ready} · ⚠️ kelebihan {$overrun}" : ''),
+            "🧾 Realisasi menunggu verifikasi: <b>{$verify->count()}</b>" . ($verify->isNotEmpty() ? " · ✅ siap selesai {$ready} · ⚠️ kelebihan {$overrun}" . ($unpaid->isNotEmpty() ? " · 💳 belum dibayar {$unpaid->count()} ({$rupiah($unpaid->sum('unpaid'))})" : '') : ''),
             "💰 Disetujui, belum dibayar: <b>" . ($expenses->count() + $advances->count()) . '</b>'
                 . ($expenses->count() + $advances->count() ? " · expense {$expenses->count()} ({$rupiah($expenses->sum('amount'))}) · advance {$advances->count()} ({$rupiah($advances->sum('amount'))})" : ''),
         ];
