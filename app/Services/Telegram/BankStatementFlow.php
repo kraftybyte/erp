@@ -1223,7 +1223,7 @@ class BankStatementFlow
 
         $lines = [
             '🗓 ' . $this->day((string) $invoice->date, year: true) . ($invoice->due_date ? ' · jatuh tempo ' . $this->day((string) $invoice->due_date) : '') . ' · ' . e($this->paymentType($invoice)),
-            '💰 Total ' . $this->rupiah($invoice->grand_total) . ' · terbayar ' . $this->rupiah($invoice->paid) . ' · sisa ' . $this->rupiah(InvoicePayment::remaining($invoice)),
+            '💰 ' . $this->billedText($invoice) . ' · terbayar ' . $this->rupiah($invoice->paid) . ' · sisa ' . $this->rupiah(InvoicePayment::remaining($invoice)),
         ];
 
         foreach ($items->take($maxItems) as $item) {
@@ -1243,6 +1243,26 @@ class BankStatementFlow
         }
 
         return $lines;
+    }
+
+    /**
+     * Yang ditagih invoice ini (Invoice::amountDue()): invoice DP menagih
+     * persennya dari harga penuh, pelunasan menagih harga penuh dikurangi DP.
+     */
+    private function billedText(Invoice $invoice): string
+    {
+        $due = $invoice->amountDue();
+
+        if (($percent = $invoice->dpPercentage()) !== null) {
+            return "Ditagih {$this->rupiah($due)} (DP {$percent}% dari {$this->rupiah($invoice->grand_total)})";
+        }
+
+        if (($dp = $invoice->settledDp()) !== null) {
+            return "Ditagih {$this->rupiah($due)} (pelunasan: {$this->rupiah($dp['full'])} − DP {$dp['percent']}% {$this->rupiah($dp['amount'])}"
+                . ($invoice->parentInvoice ? ' ' . e($invoice->parentInvoice->uuid) : '') . ')';
+        }
+
+        return 'Total ' . $this->rupiah($invoice->grand_total);
     }
 
     /**
