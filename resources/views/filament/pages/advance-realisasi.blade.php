@@ -146,7 +146,7 @@
                 </label>
 
                 <div wire:loading.flex wire:target="uploadedFiles" class="mt-2 items-center gap-2 text-sm text-gray-500">
-                    <x-filament::loading-indicator class="h-4 w-4" /> Mengunggah…
+                    <x-filament::loading-indicator class="h-4 w-4" /> Mengunggah dan membaca tanggal struk…
                 </div>
 
                 @if(count($uploadedFiles))
@@ -171,7 +171,15 @@
                 </div>
 
                 @foreach($batchItems as $index => $item)
+                    @php $subtotal = ((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1)); @endphp
                     <div class="rl-form-item" wire:key="batch-item-{{ $index }}">
+                        @if(count($batchItems) > 1)
+                            <div class="rl-form-head">
+                                <span>Item {{ $index + 1 }}</span>
+                                <x-filament::link tag="button" type="button" color="danger" size="sm" wire:click="removeBatchItem({{ $index }})">Hapus</x-filament::link>
+                            </div>
+                        @endif
+
                         <div class="rl-form-grid">
                             <div class="span-all">
                                 <label class="rl-label" for="item-name-{{ $index }}">Nama pengeluaran</label>
@@ -191,23 +199,21 @@
                                     <x-filament::input id="item-qty-{{ $index }}" type="number" min="1" inputmode="numeric" wire:model.live.debounce.400ms="batchItems.{{ $index }}.quantity" />
                                 </x-filament::input.wrapper>
                             </div>
-                            <div>
-                                <label class="rl-label" for="item-price-{{ $index }}">Harga satuan (Rp)</label>
-                                <x-filament::input.wrapper>
-                                    <x-filament::input id="item-price-{{ $index }}" type="number" min="0" inputmode="numeric" wire:model.live.debounce.400ms="batchItems.{{ $index }}.price" />
+                            <div class="span-mobile">
+                                <label class="rl-label" for="item-price-{{ $index }}">Harga satuan</label>
+                                <x-filament::input.wrapper prefix="Rp">
+                                    <x-filament::input id="item-price-{{ $index }}" type="number" min="0" inputmode="numeric" placeholder="0" wire:model.live.debounce.400ms="batchItems.{{ $index }}.price" />
                                 </x-filament::input.wrapper>
                             </div>
                         </div>
-                        <div class="mt-2 flex items-center justify-between text-sm">
-                            <span class="text-gray-500 dark:text-gray-300">
-                                Subtotal <strong class="text-gray-950 dark:text-white">{{ $rp(((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1))) }}</strong>
+
+                        <div class="rl-form-foot">
+                            <span>
                                 @if(! empty($item['date_ai']) && filled($item['receipt_date']))
-                                    · tanggal dibaca dari struk
+                                    <span class="rl-hint">Tanggal dibaca otomatis dari struk</span>
                                 @endif
                             </span>
-                            @if(count($batchItems) > 1)
-                                <x-filament::link tag="button" type="button" color="danger" size="sm" wire:click="removeBatchItem({{ $index }})">Hapus item</x-filament::link>
-                            @endif
+                            <span>Subtotal <strong>{{ $rp($subtotal) }}</strong></span>
                         </div>
                     </div>
                 @endforeach

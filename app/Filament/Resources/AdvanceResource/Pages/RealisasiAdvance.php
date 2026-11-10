@@ -359,7 +359,7 @@ class RealisasiAdvance extends Page
     /** receipt_date: tanggal pembelian di struk; date_ai: diisi dari bacaan AI. */
     private static function emptyItem(): array
     {
-        return ['name' => '', 'description' => '', 'quantity' => 1, 'price' => 0, 'receipt_date' => null, 'date_ai' => false];
+        return ['name' => '', 'description' => '', 'quantity' => 1, 'price' => null, 'receipt_date' => null, 'date_ai' => false];
     }
 
     /**

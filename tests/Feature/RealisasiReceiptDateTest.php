@@ -64,7 +64,7 @@ class RealisasiReceiptDateTest extends TestCase
             ->call('openBatchModal')
             ->set('uploadedFiles', [UploadedFile::fake()->image('bukti-bayar.jpg', 400, 800)])
             ->assertSet('batchItems.0.receipt_date', '2026-11-02')
-            ->assertSee('tanggal dibaca dari struk')
+            ->assertSee('Tanggal dibaca otomatis dari struk')
             ->set('batchItems.0.name', 'Kirim barang pickup')
             ->set('batchItems.0.price', 281_663)
             ->call('saveBatch')
