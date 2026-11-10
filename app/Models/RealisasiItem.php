@@ -20,12 +20,15 @@ class RealisasiItem extends Model
         'quantity',
         'price',
         'subtotal',
+        'receipt_date',
     ];
 
     protected $casts = [
         'quantity' => 'decimal:2',
         'price' => 'decimal:2',
         'subtotal' => 'decimal:2',
+        // Tanggal pembelian di struk/bukti bayar (dibaca AI), bukan tanggal dikirim.
+        'receipt_date' => 'date',
     ];
 
     // Relationships

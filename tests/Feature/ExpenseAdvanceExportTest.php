@@ -120,9 +120,11 @@ class ExpenseAdvanceExportTest extends TestCase
 
         $realisasi = $book->getSheetByName('Realisasi');
         $this->assertEquals($open->id, $realisasi->getCell('A6')->getValue());
-        $this->assertSame('Lighting', $realisasi->getCell('F6')->getValue());
-        $this->assertEquals(2, $realisasi->getCell('H6')->getValue());
-        $this->assertEquals(400_000, $realisasi->getCell('J6')->getValue());
+        // Kolom F: tanggal struk (kosong bila tidak terbaca).
+        $this->assertSame('Tanggal struk', $realisasi->getCell('F5')->getValue());
+        $this->assertSame('Lighting', $realisasi->getCell('G6')->getValue());
+        $this->assertEquals(2, $realisasi->getCell('I6')->getValue());
+        $this->assertEquals(400_000, $realisasi->getCell('K6')->getValue());
 
         $summary = $this->summaryRows($book->getSheetByName('Ringkasan'));
         // Realisasi pertama mengubah status advance-nya.

@@ -412,6 +412,19 @@ class TelegramBotTest extends TestCase
         $photo = imagecreatetruecolor(900, 1200);
         imagefill($photo, 0, 0, imagecolorallocate($photo, 60, 50, 45));
         imagefilledpolygon($photo, [200, 150, 720, 210, 680, 1080, 170, 1030], imagecolorallocate($photo, 238, 236, 230));
+        // Noise sensor kamera: tanpa itu warnanya rata sempurna seperti screenshot (tidak diolah).
+        mt_srand(7);
+        $noise = imagecreatetruecolor(61, 59);
+        for ($y = 0; $y < 59; $y++) {
+            for ($x = 0; $x < 61; $x++) {
+                imagesetpixel($noise, $x, $y, mt_rand(0, 0xFFFFFF));
+            }
+        }
+        for ($y = 0; $y < 1200; $y += 59) {
+            for ($x = 0; $x < 900; $x += 61) {
+                imagecopymerge($photo, $noise, $x, $y, 0, 0, 61, 59, 5);
+            }
+        }
         ob_start();
         imagejpeg($photo, null, 90);
         $this->fakeApis(gemini: null, file: (string) ob_get_clean());
@@ -604,6 +617,9 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString("💸 Advance #{$advance->id}: <b>Advance Booth Pameran</b>", $this->lastText());
         $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
         $this->assertStringContainsString('💰 Nominal: <b>Rp 265.000</b>', $this->lastText());
+        // Tanggal pembelian dibaca dari struk, bukan tanggal kirim.
+        $this->assertStringContainsString('🗓 Tanggal struk: <b>' . today()->subDays(2)->locale('id')->translatedFormat('j M Y') . '</b> (dibaca dari struk)', $this->lastText());
+        $this->assertContains('✏️ Tanggal', $this->lastButtons());
         $this->assertStringContainsString('Struk/invoice dianggap realisasi advance', $this->lastText());
         $this->assertContains('💰 Jadikan Expense', $this->lastButtons());
 
@@ -611,6 +627,7 @@ class TelegramBotTest extends TestCase
         $this->send($this->tap("{$draft->id}:submit:"));
 
         $item = Realisasi::where('advance_id', $advance->id)->with('items.files')->sole()->items->sole();
+        $this->assertSame(today()->subDays(2)->toDateString(), $item->receipt_date->toDateString());
         $this->assertSame('Kabel HDMI dan lakban', $item->name);
         $this->assertSame('Kabel HDMI 2 × Rp 125.000; Lakban Rp 15.000', $item->description, 'Rincian struk jadi keterangan item.');
         $this->assertEquals(265_000, $item->price);

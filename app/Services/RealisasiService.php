@@ -88,6 +88,8 @@ class RealisasiService
                     'description' => $itemData['description'] ?? null,
                     'quantity' => $itemData['quantity'] ?? 1,
                     'price' => $itemData['price'],
+                    // Tanggal pembelian di struk/bukti bayar (dibaca AI).
+                    'receipt_date' => self::receiptDate($itemData['receipt_date'] ?? null),
                     // subtotal calculated automatically via model boot
                 ]);
 
@@ -121,6 +123,20 @@ class RealisasiService
         app(\App\Services\Telegram\ManagementAlerts::class)->realisasi($batch);
 
         return $batch;
+    }
+
+    /**
+     * Tanggal struk YYYY-MM-DD yang masuk akal (tidak di masa depan), atau null.
+     */
+    public static function receiptDate(mixed $date): ?string
+    {
+        if (! is_string($date) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return null;
+        }
+
+        [$year, $month, $day] = array_map('intval', explode('-', $date));
+
+        return checkdate($month, $day, $year) && $date <= today()->toDateString() ? $date : null;
     }
 
     /**
@@ -694,10 +710,13 @@ class RealisasiService
                     'quantity' => $i->quantity,
                     'price' => $i->price,
                     'subtotal' => $i->subtotal,
+                    'receipt_date' => $i->receipt_date?->toDateString(),
                     'files' => $i->files->map(fn (RealisasiFile $f) => [
                         'id' => $f->id,
                         'original_name' => $f->original_name,
                         'filepath' => $f->filepath,
+                        // Foto asli sebelum dirapikan seperti scan, bila ada.
+                        'original' => $f->isImage() ? ReceiptScanner::original($f->filepath) : null,
                         'filesize' => $f->filesize,
                         'mime_type' => $f->mime_type,
                         'is_image' => $f->isImage(),
@@ -721,7 +740,7 @@ class RealisasiService
             'description' => $data['description'] ?? $item->description,
             'quantity' => $data['quantity'] ?? $item->quantity,
             'price' => $data['price'] ?? $item->price,
-        ]);
+        ] + (array_key_exists('receipt_date', $data) ? ['receipt_date' => self::receiptDate($data['receipt_date'])] : []));
 
         return $item->fresh();
     }
