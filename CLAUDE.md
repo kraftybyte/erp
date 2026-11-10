@@ -100,6 +100,11 @@ php artisan view:clear
 # Generate keys
 php artisan key:generate
 
+# Pindah ke website lain di CWP (Control Web Panel): kode, .env (APP_KEY), database,
+# upload, dan vendor disalin dari server lama lewat SSH; server lama hanya dibaca.
+bash scripts/migrate-cwp.sh                 # di server CWP (sebaiknya root)
+bash scripts/migrate-cwp.sh update <folder> # perbarui kode situs CWP
+
 # Scheduled reminders (app/Console/Kernel.php); the server needs a cron every minute
 bash scripts/schedule-run.sh          # = php artisan schedule:run
 php artisan ringkasan:pagi --dry-run  # preview the morning brief without sending
