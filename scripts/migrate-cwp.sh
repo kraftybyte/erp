@@ -29,6 +29,9 @@
 # SRC (user@host server lama), SRC_PORT, SRC_PATH, DB_NAME, DB_USER, DB_PASS,
 # PHP, MOVE_BOTS=y|n, ENABLE_CRON=y|n, ASSUME_YES=1.
 set -euo pipefail
+# Akun CWP biasa memakai umask 002, sehingga file yang dibuat skrip bisa
+# ditulis grup; suPHP menolaknya dengan error 500 (lihat fix_permissions).
+umask 022
 
 REPO_TARBALL=${REPO_TARBALL:-https://codeload.github.com/kraftybyte/erp/tar.gz/refs/heads/main}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/erp-migrate.XXXXXX")
@@ -172,10 +175,15 @@ finish_laravel() {
     fix_permissions
 }
 
+# suPHP di CWP menjawab 500 untuk file PHP, atau folder di atasnya, yang bisa
+# ditulis grup/orang lain. Kode dan folder situs dibuat 755/644; storage dan
+# bootstrap/cache tetap bisa ditulis aplikasi.
 fix_permissions() {
     if [ "$(id -u)" = 0 ] && [ -n "${CWP_USER:-}" ]; then
         chown -R "$CWP_USER:$CWP_USER" "$SITE"
     fi
+    find "$SITE" \( -path "$SITE/storage" -o -path "$SITE/bootstrap/cache" \) -prune \
+        -o ! -type l \( -perm -g+w -o -perm -o+w \) -exec chmod go-w {} + 2>/dev/null || true
     find "$SITE/storage" "$SITE/bootstrap/cache" -type d -exec chmod 775 {} + 2>/dev/null || true
     find "$SITE/storage" "$SITE/bootstrap/cache" -type f -exec chmod 664 {} + 2>/dev/null || true
 }
@@ -186,6 +194,7 @@ fix_permissions() {
 if [ "${1:-}" = update ]; then
     SITE=${2:-${SITE:-}}
     [ -n "$SITE" ] && [ -f "$SITE/.env" ] && [ -f "$SITE/artisan" ] || die "Pemakaian: bash migrate-cwp.sh update /home/AKUN/public_html/FOLDER"
+    SITE=$(cd "$SITE" && pwd)
     CWP_USER=${CWP_USER:-$(stat -c %U "$SITE" 2>/dev/null || true)}
     PHP=$(pick_php)
     (cd "$SITE" && "$PHP" artisan down >/dev/null 2>&1 || true)
@@ -389,8 +398,8 @@ if [ "${1:-}" = upgrade ] || [ "${1:-}" = rollback ]; then
         mkdir -p "$SITE/$dir"
         rsync -a --delete --exclude=/storage --exclude=/.well-known --exclude=/cache/ "$WORK/code/$dir/" "$SITE/$dir/"
     done
-    # File di akar folder (artisan, composer.json, …); .env dan .htaccess situs tetap.
-    rsync -a --exclude='*/' --exclude=/.env --exclude=/.htaccess "$WORK/code/" "$SITE/"
+    # File di akar folder (artisan, composer.json, …); .env, .htaccess, dan izin folder situs tetap.
+    for file in "${root_files[@]}"; do cp -p "$WORK/code/$file" "$SITE/$file"; done
     mkdir -p "$SITE"/storage/{app/public,framework/{cache/data,sessions,views,testing},logs} "$SITE/bootstrap/cache"
     rm -f "$SITE/composer.lock" "$SITE"/bootstrap/cache/*.php
     info "Kode diganti; .env, storage, dan file lain di akar folder tetap."
