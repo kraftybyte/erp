@@ -83,7 +83,7 @@ class FinanceBotPeriodTest extends TestCase
         $o = app(FinanceOverview::class)->forPeriod(ReportPeriod::parse('februari 2001'));
 
         $t = $o->invoiceTotals();
-        $this->assertEquals(['count' => 1, 'amount' => 20_000_000], $t['dp'], 'Kolom Total apa adanya.');
+        $this->assertEquals(['count' => 1, 'amount' => 10_000_000], $t['dp'], 'Invoice DP 50% dari Rp 20 jt menagih Rp 10 jt.');
         $this->assertEquals(['count' => 2, 'amount' => 10_000_000], $t['full'], 'Draft ikut; Januari tidak.');
         $this->assertEquals(['count' => 2, 'amount' => 8_000_000], $t['unpaid'], 'Total − Paid pada yang belum paid.');
 
@@ -102,7 +102,7 @@ class FinanceBotPeriodTest extends TestCase
 
         $text = $this->lastText();
         $this->assertStringContainsString('Februari 2001', $text);
-        $this->assertStringContainsString('Invoice DP: <b>Rp 20.000.000</b> (1)', $text);
+        $this->assertStringContainsString('Invoice DP: <b>Rp 10.000.000</b> (1)', $text);
         $this->assertStringContainsString('Invoice full payment: <b>Rp 10.000.000</b> (2)', $text);
         $this->assertStringContainsString('Belum dibayarkan: <b>Rp 8.000.000</b> (2 invoice)', $text);
         $this->assertStringNotContainsString('pelunasan', Str::before($text, 'Total:'), 'Pelunasan disembunyikan bila tidak ada.');

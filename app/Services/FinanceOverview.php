@@ -130,7 +130,7 @@ class FinanceOverview
      */
     public function invoiceRows(): Collection
     {
-        return $this->inPeriod(Invoice::query(), 'date')
+        return $this->inPeriod(Invoice::query()->with('parentInvoice'), 'date')
             ->where('type', 'sale')
             // Model Invoice tidak memakai SoftDeletes, tapi kolomnya ada.
             ->whereNull('deleted_at')
@@ -141,15 +141,15 @@ class FinanceOverview
     }
 
     /**
-     * Total invoice per jenis pembayaran (jumlah kolom Total / grand_total) dan
-     * yang belum dibayarkan (Total − Paid pada invoice yang belum berstatus paid).
+     * Nilai invoice per jenis pembayaran (yang ditagih, lihat invoiceValue()) dan
+     * yang belum dibayarkan (ditagih − Paid pada invoice yang belum berstatus paid).
      *
      * @return array<string, array{count: int, amount: float}> dp, full, final, total, unpaid
      */
     public function invoiceTotals(): array
     {
         $rows = $this->invoiceRows();
-        $sum  = fn (Collection $group) => ['count' => $group->count(), 'amount' => (float) $group->sum(fn (Invoice $i) => (float) $i->grand_total)];
+        $sum  = fn (Collection $group) => ['count' => $group->count(), 'amount' => (float) $group->sum(fn (Invoice $i) => self::invoiceValue($i))];
 
         $unpaid = $rows->filter(fn (Invoice $i) => self::invoiceUnpaid($i) > 0);
 
@@ -188,16 +188,22 @@ class FinanceOverview
     }
 
     /**
-     * Total − Paid, atau 0 bila invoice sudah berstatus paid.
+     * Nilai invoice = yang ditagih invoice itu (Invoice::amountDue()): invoice DP
+     * sebesar DP-nya, full payment sebesar Total, pelunasan sebesar harga penuh
+     * dikurangi DP. Sama dengan PDF dan tombol Bayar. Kolom Total (grand_total)
+     * invoice DP dan pelunasan berisi harga penuh pekerjaan, jadi tidak dipakai.
+     */
+    public static function invoiceValue(Invoice $invoice): float
+    {
+        return round($invoice->amountDue(), 2);
+    }
+
+    /**
+     * Yang ditagih − Paid, atau 0 bila invoice sudah berstatus paid.
      */
     public static function invoiceUnpaid(Invoice $invoice): float
     {
-        // Pelunasan: yang ditagih harga penuh dikurangi DP (Invoice::amountDue()),
-        // sama dengan "Sisa Pembayaran" di PDF. Dulu dihitung dari harga penuh,
-        // sehingga pelunasan yang sudah dibayar sesuai PDF tetap tersisa sebesar DP.
-        $due = $invoice->type_payment === 'final_payment' ? $invoice->amountDue() : (float) $invoice->grand_total;
-
-        return $invoice->status === 'paid' ? 0.0 : max(round($due - (float) $invoice->paid, 2), 0);
+        return $invoice->status === 'paid' ? 0.0 : max(round(self::invoiceValue($invoice) - (float) $invoice->paid, 2), 0);
     }
 
     /**

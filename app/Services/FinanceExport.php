@@ -56,12 +56,12 @@ class FinanceExport
             ['Ringkasan keuangan — ' . $this->overview->period()->label(), null],
             ['Per', now()->locale('id')->translatedFormat('j F Y, H.i')],
             [null, null],
-            ['INVOICE MASUK (penjualan; tanpa proforma & yang dibatalkan)', null],
+            ['INVOICE MASUK (yang ditagih: DP sebesar DP-nya, pelunasan sisa setelah DP; tanpa proforma & yang dibatalkan)', null],
             ['Invoice DP', $invoice['dp']['amount']],
             ['Invoice full payment', $invoice['full']['amount']],
             ['Invoice pelunasan', $invoice['final']['amount']],
             ['Total', $invoice['total']['amount']],
-            ['Belum dibayarkan (Total − Paid, belum berstatus paid)', $invoice['unpaid']['amount']],
+            ['Belum dibayarkan (yang ditagih − Paid, belum berstatus paid)', $invoice['unpaid']['amount']],
             [null, null],
             ['EXPENSE (tanpa yang ditolak)', null],
             ['Total', $expense['total']['amount']],
@@ -100,14 +100,17 @@ class FinanceExport
             $invoice->nama_perusahaan,
             $kinds[FinanceOverview::invoiceKind($invoice)] . ($invoice->dpPercentage() !== null ? ' ' . $invoice->dpPercentage() . '%' : ''),
             (string) $invoice->status,
-            (float) $invoice->grand_total,
+            FinanceOverview::invoiceValue($invoice),
             (float) $invoice->paid,
             FinanceOverview::invoiceUnpaid($invoice) ?: null,
+            (float) $invoice->grand_total,
         ])->all();
 
+        // Ditagih = nilai invoice (DP: DP-nya; pelunasan: sisa setelah DP). Kolom Total
+        // di invoice (harga penuh pekerjaan) tetap disertakan di belakang sebagai acuan.
         $this->sheet($book, 'Invoice', [
-            'No. invoice', 'Tanggal', 'Jatuh tempo', 'PIC', 'Perusahaan', 'Jenis', 'Status', 'Total', 'Paid', 'Belum dibayarkan',
-        ], $rows, moneyColumns: ['H', 'I', 'J']);
+            'No. invoice', 'Tanggal', 'Jatuh tempo', 'PIC', 'Perusahaan', 'Jenis', 'Status', 'Ditagih', 'Paid', 'Belum dibayarkan', 'Total di invoice (harga penuh)',
+        ], $rows, moneyColumns: ['H', 'I', 'J', 'K']);
     }
 
     private function expenseSheet(Spreadsheet $book): void
