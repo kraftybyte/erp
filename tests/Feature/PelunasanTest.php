@@ -96,6 +96,25 @@ class PelunasanTest extends TestCase
         Livewire::test(ListInvoices::class)->assertTableActionHidden('pelunasan', $full);
     }
 
+    public function test_daftar_invoice_menampilkan_yang_ditagih_dp_dan_pelunasan(): void
+    {
+        $dp    = $this->invoice(['type_payment' => 'dp_30', 'paid' => 3_000_000, 'status' => 'paid']);
+        $final = $this->invoice(['type_payment' => 'final_payment', 'parent_invoice_id' => $dp->id]);
+
+        // Kolom Total = harga penuh Rp 10 jt; yang ditagih tertulis di bawahnya dan di jenis pembayaran.
+        Livewire::test(ListInvoices::class)
+            ->searchTable($final->uuid)
+            ->assertCanSeeTableRecords([$final])
+            ->assertSee('Pelunasan • Rp 7.000.000')
+            ->assertSee('Ditagih Rp 7.000.000');
+
+        Livewire::test(ListInvoices::class)
+            ->searchTable($dp->uuid)
+            ->assertCanSeeTableRecords([$dp])
+            ->assertSee('DP 30% • Rp 3.000.000')
+            ->assertSee('Ditagih Rp 3.000.000');
+    }
+
     public function test_invoice_dp_dipilih_di_form_pelunasan(): void
     {
         $dp    = $this->invoice(['type_payment' => 'dp_30']);

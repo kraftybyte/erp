@@ -1132,7 +1132,7 @@ class InvoiceResource extends BaseInvoiceResource
     {
         // Kolom "Customer / PIC" membaca $record->deal dan tombol Project membaca
         // $record->projects; tanpa eager load di sini tiap baris memicu query sendiri.
-        return parent::getEloquentQuery()->with(['deal', 'projects:id,invoice_id']);
+        return parent::getEloquentQuery()->with(['deal', 'parentInvoice', 'projects:id,invoice_id']);
     }
 
     public static function table(
@@ -1339,7 +1339,8 @@ class InvoiceResource extends BaseInvoiceResource
                             }
 
                             if ($state === 'final_payment') {
-                                return 'Final Payment';
+                                // Yang ditagih pelunasan: harga penuh − DP (Invoice::amountDue()).
+                                return 'Pelunasan • Rp ' . number_format($record->amountDue(), 0, ',', '.');
                             }
 
                             if ($state && str_starts_with($state, 'dp_')) {
@@ -1423,6 +1424,11 @@ class InvoiceResource extends BaseInvoiceResource
                         )
                     )
                     ->formatStateUsing(fn ($state, $record) => \App\Helpers\Money::inCurrency($state, $record->currency?->iso))
+                    // Invoice DP dan pelunasan: kolom Total berisi harga penuh pekerjaan;
+                    // yang ditagih invoice ini ditulis di bawahnya.
+                    ->description(fn (Invoice $record) => abs($record->amountDue() - (float) $record->grand_total) > 1
+                        ? 'Ditagih ' . \App\Helpers\Money::inCurrency($record->amountDue(), $record->currency?->iso)
+                        : null)
                     ->color('success')
                     ->searchable(
                         query: fn (Builder $query, string $search) => AmountSearch::apply($query, $search, 'grand_total')

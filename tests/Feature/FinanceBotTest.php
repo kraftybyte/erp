@@ -102,11 +102,12 @@ class FinanceBotTest extends TestCase
         $this->assertStringContainsString('lewat 3 hari', $edited['text']);
     }
 
-    public function test_daftar_belum_dibayar_memakai_total_dikurangi_paid(): void
+    public function test_daftar_belum_dibayar_memakai_yang_ditagih_dikurangi_paid(): void
     {
         $user = $this->user('Finance');
 
-        foreach ([['PT Sudah Lunas DP', 'paid'], ['PT Baru Sebagian', 'partial']] as [$client, $status]) {
+        // DP 40% dari Rp 777 jt = Rp 310,8 jt yang ditagih.
+        foreach ([['PT Sudah Lunas DP', 'paid', 310_800_000], ['PT Baru Sebagian', 'partial', 100_000_000]] as [$client, $status, $paid]) {
             Invoice::create([
                 'uuid'            => 'TES/DP-' . Str::upper(Str::random(5)),
                 'user_id'         => $user->id,
@@ -115,7 +116,7 @@ class FinanceBotTest extends TestCase
                 'nama_pic'        => 'Rina Kartika',
                 'nama_perusahaan' => $client,
                 'grand_total'     => 777_000_000,
-                'paid'            => 310_800_000,
+                'paid'            => $paid,
                 'status'          => $status,
             ]);
         }
@@ -123,7 +124,7 @@ class FinanceBotTest extends TestCase
         $this->send($this->text('/piutang'));
 
         $this->assertStringNotContainsString('PT Sudah Lunas DP', $this->lastText(), 'Berstatus paid: tidak ditampilkan.');
-        $this->assertStringContainsString("Rina Kartika - PT Baru Sebagian</b>\n   Sisa <b>Rp 466.200.000</b> dari Rp 777.000.000 · DP 40%", $this->lastText());
+        $this->assertStringContainsString("Rina Kartika - PT Baru Sebagian</b>\n   Sisa <b>Rp 210.800.000</b> dari Rp 310.800.000 · DP 40%", $this->lastText());
     }
 
     public function test_tombol_excel_mengirim_file_berisi_seluruh_data(): void

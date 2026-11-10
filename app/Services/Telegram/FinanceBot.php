@@ -485,7 +485,7 @@ class FinanceBot
                 $date = $invoice->date ? Carbon::parse($invoice->date)->locale('id')->translatedFormat('j M') : 'tanpa tanggal';
 
                 $lines[] = '• <b>' . e(ClientLabel::invoice($invoice)) . '</b>'
-                    . "\n   {$date} · " . $this->kindLabel($invoice) . ' · ' . $this->rupiah($invoice->grand_total);
+                    . "\n   {$date} · " . $this->kindLabel($invoice) . ' · ' . $this->rupiah(FinanceOverview::invoiceValue($invoice));
             }
 
             if ($invoices->count() > self::LIST_LIMIT) {
@@ -494,8 +494,8 @@ class FinanceBot
         }
 
         $lines[] = '';
-        $lines[] = '<i>ℹ️ Nilai = Total di invoice (invoice DP: nilai penuh pekerjaan).';
-        $lines[] = 'Belum dibayarkan = Total dikurangi yang sudah dibayar.';
+        $lines[] = '<i>ℹ️ Nilai = yang ditagih invoice: DP sebesar DP-nya, full payment sebesar totalnya, pelunasan sebesar sisa setelah DP.';
+        $lines[] = 'Belum dibayarkan = yang ditagih dikurangi yang sudah dibayar.';
         $lines[] = 'Proforma dan yang dibatalkan tidak dihitung.</i>';
 
         return implode("\n", $lines);
@@ -573,7 +573,7 @@ class FinanceBot
             $overdue = $due && $due->lt($today) ? (int) $due->diffInDays($today) : 0;
 
             $lines[] = ($overdue > 0 ? '🔴' : '🟡') . ' <b>' . e(ClientLabel::invoice($invoice)) . '</b>'
-                . "\n   Sisa <b>" . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice)) . '</b> dari ' . $this->rupiah($invoice->grand_total)
+                . "\n   Sisa <b>" . $this->rupiah(FinanceOverview::invoiceUnpaid($invoice)) . '</b> dari ' . $this->rupiah(FinanceOverview::invoiceValue($invoice))
                 . ' · ' . $this->kindLabel($invoice)
                 . "\n   " . e((string) $invoice->uuid) . ' · jatuh tempo ' . ($due ? $due->locale('id')->translatedFormat('j M Y') : '-')
                 . ($overdue > 0 ? " (lewat {$overdue} hari)" : '');

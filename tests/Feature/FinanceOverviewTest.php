@@ -85,9 +85,10 @@ class FinanceOverviewTest extends TestCase
     {
         $before = $this->overview()->invoiceTotals();
 
-        // Kolom Total (grand_total) apa adanya; DP tidak dipotong menjadi persentasenya.
-        $this->invoice(['type_payment' => 'dp_20', 'grand_total' => 10_000_000, 'paid' => 2_000_000, 'status' => 'paid']);
-        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 8_000_000, 'status' => 'pending']);
+        // Nilai = yang ditagih invoice: DP 20% dari Rp 10 jt = Rp 2 jt.
+        $dp = $this->invoice(['type_payment' => 'dp_20', 'grand_total' => 10_000_000, 'paid' => 2_000_000, 'status' => 'paid']);
+        // Pelunasan-nya: harga penuh Rp 10 jt − DP Rp 2 jt = Rp 8 jt.
+        $this->invoice(['type_payment' => 'final_payment', 'grand_total' => 10_000_000, 'parent_invoice_id' => $dp->id, 'status' => 'pending']);
         // Draft tetap invoice masuk.
         $this->invoice(['type_payment' => 'full_payment', 'grand_total' => 1_000_000, 'status' => 'draft']);
         $this->invoice(['type_payment' => 'full_payment', 'grand_total' => 4_000_000, 'paid' => 1_000_000, 'status' => 'partial']);
@@ -97,11 +98,11 @@ class FinanceOverviewTest extends TestCase
 
         $after = $this->overview()->invoiceTotals();
 
-        $this->assertDelta(10_000_000, 1, $before['dp'], $after['dp']);
+        $this->assertDelta(2_000_000, 1, $before['dp'], $after['dp']);
         $this->assertDelta(8_000_000, 1, $before['final'], $after['final']);
         $this->assertDelta(5_000_000, 2, $before['full'], $after['full']);
-        $this->assertDelta(23_000_000, 4, $before['total'], $after['total']);
-        // Total − Paid pada yang belum berstatus paid: 8 + 1 + 3 juta.
+        $this->assertDelta(15_000_000, 4, $before['total'], $after['total']);
+        // Yang ditagih − Paid pada yang belum berstatus paid: 8 + 1 + 3 juta.
         $this->assertDelta(12_000_000, 3, $before['unpaid'], $after['unpaid']);
     }
 

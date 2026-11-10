@@ -1992,7 +1992,7 @@ $rgba = function ($hex, $opacity) {
                                             </td>
 
                                             <td style="text-align:right;">
-                                                Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}
+                                                Rp {{ number_format($invoice->amountDue(), 0, ',', '.') }}
                                             </td>
 
                                             <td>

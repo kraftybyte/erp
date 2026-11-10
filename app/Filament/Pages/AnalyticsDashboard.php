@@ -109,6 +109,11 @@ class AnalyticsDashboard extends Page
         $startOfMonth = Carbon::now()->startOfMonth();
         $startOfYear = Carbon::now()->startOfYear();
 
+        // Nilai invoice = yang ditagih (DP sebesar DP-nya, pelunasan sisa setelah DP).
+        $invoices = $this->invoices();
+        $paid     = $invoices->where('status', 'paid');
+        $pending  = $invoices->where('status', 'pending');
+
         // Cache leads counts
         $totalLeads = Leads::count();
         $convertedLeads = Leads::where('is_converted', true)->count();
@@ -132,11 +137,11 @@ class AnalyticsDashboard extends Page
 
             // Revenue
             'revenue' => [
-                'all_time' => Invoice::where('status', 'paid')->sum('grand_total'),
-                'year_to_date' => Invoice::where('status', 'paid')->whereBetween('date', [$startOfYear, now()])->sum('grand_total'),
-                'period' => Invoice::where('status', 'paid')->whereBetween('date', [$startDate, $endDate])->sum('grand_total'),
-                'pending' => Invoice::where('status', 'pending')->sum('grand_total'),
-                'pending_count' => Invoice::where('status', 'pending')->count(),
+                'all_time' => $this->billed($paid),
+                'year_to_date' => $this->billed($this->between($paid, 'date', $startOfYear, now())),
+                'period' => $this->billed($this->between($paid, 'date', $startDate, $endDate)),
+                'pending' => $this->billed($pending),
+                'pending_count' => $pending->count(),
             ],
 
             // Expenses
@@ -167,7 +172,7 @@ class AnalyticsDashboard extends Page
                 'total' => PaymentAccount::active()->get()->sum(fn($a) => $a->getAvailableBalance()),
                 'accounts' => PaymentAccount::active()->count(),
                 // monthly_out dihitung dari Expense + Advance (semua status)
-                'monthly_in' => Invoice::where('status', 'paid')->whereBetween('date', [$startOfMonth, now()])->sum('grand_total'),
+                'monthly_in' => $this->billed($this->between($paid, 'date', $startOfMonth, now())),
                 'monthly_out' => Expense::whereBetween('submission_date', [$startOfMonth, now()])->sum('amount')
                     + Advance::whereBetween('submission_date', [$startOfMonth, now()])->sum('amount'),
             ],
@@ -210,17 +215,20 @@ class AnalyticsDashboard extends Page
         $endDate = $this->dateTo ? Carbon::parse($this->dateTo)->endOfDay() : Carbon::now()->endOfDay();
         $now = Carbon::now();
 
-        // Invoice stats
-        $stats = Invoice::query()
-            ->selectRaw("
-                SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END) as total_revenue,
-                SUM(CASE WHEN status = 'paid' AND MONTH(created_at) = ? AND YEAR(created_at) = ? THEN grand_total ELSE 0 END) as current_month_revenue,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-                SUM(CASE WHEN status = 'pending' THEN grand_total ELSE 0 END) as pending_total,
-                SUM(CASE WHEN status = 'pending' AND due_date < ? THEN 1 ELSE 0 END) as overdue_count,
-                SUM(CASE WHEN status = 'pending' AND due_date < ? THEN grand_total ELSE 0 END) as overdue_total
-            ", [$now->month, $now->year, $now->toDateString(), $now->toDateString()])
-            ->first();
+        // Invoice stats. Nilai invoice = yang ditagih (DP sebesar DP-nya, pelunasan sisa setelah DP).
+        $invoices = $this->invoices();
+        $paid     = $invoices->where('status', 'paid');
+        $pending  = $invoices->where('status', 'pending');
+        $overdue  = $pending->filter(fn (Invoice $invoice) => $invoice->due_date && Carbon::parse($invoice->due_date)->lt($now->copy()->startOfDay()));
+
+        $stats = (object) [
+            'total_revenue'         => $this->billed($paid),
+            'current_month_revenue' => $this->billed($this->between($paid, 'created_at', $now->copy()->startOfMonth(), $now->copy()->endOfMonth())),
+            'pending_count'         => $pending->count(),
+            'pending_total'         => $this->billed($pending),
+            'overdue_count'         => $overdue->count(),
+            'overdue_total'         => $this->billed($overdue),
+        ];
 
         // Recent invoices
         $recentInvoices = Invoice::whereBetween('created_at', [$startDate, $endDate])
@@ -234,30 +242,19 @@ class AnalyticsDashboard extends Page
             $month = Carbon::now()->subMonths($i);
             $monthlyTrend[] = [
                 'month' => $month->format('M Y'),
-                'paid' => Invoice::where('status', 'paid')
-                    ->whereYear('created_at', $month->year)
-                    ->whereMonth('created_at', $month->month)
-                    ->sum('grand_total'),
-                'pending' => Invoice::where('status', 'pending')
-                    ->whereYear('created_at', $month->year)
-                    ->whereMonth('created_at', $month->month)
-                    ->sum('grand_total'),
+                'paid' => $this->billed($this->between($paid, 'created_at', $month->copy()->startOfMonth(), $month->copy()->endOfMonth())),
+                'pending' => $this->billed($this->between($pending, 'created_at', $month->copy()->startOfMonth(), $month->copy()->endOfMonth())),
             ];
         }
 
         // Status distribution
-        $distribution = Invoice::query()
-            ->selectRaw("
-                COALESCE(SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END), 0) as paid,
-                COALESCE(SUM(CASE WHEN status = 'pending' THEN grand_total ELSE 0 END), 0) as pending,
-                COALESCE(SUM(CASE WHEN status = 'cancelled' THEN grand_total ELSE 0 END), 0) as cancelled,
-                COALESCE(SUM(CASE WHEN status = 'draft' THEN grand_total ELSE 0 END), 0) as draft,
-                COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
-                COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-                COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_count,
-                COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_count
-            ")
-            ->first();
+        $distribution = (object) [];
+
+        foreach (['paid', 'pending', 'cancelled', 'draft'] as $status) {
+            $group = $invoices->where('status', $status);
+            $distribution->{$status} = $this->billed($group);
+            $distribution->{"{$status}_count"} = $group->count();
+        }
 
         return [
             'stats' => $stats,
@@ -265,6 +262,31 @@ class AnalyticsDashboard extends Page
             'trend' => $monthlyTrend,
             'distribution' => $distribution,
         ];
+    }
+
+    /**
+     * Semua invoice (termasuk proforma, seperti sebelumnya) beserta invoice DP
+     * tautannya, untuk menghitung yang ditagih per invoice.
+     *
+     * @return \Illuminate\Support\Collection<int, Invoice>
+     */
+    private function invoices(): \Illuminate\Support\Collection
+    {
+        return Invoice::with('parentInvoice')->get();
+    }
+
+    /**
+     * Jumlah nilai invoice = yang ditagih (Invoice::amountDue()): invoice DP sebesar
+     * DP-nya, full payment sebesar Total, pelunasan sebesar harga penuh − DP.
+     */
+    private function billed(\Illuminate\Support\Collection $invoices): float
+    {
+        return round((float) $invoices->sum(fn (Invoice $invoice) => $invoice->amountDue()), 2);
+    }
+
+    private function between(\Illuminate\Support\Collection $invoices, string $field, Carbon $from, Carbon $to): \Illuminate\Support\Collection
+    {
+        return $invoices->filter(fn (Invoice $invoice) => $invoice->{$field} && Carbon::parse($invoice->{$field})->between($from, $to));
     }
 
     // ============================================

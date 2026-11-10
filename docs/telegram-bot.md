@@ -270,7 +270,7 @@ rekening penerima → **Lunas** atau ketik nominal bila dibayar sebagian
 - **Invoice**: angka yang sama plus daftar invoice periode itu.
 - **Advance**: per project — diajukan, dicairkan, direalisasi, sisa.
 - **Expense**: per kategori dan per project.
-- **Belum dibayar** (`/piutang`): per invoice yang belum berstatus paid, sisanya Total − Paid.
+- **Belum dibayar** (`/piutang`): per invoice yang belum berstatus paid, sisanya yang ditagih − Paid.
 - **Pending**: antrean yang menunggu persetujuan/pembayaran — selalu seluruh waktu.
 - **Excel** (tombol ⬇️ atau `/excel`): data periode itu dalam satu file — sheet
   Ringkasan, Invoice, Expense, Advance, Per Project — karena pesan Telegram
@@ -289,8 +289,8 @@ masing-masing**, tanpa mengacu ke Payment Dashboard:
 
 | Angka | Definisi |
 |---|---|
-| Invoice DP / full payment / pelunasan | Jumlah kolom **Total** (`grand_total`) invoice penjualan menurut jenis pembayaran. Draft ikut; proforma dan yang dibatalkan tidak. Invoice DP dihitung sebesar Total-nya, bukan persentase DP. |
-| Invoice belum dibayarkan | **Total − Paid** pada invoice yang belum berstatus `paid` |
+| Invoice DP / full payment / pelunasan | Jumlah **yang ditagih** invoice penjualan menurut jenis pembayaran (`Invoice::amountDue()`, sama dengan PDF dan tombol Bayar): invoice DP sebesar DP-nya, full payment sebesar Total, pelunasan sebesar harga penuh − DP. Draft ikut; proforma dan yang dibatalkan tidak. |
+| Invoice belum dibayarkan | **Yang ditagih − Paid** pada invoice yang belum berstatus `paid` |
 | Expense total | Jumlah kolom `amount`, tanpa yang ditolak |
 | Advance total | Jumlah kolom `amount`, tanpa yang ditolak |
 | Advance belum dibayarkan | Status Pending + Disetujui |
