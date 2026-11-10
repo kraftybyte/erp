@@ -257,8 +257,8 @@ class MetricsEngine
             ])
             ->where('remaining', '>', 0);
 
+        // Quotation dihapus permanen (tanpa SoftDeletes); kolom deleted_at tidak ada di produksi.
         $quotes = Quotation::query()
-            ->whereNull('deleted_at')
             ->whereIn('status', ['Approved', 'Pending'])
             ->get()
             ->map(fn (Quotation $quote) => [

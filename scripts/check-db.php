@@ -227,3 +227,23 @@ echo \Illuminate\Support\Facades\Schema::hasTable('ai_usages')
         ->map(fn ($row) => "{$row->date}  {$row->calls} panggilan · {$row->failures} gagal · " . number_format($row->input_tokens + $row->output_tokens, 0, ',', '.') . ' token')
         ->whenEmpty(fn ($rows) => collect(['Belum tercatat.']))->implode("\n") . "\n"
     : "Tabel belum ada (belum deploy).\n";
+
+// Fakta asisten keuangan (/analisa) dihitung di server, tanpa AI: memastikan
+// semua kolom yang dipakai ada di database produksi.
+$section('Asisten keuangan (/analisa, tanpa AI)');
+if (class_exists(\App\Services\FinanceAdvisor::class)) {
+    try {
+        $facts    = app(\App\Services\MetricsEngine::class)->generateSnapshot();
+        $findings = app(\App\Services\FinanceAdvisor::class)->findings($facts);
+        echo 'Status: ' . \App\Services\FinanceAdvisor::status($findings) . ' · temuan: '
+            . (collect($findings)->map(fn ($f) => "{$f['key']} ({$f['level']})")->implode(', ') ?: 'tidak ada') . "\n"
+            . 'Kas ' . $facts['period']['label'] . ': masuk ' . $rupiah($facts['cash']['in']) . ' · keluar ' . $rupiah($facts['cash']['out'])
+            . ' · saldo ' . $rupiah($facts['cash']['balance']) . "\n"
+            . 'Piutang ' . $rupiah($facts['receivables']['total']['amount']) . ' · lewat jatuh tempo ' . $rupiah($facts['receivables']['overdue']['amount'])
+            . ' · pelunasan belum ditagih ' . $rupiah($facts['dp_unbilled']['amount']) . "\n";
+    } catch (\Throwable $e) {
+        echo 'GAGAL: ' . get_class($e) . ': ' . $e->getMessage() . "\n";
+    }
+} else {
+    echo "Belum di-deploy.\n";
+}
