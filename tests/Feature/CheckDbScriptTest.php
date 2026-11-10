@@ -33,6 +33,8 @@ class CheckDbScriptTest extends TestCase
             '== DP dan pelunasan',
             'DP lunas, invoice pelunasan belum dibuat:',
             'Total pelunasan berbeda dari total invoice DP-nya',
+            '== Asisten keuangan (/analisa, tanpa AI)',
+            'Status: ',
         ] as $expected) {
             $this->assertStringContainsString($expected, $result->output());
         }
