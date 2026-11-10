@@ -35,12 +35,13 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
  */
 class Payroll
 {
-    /** Boleh melihat dan mengelola gaji semua karyawan. */
-    public const MANAGERS = ['Director', 'Finance', 'super_admin'];
-
+    /**
+     * Boleh melihat dan mengelola gaji semua karyawan: izin Shield
+     * update_payslip (Roles → Payslip), super_admin selalu boleh.
+     */
     public static function canManage(?User $user): bool
     {
-        return (bool) $user?->hasRole(self::MANAGERS);
+        return (bool) $user?->can('update_payslip');
     }
 
     /**

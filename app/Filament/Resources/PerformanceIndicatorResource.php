@@ -22,14 +22,15 @@ class PerformanceIndicatorResource extends Resource
 
     protected static bool $shouldRegisterNavigation = true;
 
+// Akses: izin Shield view_any_performance::indicator (Roles → Performance Indicator).
 public static function canAccess(): bool
 {
-    return auth()->user()->hasRole(['Director','Head', 'super_admin']);
+    return (bool) auth()->user()?->can('view_any_performance::indicator');
 }
 
 public static function shouldRegisterNavigation(): bool
 {
-    return auth()->user()->hasRole(['Director','Head',  'super_admin']);
+    return static::canAccess();
 }
 
     public static function getBreadcrumb(): string

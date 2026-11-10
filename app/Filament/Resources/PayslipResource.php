@@ -22,9 +22,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Slip gaji bulanan (HR → Slip Gaji). Director/Finance/super_admin mengelola
- * semua slip; karyawan lain hanya melihat dan mengunduh slipnya sendiri yang
- * sudah final.
+ * Slip gaji bulanan (HR → Slip Gaji). Yang punya izin update_payslip (Shield)
+ * mengelola semua slip; karyawan lain hanya melihat dan mengunduh slipnya
+ * sendiri yang sudah final.
  */
 class PayslipResource extends Resource
 {
@@ -45,29 +45,11 @@ class PayslipResource extends Resource
         return __('HR');
     }
 
-    public static function canViewAny(): bool
-    {
-        return auth()->check();
-    }
-
+    // Akses lewat PayslipPolicy (izin Shield: Roles → Payslip). Slip hanya
+    // dibuat lewat "Buat slip", tidak ada halaman Create.
     public static function canCreate(): bool
     {
         return false;
-    }
-
-    public static function canEdit(Model $record): bool
-    {
-        return Payroll::canManage(auth()->user());
-    }
-
-    public static function canDelete(Model $record): bool
-    {
-        return Payroll::canManage(auth()->user()) && $record->isDraft();
-    }
-
-    public static function canDeleteAny(): bool
-    {
-        return Payroll::canManage(auth()->user());
     }
 
     public static function getEloquentQuery(): Builder
@@ -202,7 +184,7 @@ class PayslipResource extends Resource
                         ->visible(fn (Payslip $record) => $manager() && $record->status === Payslip::FINAL)
                         ->requiresConfirmation()
                         ->action(fn (Payslip $record) => app(Payroll::class)->reopen($record)),
-                    Tables\Actions\DeleteAction::make()->visible(fn (Payslip $record) => $manager() && $record->isDraft()),
+                    Tables\Actions\DeleteAction::make(),
                 ])->visible($manager),
             ])
             ->bulkActions([
@@ -236,7 +218,7 @@ class PayslipResource extends Resource
                         })
                         ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make()
-                        ->action(fn (Collection $records) => $records->filter->isDraft()->each->delete()),
+                        ->action(fn (Collection $records) => $records->filter(fn (Payslip $slip) => auth()->user()->can('delete', $slip))->each->delete()),
                 ])->visible($manager),
             ])
             ->emptyStateHeading('Belum ada slip gaji')
