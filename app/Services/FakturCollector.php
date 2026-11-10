@@ -38,9 +38,10 @@ class FakturCollector
 
     public function __construct(private FinanceOverview $overview) {}
 
+    /** Sama dengan akses halaman Faktur: izin Shield page_Faktur. */
     public static function visibleTo(?User $user): bool
     {
-        return (bool) $user?->hasRole(self::ROLES);
+        return (bool) $user?->can('page_Faktur');
     }
 
     /**

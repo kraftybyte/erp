@@ -26,11 +26,10 @@ class HrReportResource extends Resource
     protected static ?string $slug            = 'hr-report';
     protected static ?string $recordRouteKeyName = 'id';
 
+    // Akses: izin Shield view_any_hr::report (Roles → Hr Report).
     public static function canAccess(): bool
     {
-        /** @var User|null $user */
-        $user = Auth::user();
-        return $user?->hasAnyRole(['super_admin', 'Director', 'HR']) ?? false;
+        return (bool) Auth::user()?->can('view_any_hr::report');
     }
 
     public static function form(Form $form): Form

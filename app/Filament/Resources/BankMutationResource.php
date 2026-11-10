@@ -34,13 +34,7 @@ class BankMutationResource extends Resource
 
     protected static ?int $navigationSort = 4;
 
-    private const ROLES = ['Director', 'Finance', 'super_admin'];
-
-    public static function canViewAny(): bool
-    {
-        return (bool) auth()->user()?->hasRole(self::ROLES);
-    }
-
+    // Melihat: BankMutationPolicy (izin Shield: Roles → Bank Mutation).
     public static function canCreate(): bool
     {
         return false;

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\Http;
 
 class PwaSettings extends Page
 {
+    // Akses: izin Shield page_PwaSettings (Roles → Pages).
+    use HasPageShield;
+
     protected static ?string $navigationIcon = 'heroicon-o-device-phone-mobile';
 
     protected static ?string $navigationLabel = 'PWA & Notifications';

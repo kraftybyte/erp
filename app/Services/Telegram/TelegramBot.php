@@ -2378,6 +2378,12 @@ class TelegramBot
      */
     private function sendPayslip(int|string $chatId, User $user, string $argument): void
     {
+        if (! $user->can('view_payslip')) {
+            $this->telegram->sendMessage($chatId, 'Slip gaji belum dibuka untuk akunmu. Hubungi Finance.');
+
+            return;
+        }
+
         $query = Payslip::where('user_id', $user->id)->where('status', '!=', Payslip::DRAFT);
 
         if (trim($argument) !== '' && ($period = \App\Services\ReportPeriod::parse($argument)) && $period->from) {

@@ -48,6 +48,12 @@ protected static function boot() {
 }
 ```
 
+### Access control (Filament Shield) — wajib
+Setiap halaman/resource ERP aksesnya lewat izin Shield (Settings → Roles), bukan nama peran di kode:
+- Resource: policy di `app/Policies/{Model}Policy.php` yang memeriksa `$user->can('view_any_{entity}')` dst. (entity = nama resource, mis. `bank::mutation`).
+- Page: `use HasPageShield;` (izin `page_{NamaClass}`).
+- Halaman baru atau yang dipindah ke Shield: sertakan migrasi yang membuat izinnya dan memberikannya ke peran yang memang perlu akses (contoh: `2026_11_11_110000_link_pages_to_shield_permissions.php`), supaya tidak ada yang terkunci setelah deploy. super_admin selalu lolos lewat gate Shield.
+
 ### Navigation Groups
 - CRM → Leads, Client, Product, Quotation, Contract
 - Project → Project, Task Kanban, Timeline

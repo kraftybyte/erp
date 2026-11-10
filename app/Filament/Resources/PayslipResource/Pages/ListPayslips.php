@@ -21,7 +21,7 @@ class ListPayslips extends ListRecords
             Actions\Action::make('generate')
                 ->label('Buat slip')
                 ->icon('heroicon-o-document-plus')
-                ->visible(fn () => Payroll::canManage(auth()->user()))
+                ->visible(fn () => (bool) auth()->user()?->can('create', \App\Models\Payslip::class))
                 ->modalHeading('Buat slip gaji')
                 ->modalDescription('Slip draft dibuat dari komponen gaji setiap karyawan aktif. Karyawan yang sudah punya slip bulan itu dilewati.')
                 ->form([

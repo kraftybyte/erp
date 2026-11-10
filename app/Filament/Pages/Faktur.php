@@ -10,6 +10,7 @@ use App\Http\Controllers\FakturController;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Services\FakturCollector;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use App\Services\FakturMatcher;
 use App\Services\ReportPeriod;
 use Filament\Actions\Action;
@@ -39,6 +40,9 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
  */
 class Faktur extends Page
 {
+    // Akses: izin Shield page_Faktur (Roles → Pages).
+    use HasPageShield;
+
     protected static ?string $navigationIcon = 'heroicon-o-document-duplicate';
 
     protected static ?string $navigationGroup = 'Finance';
@@ -61,11 +65,6 @@ class Faktur extends Page
     // Hanya baris yang fakturnya belum ada.
     #[Url(as: 'kurang')]
     public bool $belumAda = false;
-
-    public static function canAccess(): bool
-    {
-        return FakturCollector::visibleTo(auth()->user());
-    }
 
     public function mount(): void
     {
