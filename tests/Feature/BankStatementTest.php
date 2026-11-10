@@ -387,12 +387,17 @@ class BankStatementTest extends TestCase
 
         $this->assertStringContainsString('invoice dibuat 6 hari sebelum transfer', $this->lastText());
         $this->assertStringContainsString('nominal = sisa tagihan Rp 15.440.000 persis', $this->lastText());
-        $this->assertMatchesRegularExpression('/— <b>\d+%<\/b>/', $this->lastText());
-        $this->assertStringContainsString('· 28 Okt ·', $this->lastText());
+        $this->assertMatchesRegularExpression('/<b>Pilihan 1<\/b> — <b>\d+%<\/b>/', $this->lastText());
+        $this->assertStringContainsString('✍️ Masuk <b>Rp 15.440.000</b> → <b>LUNAS</b>', $this->lastText());
 
-        // Ringkasan: satu baris rincian di bawah pasangan yang siap dicatat.
+        // Ringkasan: satu blok per mutasi, mutasi → invoice dengan rincian dan akibatnya.
         $this->send($this->tap('mut:pick:0:0'));
-        $this->assertStringContainsString('📦 Booth pameran 3x3 — Rp 30.000.000 +1 item · 28 Okt · DP 50%', $this->lastText());
+        $text = $this->lastText();
+        $this->assertStringContainsString("\n\n<b>1) 3 Nov 2026 ⬇️ Rp 15.440.000</b> <i>(dipilih)</i>\n💬 SETORAN TUNAI\n➡️ <b>Invoice {$invoice->uuid}</b>", $text);
+        $this->assertStringContainsString('   🗓 28 Okt 2026 · jatuh tempo 20 Nov · DP 50%', $text);
+        $this->assertStringContainsString('   📦 Cetak banner — 2 × Rp 440.000', $text);
+        $this->assertStringContainsString('   ✍️ Masuk <b>Rp 15.440.000</b> → <b>LUNAS</b>', $text);
+        $this->assertStringContainsString('🎯 Yakin <b>', $text);
     }
 
     public function test_uang_keluar_ke_expense_dan_advance_karyawan(): void
@@ -925,6 +930,23 @@ class BankStatementTest extends TestCase
         $this->assertStringContainsString('Pengembalian dana dari MAJU TERUS SENTOSA', $text);
         $this->assertStringContainsString('Salah transfer dari MAJU LASER JAYA CV', $text);
 
+        // Mutasi → invoice per blok, dipisah baris kosong; sisa tagihan berjalan untuk transfer yang dipecah.
+        $this->assertStringContainsString("\n\n<b>1) 4 Nov 2026 ⬇️ Rp 20.004.000</b>\n👤 Dari <b>{$sender}</b>\n💬 TL QWERT SIGNAGE AKRILIK\n➡️ <b>Invoice {$split->uuid}</b>", $text);
+        $this->assertStringContainsString('✍️ Masuk <b>Rp 20.004.000</b> → sisa jadi Rp 9.013.000', $text);
+        $this->assertStringContainsString('✍️ Masuk <b>Rp 9.013.000</b> → <b>LUNAS</b>', $text);
+        $this->assertStringContainsString('↑ rincian sama dengan mutasi sebelumnya', $text);
+        $this->assertStringContainsString('✍️ Masuk <b>Rp 6.650.000</b> → sisa jadi Rp 6.650.000', $text);
+
+        // Semua yang siap dicatat, per halaman menurut panjang pesan.
+        $this->send($this->tap('mut:ready:0'));
+        $ready = $this->lastText();
+        $this->send($this->tap('mut:ready:1'));
+        $ready .= $this->lastText();
+        $this->assertStringContainsString('📋 <b>Siap dicatat (5)</b>', $ready);
+        $this->assertStringContainsString("➡️ <b>Proforma PI/{$codeD}/00006</b>", $ready);
+        $this->assertStringContainsString('→ <b>LUNAS</b> · proforma dijadikan invoice dulu', $ready);
+        $this->send($this->tap('mut:sum'));
+
         $state   = Cache::get("telegram:finance-mutasi:{$this->chatId}");
         $results = $state['results'];
         $target  = fn (int $row) => $results[$row]['candidates'][$results[$row]['pick']];
@@ -940,11 +962,45 @@ class BankStatementTest extends TestCase
 
         $this->send($this->tap('mut:ok'));
 
-        $this->assertStringContainsString('✅ <b>5 mutasi dicatat</b>', $this->lastText());
+        $done = $this->lastText();
+        $this->assertStringContainsString('✅ <b>5 mutasi dicatat</b>', $done);
+        $this->assertStringContainsString(': masuk Rp 20.004.000 → sisa Rp 9.013.000', $done, 'Sisa sesudah mutasi itu, bukan sesudah semuanya.');
+        $this->assertStringContainsString("\n\n<b>2) 4 Nov 2026 ⬇️ Rp 9.013.000</b>\n➡️ Invoice <b>{$split->uuid}</b>", $done);
+        $this->assertStringContainsString(': masuk Rp 9.013.000 → <b>LUNAS</b>', $done);
+        $this->assertStringContainsString("(dari proforma PI/{$codeD}/00006)", $done);
+        $this->assertStringContainsString(': masuk Rp 6.650.000 → sisa Rp 6.650.000', $done);
         $this->assertSame('paid', $split->fresh()->status, 'Dua transfer yang dipecah melunasi satu invoice.');
         $this->assertEquals(6_650_000, $converted->fresh()->paid);
         $this->assertEquals(5_185_000, $byItems->fresh()->paid);
         $this->assertSame(['sale', 'paid'], [$proforma->fresh()->type, $proforma->fresh()->status]);
+    }
+
+    public function test_ringkasan_panjang_tetap_dalam_batas_telegram_dan_sisanya_per_halaman(): void
+    {
+        $this->user('Finance');
+        $rows = [];
+
+        foreach (range(1, 14) as $n) {
+            $amount = 7_000_000 + $n * 101_017;
+            $this->invoice($amount)->invoicesItems()->create(['item' => "Paket kampanye bulan ke-{$n} dengan materi lengkap", 'qty' => 1, 'price' => $amount, 'total' => $amount]);
+            $rows[] = [sprintf('%02d/11', 1 + $n % 6), 'TRSF E-BANKING CR 0311/FTSCY/WS95051 ' . strtoupper($this->client), $amount, 'CR'];
+        }
+
+        $this->sendDocument($this->klikBca($rows, opening: 0));
+
+        $units = fn (string $html) => intdiv(strlen(mb_convert_encoding(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'), 'UTF-16LE', 'UTF-8')), 2);
+        $text  = $this->lastText();
+
+        $this->assertStringContainsString('✅ <b>Siap dicatat (14)</b>', $text);
+        $this->assertLessThanOrEqual(4096, $units($text));
+        $this->assertMatchesRegularExpression('/…dan \d+ lainnya: tekan <b>📋 Lihat semua yang siap dicatat<\/b>/', $text);
+        $this->assertButton('mut:ready:0');
+
+        $this->send($this->tap('mut:ready:0'));
+        $this->assertStringContainsString('📋 <b>Siap dicatat (14)</b> · halaman 1 dari ', $this->lastText());
+        $this->assertLessThanOrEqual(4096, $units($this->lastText()));
+        $this->assertButton('mut:ready:1');
+        $this->assertButton('mut:ok');
     }
 
     public function test_pengirim_yang_pasti_di_satu_baris_membantu_baris_lain(): void

@@ -2,6 +2,10 @@
 
 namespace App\Services\Telegram;
 
+use App\Helpers\ClientLabel;
+use App\Models\Advance;
+use App\Models\Expense;
+use App\Models\Invoice;
 use App\Models\PaymentAccount;
 use App\Models\User;
 use App\Services\BankStatement\AiReconciler;
@@ -9,6 +13,7 @@ use App\Services\BankStatement\BcaDescription;
 use App\Services\BankStatement\MutationMatcher;
 use App\Services\BankStatement\MutationRecorder;
 use App\Services\BankStatement\StatementReader;
+use App\Services\InvoicePayment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -28,6 +33,9 @@ class BankStatementFlow
     private const TTL_MINUTES = 120;
 
     private const LIST_PAGE = 20;
+
+    // Panjang pesan Telegram maksimal 4096 (unit UTF-16); sisakan ruang untuk tombol dan emoji.
+    private const BUDGET = 3600;
 
     public function __construct(
         private TelegramClient $telegram,
@@ -164,6 +172,7 @@ class BankStatementFlow
             'skip'   => $this->skip($chatId, $messageId, $state, (int) $a),
             'sum'    => $this->showSummary($chatId, $messageId, $state),
             'list'   => $this->showList($chatId, $messageId, $state, (int) $a),
+            'ready'  => $this->showReady($chatId, $messageId, $state, (int) $a),
             'fees'   => $this->toggleFees($chatId, $messageId, $state),
             default  => $this->cancel($chatId, $messageId),
         };
@@ -294,64 +303,29 @@ class BankStatementFlow
             $lines[] = "⚠️ {$statement['skipped']} baris tidak terbaca (tanggal/nominal) dan dilewati.";
         }
 
-        $lines[] = '';
-        $lines[] = '✅ <b>Siap dicatat (' . count($selected) . ')</b>' . ($selected ? '' : ' — belum ada');
-
-        foreach (array_slice($selected, 0, 12, true) as $index => $candidate) {
-            $chosen  = $results[$index]['candidates'][$candidate];
-            $lines[] = '• ' . $this->rowHead($rows[$index]) . ' → ' . e(Text::short($chosen['label'], 70))
-                . (isset($chosen['confidence']) && $results[$index]['status'] !== 'fee' ? " · <b>{$chosen['confidence']}%</b>" : '')
-                . (isset($state['picked'][$index]) ? ' <i>(dipilih)</i>' : '');
-
-            foreach ($this->targetDetails($chosen['targets'], short: true) as $detail) {
-                $lines[] = "   {$detail}";
-            }
-
-            // DP, transfer dipecah, potongan PPh 23: terlihat sebelum Catat ditekan.
-            if ($chosen['note'] ?? null) {
-                $lines[] = '   <i>→ ' . e(Text::short($chosen['note'], 110)) . '</i>';
-            }
-        }
-
-        if (count($selected) > 12) {
-            $lines[] = '  …dan ' . (count($selected) - 12) . ' lainnya (lihat Rincian).';
-        }
+        // Bagian bawah dulu, supaya pasangan yang siap dicatat diisi sebanyak yang muat di satu pesan.
+        $tail = [];
 
         if ($pending) {
-            $lines[] = '';
-            $lines[] = '🟡 <b>Perlu dipilih (' . count($pending) . ')</b>: ada kandidat, tapi belum pasti. Tekan <b>Tinjau</b>.';
+            $tail[] = '';
+            $tail[] = '🟡 <b>Perlu dipilih (' . count($pending) . ')</b>: ada kandidat, tapi belum pasti. Tekan <b>Tinjau</b>.';
         }
 
         $none = array_keys(array_filter($results, fn ($result) => $result['status'] === 'none'));
 
         if ($none) {
-            $lines[] = '';
-            $lines[] = '❓ <b>Tanpa pasangan di ERP (' . count($none) . ')</b>';
-
-            foreach (array_slice($none, 0, 6) as $index) {
-                $lines[] = '• ' . $this->rowHead($rows[$index]) . ' · ' . e($this->brief($rows[$index], 45))
-                    . ($results[$index]['note'] ? "\n   <i>" . e($results[$index]['note']) . '</i>' : '');
-            }
-
-            if (count($none) > 6) {
-                $lines[] = '  …dan ' . (count($none) - 6) . ' lainnya.';
-            }
+            $tail[] = '';
+            $tail[] = '❓ <b>Tanpa pasangan di ERP (' . count($none) . ')</b>';
+            array_push($tail, ...$this->looseBlocks($rows, $results, $none));
         }
 
         // Pengembalian dana dan salah transfer: ditampilkan supaya Finance menindaklanjuti, tidak dicatat.
         $notBills = array_keys(array_filter($results, fn ($result) => $result['status'] === 'other'));
 
         if ($notBills) {
-            $lines[] = '';
-            $lines[] = '↩️ <b>Bukan pembayaran tagihan (' . count($notBills) . ')</b>';
-
-            foreach (array_slice($notBills, 0, 6) as $index) {
-                $lines[] = '• ' . $this->rowHead($rows[$index]) . "\n   <i>" . e((string) $results[$index]['note']) . '</i>';
-            }
-
-            if (count($notBills) > 6) {
-                $lines[] = '  …dan ' . (count($notBills) - 6) . ' lainnya.';
-            }
+            $tail[] = '';
+            $tail[] = '↩️ <b>Bukan pembayaran tagihan (' . count($notBills) . ')</b>';
+            array_push($tail, ...$this->looseBlocks($rows, $results, $notBills));
         }
 
         $other = array_filter([
@@ -362,12 +336,37 @@ class BankStatementFlow
         ]);
 
         if ($other) {
-            $lines[] = '';
-            $lines[] = 'Tidak dicatat: ' . implode(' · ', $other) . '.';
+            $tail[] = '';
+            $tail[] = 'Tidak dicatat: ' . implode(' · ', $other) . '.';
         }
 
+        $tail[] = '';
+        $tail[] = 'Tidak ada yang berubah di ERP sebelum kamu menekan <b>Catat</b>.';
+
+        // Satu blok per mutasi: dari siapa, ke invoice/pengajuan mana, rinciannya, dan akibatnya setelah dicatat.
         $lines[] = '';
-        $lines[] = 'Tidak ada yang berubah di ERP sebelum kamu menekan <b>Catat</b>.';
+        $lines[] = '✅ <b>Siap dicatat (' . count($selected) . ')</b>' . ($selected ? '' : ' — belum ada');
+        $blocks  = $this->readyBlocks($state);
+        $shown   = 0;
+
+        foreach ($blocks as $block) {
+            if ($this->length([...$lines, '', ...$block, '', '…dan 99 lainnya: tekan 📋 Lihat semua yang siap dicatat.', ...$tail]) > self::BUDGET) {
+                break;
+            }
+
+            $lines[] = '';
+            array_push($lines, ...$block);
+            $shown++;
+        }
+
+        $hidden = count($blocks) - $shown;
+
+        if ($hidden > 0) {
+            $lines[] = '';
+            $lines[] = "…dan {$hidden} lainnya: tekan <b>📋 Lihat semua yang siap dicatat</b>.";
+        }
+
+        array_push($lines, ...$tail);
 
         $buttons = [];
 
@@ -390,6 +389,10 @@ class BankStatementFlow
             $buttons[] = [['text' => empty($state['fees']) ? "🏦 Catat juga biaya/bunga bank ({$count('fee')})" : '🏦 Jangan catat biaya/bunga bank', 'callback_data' => 'mut:fees']];
         }
 
+        if ($hidden > 0) {
+            $buttons[] = [['text' => '📋 Lihat semua yang siap dicatat (' . count($blocks) . ')', 'callback_data' => 'mut:ready:0']];
+        }
+
         $buttons[] = array_values(array_filter([
             $selected ? ['text' => '✏️ Periksa yang siap', 'callback_data' => 'mut:revall'] : null,
             ['text' => '📄 Rincian semua baris', 'callback_data' => 'mut:list:0'],
@@ -397,6 +400,50 @@ class BankStatementFlow
         $buttons[] = [['text' => '❌ Batal', 'callback_data' => 'mut:x']];
 
         $this->show($chatId, $messageId, implode("\n", $lines), $buttons);
+    }
+
+    /**
+     * Semua pasangan yang siap dicatat, dalam blok yang sama dengan ringkasan,
+     * dibagi per halaman menurut panjang pesan.
+     */
+    private function showReady(int|string $chatId, int $messageId, array $state, int $page): void
+    {
+        $blocks = array_values($this->readyBlocks($state));
+
+        if ($blocks === []) {
+            $this->showSummary($chatId, $messageId, $state);
+
+            return;
+        }
+
+        $pages   = [];
+        $current = [];
+
+        foreach ($blocks as $block) {
+            $joined = $current ? [...$current, '', ...$block] : $block;
+
+            if ($current && $this->length($joined) > self::BUDGET - 300) {
+                $pages[] = $current;
+                $joined  = $block;
+            }
+
+            $current = $joined;
+        }
+
+        $pages[] = $current;
+        $page    = min(max($page, 0), count($pages) - 1);
+        $lines   = ['📋 <b>Siap dicatat (' . count($blocks) . ')</b> · halaman ' . ($page + 1) . ' dari ' . count($pages), '', ...$pages[$page]];
+
+        $nav = array_values(array_filter([
+            $page > 0 ? ['text' => '⬅️ Sebelumnya', 'callback_data' => 'mut:ready:' . ($page - 1)] : null,
+            $page < count($pages) - 1 ? ['text' => 'Berikutnya ➡️', 'callback_data' => 'mut:ready:' . ($page + 1)] : null,
+        ]));
+
+        $this->show($chatId, $messageId, implode("\n", $lines), array_values(array_filter([
+            $nav ?: null,
+            [['text' => '✅ Catat ' . count($blocks) . ' mutasi', 'callback_data' => 'mut:ok']],
+            [['text' => '◀️ Kembali ke ringkasan', 'callback_data' => 'mut:sum']],
+        ])));
     }
 
     private function periodLine(array $statement, array $rows): string
@@ -501,27 +548,46 @@ class BankStatementFlow
         $lines = [
             '🟡 <b>Tinjau ' . (($state['position'] ?? 0) + 1) . ' dari ' . count($queue) . '</b>',
             '',
-            $this->rowHead($row, year: true),
+            '<b>' . $this->rowHead($row, year: true) . '</b>',
             '<i>' . e(Text::short($row['description'], 300)) . '</i>',
             ...$this->parsedLines($row),
             '',
             $result['candidates']
                 ? ($row['direction'] === 'in' ? 'Pembayaran invoice yang mana?' : 'Pembayaran expense/advance yang mana?')
-                : 'Belum ada kandidat.' . ($result['note'] ? "\n<i>" . e($result['note']) . '</i>' : '') . "\nTekan <b>🔎 Cari</b> lalu ketik nomor, nama klien/PIC, atau nominal.",
+                : 'Belum ada kandidat.',
         ];
 
+        if (! $result['candidates']) {
+            if ($result['note']) {
+                $lines[] = '<i>' . e($result['note']) . '</i>';
+            }
+
+            $lines[] = 'Tekan <b>🔎 Cari</b> lalu ketik nomor, nama klien/PIC, atau nominal.';
+        }
+
         $buttons = [];
+        $models  = $this->targetModels(array_merge(...array_map(fn ($candidate) => $candidate['targets'], $result['candidates'] ?: [['targets' => []]])));
+        $running = $this->runningBefore($state, $index);
 
         foreach ($result['candidates'] as $candidateIndex => $candidate) {
-            $chosen  = ($selection[$index] ?? null) === $candidateIndex;
-            // Alasan yang membuat kandidat ini cocok atau diragukan, dengan skor keyakinannya.
-            // Rincian lengkap untuk dua kandidat teratas; sisanya singkat (batas panjang pesan Telegram).
-            $details = $this->targetDetails($candidate['targets'], short: $candidateIndex >= 2);
-            $lines[] = ($candidateIndex + 1) . '. ' . ($chosen ? '✅ ' : '') . e($candidate['label'])
-                . (isset($candidate['confidence']) ? " — <b>{$candidate['confidence']}%</b>" : '')
-                . ($details ? "\n   " . implode("\n   ", $details) : '')
-                . ($candidate['reasons'] ?? [] ? "\n   " . implode("\n   ", array_map('e', array_slice($candidate['reasons'], 0, 7))) : '')
-                . ($candidate['note'] ? "\n   <i>→ " . e($candidate['note']) . '</i>' : '');
+            $chosen = ($selection[$index] ?? null) === $candidateIndex;
+            // Setiap pilihan satu blok: tagihan dan rinciannya, akibatnya bila dicatat,
+            // lalu alasan cocok/ragu. Dua teratas lengkap; sisanya ringkas (batas panjang pesan).
+            $copy    = $running;
+            $lines[] = '';
+            $lines[] = '<b>' . ($chosen ? '✅ ' : '') . 'Pilihan ' . ($candidateIndex + 1) . '</b>' . (isset($candidate['confidence']) ? " — <b>{$candidate['confidence']}%</b>" : '');
+
+            foreach ($candidate['targets'] as $target) {
+                array_push($lines, ...$this->targetBlock($target, $models, $copy, $candidateIndex < 2 ? 4 : 0));
+            }
+
+            if ($candidate['note'] ?? null) {
+                $lines[] = '📝 ' . e($candidate['note']);
+            }
+
+            foreach (array_slice($candidate['reasons'] ?? [], 0, $candidateIndex < 2 ? 8 : 3) as $reason) {
+                $lines[] = e($reason);
+            }
 
             $buttons[] = [[
                 'text'          => ($chosen ? '✅ ' : '') . ($candidateIndex + 1) . '. ' . Text::short($candidate['label'], 45),
@@ -771,12 +837,15 @@ class BankStatementFlow
             . ($closing !== null ? ' · saldo akhir di mutasi ' . $this->rupiah($closing)
                 . (abs((float) $account->current_balance - $closing) < 1 ? ' ✅' : ' (selisih ' . $this->rupiah(abs((float) $account->current_balance - $closing)) . ')') : '');
 
+        // Hasilnya per mutasi: invoice mana yang sekarang lunas atau berapa sisanya.
+        $tail = [];
+
         if ($outcome['failed']) {
-            $lines[] = '';
-            $lines[] = '⚠️ <b>Gagal dicatat (' . count($outcome['failed']) . ')</b>';
+            $tail[] = '';
+            $tail[] = '⚠️ <b>Gagal dicatat (' . count($outcome['failed']) . ')</b>';
 
             foreach (array_slice($outcome['failed'], 0, 10) as $failed) {
-                $lines[] = '• ' . $this->rowHead($failed['row']) . ': ' . e($failed['reason']);
+                $tail[] = '• ' . $this->rowHead($failed['row']) . ': ' . e($failed['reason']);
             }
         }
 
@@ -787,14 +856,53 @@ class BankStatementFlow
         ));
 
         if ($left > 0) {
-            $lines[] = '';
-            $lines[] = "❓ {$left} mutasi tanpa pasangan / belum dipilih tidak dicatat. Catat manual di ERP bila perlu, atau kirim ulang mutasinya nanti (yang sudah dicatat dilewati otomatis).";
+            $tail[] = '';
+            $tail[] = "❓ {$left} mutasi tanpa pasangan / belum dipilih tidak dicatat. Catat manual di ERP bila perlu, atau kirim ulang mutasinya nanti (yang sudah dicatat dilewati otomatis).";
         }
+
+        // Sisa tagihan sesudah tiap mutasi, bukan sesudah semuanya: dihitung mundur dari sisa
+        // terakhir (dua transfer untuk satu invoice: "sisa Rp …" lalu "LUNAS").
+        $later = [];
+        $after = [];
+
+        foreach (array_reverse($outcome['recorded'], true) as $number => $item) {
+            foreach ($item['targets'] as $position => $target) {
+                if ($target['type'] === 'invoice') {
+                    $after[$number][$position] = $later[$target['id']] ?? 0.0;
+                    $later[$target['id']]      = ($later[$target['id']] ?? 0.0) + (float) $target['amount'] + (float) ($target['withholding'] ?? 0);
+                }
+            }
+        }
+
+        $shown = 0;
+
+        foreach ($outcome['recorded'] as $number => $item) {
+            $block = ['<b>' . ($number + 1) . ') ' . $this->rowHead($item['row'], year: true) . '</b>'];
+
+            foreach ($item['targets'] as $position => $target) {
+                $block[] = $this->recordedLine($target, $after[$number][$position] ?? 0.0);
+            }
+
+            if ($this->length([...$lines, '', ...$block, '', '…dan 99 mutasi lainnya (lihat di ERP).', ...$tail]) > self::BUDGET) {
+                break;
+            }
+
+            $lines[] = '';
+            array_push($lines, ...$block);
+            $shown++;
+        }
+
+        if ($shown < count($outcome['recorded'])) {
+            $lines[] = '';
+            $lines[] = '…dan ' . (count($outcome['recorded']) - $shown) . ' mutasi lainnya (lihat di ERP).';
+        }
+
+        array_push($lines, ...$tail);
 
         $link    = url('/admin/bank-mutations');
         $buttons = str_starts_with($link, 'https://') ? [[['text' => 'Lihat di ERP', 'url' => $link]]] : [];
 
-        $this->telegram->sendMessage($chatId, implode("\n", $lines), $buttons);
+        $this->telegram->sendMessage($chatId, $this->fit(implode("\n", $lines)), $buttons);
     }
 
     private function toggleFees(int|string $chatId, int $messageId, array $state): void
@@ -905,25 +1013,7 @@ class BankStatementFlow
                     continue;
                 }
 
-                $lines[] = '🗓 ' . $this->day((string) $invoice->date, year: true) . ($invoice->due_date ? ' · jatuh tempo ' . $this->day((string) $invoice->due_date) : '')
-                    . ' · ' . e($this->paymentType($invoice));
-                $lines[] = '💰 Total ' . $this->rupiah($invoice->grand_total) . ' · terbayar ' . $this->rupiah($invoice->paid) . ' · sisa ' . $this->rupiah(\App\Services\InvoicePayment::remaining($invoice));
-
-                foreach ($items->take(4) as $item) {
-                    $lines[] = '📦 ' . e(Text::short($item, 70));
-                }
-
-                if ($items->count() > 4) {
-                    $lines[] = '📦 +' . ($items->count() - 4) . ' item lain';
-                }
-
-                if ($project = $invoice->projects->first()) {
-                    $lines[] = '📁 Project: ' . e(Text::short((string) $project->nama_project, 50));
-                }
-
-                if (filled($invoice->po_number)) {
-                    $lines[] = '🧾 PO: ' . e((string) $invoice->po_number);
-                }
+                array_push($lines, ...$this->invoiceLines($invoice, 4));
 
                 continue;
             }
@@ -939,6 +1029,331 @@ class BankStatementFlow
         }
 
         return $lines;
+    }
+
+    // =================================================================
+    // Blok mutasi → tagihan
+    // =================================================================
+
+    /**
+     * Blok setiap mutasi yang siap dicatat, berurutan seperti saat dicatat;
+     * sisa tagihan dihitung berjalan, jadi dua transfer untuk satu invoice
+     * terlihat "sisa jadi Rp …" lalu "LUNAS".
+     *
+     * @return array<int, array<int, string>> indeks baris => baris pesan
+     */
+    private function readyBlocks(array $state): array
+    {
+        $chosen = [];
+
+        foreach ($this->selection($state) as $index => $candidate) {
+            $chosen[$index] = $state['results'][$index]['candidates'][$candidate];
+        }
+
+        $models  = $this->targetModels(array_merge([], ...array_map(fn ($candidate) => $candidate['targets'], array_values($chosen))));
+        $running = [];
+        $blocks  = [];
+        $number  = 0;
+
+        foreach ($chosen as $index => $candidate) {
+            $lines = ['<b>' . ++$number . ') ' . $this->rowHead($state['rows'][$index], year: true) . '</b>' . (isset($state['picked'][$index]) ? ' <i>(dipilih)</i>' : ''), ...$this->partyLines($state['rows'][$index])];
+
+            foreach ($candidate['targets'] as $target) {
+                array_push($lines, ...$this->targetBlock($target, $models, $running, 3, compactRepeats: true));
+            }
+
+            if ($candidate['note'] ?? null) {
+                $lines[] = '📝 ' . e(Text::short($candidate['note'], 160));
+            }
+
+            $blocks[$index] = [...$lines, ...$this->reasonLines($candidate)];
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * Mutasi tanpa pasangan / bukan pembayaran tagihan: siapa, beritanya, dan
+     * keterangannya; maksimal empat, sisanya di Rincian semua baris.
+     *
+     * @param  array<int, int>  $indexes
+     * @return array<int, string>
+     */
+    private function looseBlocks(array $rows, array $results, array $indexes): array
+    {
+        $lines = [];
+
+        foreach (array_slice($indexes, 0, 4) as $index) {
+            $lines[] = '';
+            $lines[] = '<b>' . $this->rowHead($rows[$index], year: true) . '</b>';
+            array_push($lines, ...$this->partyLines($rows[$index]));
+
+            if ($results[$index]['note']) {
+                $lines[] = '<i>ℹ️ ' . e(Text::short($results[$index]['note'], 200)) . '</i>';
+            }
+        }
+
+        if (count($indexes) > 4) {
+            $lines[] = '';
+            $lines[] = '…dan ' . (count($indexes) - 4) . ' lainnya (lihat 📄 Rincian semua baris).';
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Pengirim/penerima dan berita transfer, tanpa kode bank.
+     *
+     * @return array<int, string>
+     */
+    private function partyLines(array $row): array
+    {
+        $bca = BcaDescription::parse($row['description']);
+
+        if ($bca['sender'] === '') {
+            return ['💬 ' . e(Text::short($bca['counterparty'] !== '' ? $bca['counterparty'] : $row['description'], 90))];
+        }
+
+        return array_values(array_filter([
+            '👤 ' . ($row['direction'] === 'in' ? 'Dari' : 'Ke') . ' <b>' . e($bca['sender']) . '</b>',
+            $bca['remark'] !== '' ? '💬 ' . e(Text::short($bca['remark'], 90)) : null,
+        ]));
+    }
+
+    /**
+     * Invoice, expense, dan advance dari target-target, dimuat sekali.
+     *
+     * @return array{invoice: \Illuminate\Support\Collection, expense: \Illuminate\Support\Collection, advance: \Illuminate\Support\Collection}
+     */
+    private function targetModels(array $targets): array
+    {
+        $ids = collect($targets)->filter(fn ($target) => isset($target['id']))->groupBy('type')->map(fn ($group) => $group->pluck('id')->unique()->all());
+
+        return [
+            'invoice' => Invoice::with(['invoicesItems', 'projects', 'parentInvoice', 'deal'])->whereIn('id', $ids->get('invoice', []))->get()->keyBy('id'),
+            'expense' => Expense::with(['project', 'user'])->whereIn('id', $ids->get('expense', []))->get()->keyBy('id'),
+            'advance' => Advance::with(['project', 'user'])->whereIn('id', $ids->get('advance', []))->get()->keyBy('id'),
+        ];
+    }
+
+    /**
+     * Satu tagihan: nomor dan klien, rinciannya ($items baris item; 0 = ringkas),
+     * lalu akibatnya bila dicatat.
+     *
+     * @param  array<string, float>  $running  sisa tagihan setelah mutasi sebelumnya di daftar yang sama
+     * @return array<int, string>
+     */
+    private function targetBlock(array $target, array $models, array &$running, int $items, bool $compactRepeats = false): array
+    {
+        if (! isset($target['id'])) {
+            $interest = $target['type'] === 'bank_interest';
+
+            return [
+                '➡️ <b>' . ($interest ? 'Bunga / jasa giro bank' : 'Biaya / pajak bank') . '</b>',
+                '   ✍️ Dicatat sebagai transaksi ' . ($interest ? 'masuk ' : 'keluar ') . '<b>' . $this->rupiah($target['amount']) . '</b> supaya saldo ERP sama dengan bank',
+            ];
+        }
+
+        if ($target['type'] === 'invoice') {
+            $invoice = $models['invoice']->get($target['id']);
+
+            if (! $invoice) {
+                return ["➡️ Invoice #{$target['id']} tidak ditemukan (mungkin baru dihapus)"];
+            }
+
+            $key      = "invoice:{$invoice->id}";
+            $first    = ! array_key_exists($key, $running);
+            $before   = $running[$key] ?? InvoicePayment::remaining($invoice);
+            $withheld = (float) ($target['withholding'] ?? 0);
+            $after    = round($before - (float) $target['amount'] - $withheld, 2);
+            $running[$key] = $after;
+
+            $lines = ['➡️ <b>' . ($invoice->type === 'estimate' ? 'Proforma ' : 'Invoice ') . e($invoice->uuid) . '</b> · ' . e(Text::short(ClientLabel::invoice($invoice), 45))];
+
+            // Invoice yang sama dengan mutasi sebelumnya di daftar (transfer dipecah): rinciannya tidak diulang.
+            if ($items > 0 && ($first || ! $compactRepeats)) {
+                foreach ($this->invoiceLines($invoice, $items) as $line) {
+                    $lines[] = "   {$line}";
+                }
+            } elseif ($items > 0) {
+                $lines[] = '   ↑ rincian sama dengan mutasi sebelumnya';
+            }
+
+            $lines[] = '   ✍️ Masuk <b>' . $this->rupiah($target['amount']) . '</b>'
+                . ($withheld > 0 ? ' + potongan ' . e((string) ($target['withholding_label'] ?? 'PPh 23')) . ' ' . $this->rupiah($withheld) : '')
+                . ' → ' . match (true) {
+                    $after < -1 => '⚠️ lebih ' . $this->rupiah(-$after) . ' dari sisa tagihan',
+                    $after <= 1 => '<b>LUNAS</b>',
+                    default     => 'sisa jadi ' . $this->rupiah($after),
+                }
+                . ($invoice->type === 'estimate' && $first ? ' · proforma dijadikan invoice dulu' : '');
+
+            return $lines;
+        }
+
+        $payee = $models[$target['type']]->get($target['id']) ?? null;
+
+        if (! $payee) {
+            return ['➡️ ' . ucfirst($target['type']) . " #{$target['id']} tidak ditemukan (mungkin baru dihapus)"];
+        }
+
+        $what      = $payee instanceof Expense ? $payee->keterangan_expense : $payee->keterangan_advance;
+        $requested = (float) $payee->amount;
+        $name      = $payee->user ? (trim("{$payee->user->firstname} {$payee->user->lastname}") ?: (string) $payee->user->username) : '-';
+
+        return array_values(array_filter([
+            '➡️ <b>' . ucfirst($target['type']) . " #{$payee->id}</b> · " . e($name),
+            $items > 0 ? '   🗒 ' . e(Text::short((string) $what, 90)) . ($payee->category ? ' · 🏷 ' . e($payee->category) : '') : null,
+            $items > 0 ? '   🗓 diajukan ' . $this->day((string) $payee->submission_date, year: true) . ($payee->project ? ' · 📁 ' . e(Text::short((string) $payee->project->nama_project, 40)) : '') : null,
+            '   ✍️ Dibayarkan <b>' . $this->rupiah($target['amount']) . '</b>'
+                . ((float) $target['amount'] < $requested - 1 ? ' dari pengajuan ' . $this->rupiah($requested) . ' (sebagian)' : ' = nominal pengajuan'),
+        ]));
+    }
+
+    /**
+     * Rincian invoice: tanggal dan jenis pembayaran, total/terbayar/sisa, item, project, PO.
+     *
+     * @return array<int, string>
+     */
+    private function invoiceLines(Invoice $invoice, int $maxItems): array
+    {
+        $items = $invoice->invoicesItems->map(fn ($item) => trim((string) ($item->item ?: $item->description))
+            . ((float) $item->qty > 1 ? ' — ' . rtrim(rtrim(number_format((float) $item->qty, 2, ',', '.'), '0'), ',') . ' × ' . $this->rupiah($item->price) : ' — ' . $this->rupiah($item->total ?: $item->price)))
+            ->filter(fn ($line) => ! str_starts_with($line, ' —'));
+
+        $lines = [
+            '🗓 ' . $this->day((string) $invoice->date, year: true) . ($invoice->due_date ? ' · jatuh tempo ' . $this->day((string) $invoice->due_date) : '') . ' · ' . e($this->paymentType($invoice)),
+            '💰 Total ' . $this->rupiah($invoice->grand_total) . ' · terbayar ' . $this->rupiah($invoice->paid) . ' · sisa ' . $this->rupiah(InvoicePayment::remaining($invoice)),
+        ];
+
+        foreach ($items->take($maxItems) as $item) {
+            $lines[] = '📦 ' . e(Text::short($item, 70));
+        }
+
+        if ($items->count() > $maxItems) {
+            $lines[] = '📦 +' . ($items->count() - $maxItems) . ' item lain';
+        }
+
+        if ($project = $invoice->projects->first()) {
+            $lines[] = '📁 Project: ' . e(Text::short((string) $project->nama_project, 50));
+        }
+
+        if (filled($invoice->po_number) && $invoice->po_number !== '-') {
+            $lines[] = '🧾 PO: ' . e((string) $invoice->po_number);
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Keyakinan dan alasan utamanya (✓), serta keraguannya (✗) bila ada.
+     *
+     * @return array<int, string>
+     */
+    private function reasonLines(array $candidate): array
+    {
+        if (! collect($candidate['targets'])->contains(fn ($target) => isset($target['id']))) {
+            return [];
+        }
+
+        $reasons = collect($candidate['reasons'] ?? []);
+        $short   = fn (string $reason) => Text::short(trim(mb_substr($reason, 1)), 48);
+        $good    = $reasons->filter(fn ($reason) => str_starts_with($reason, '✓'))->map($short)->take(3);
+        $bad     = $reasons->filter(fn ($reason) => str_starts_with($reason, '✗'))->map($short)->take(2);
+
+        return array_values(array_filter([
+            isset($candidate['confidence']) ? "🎯 Yakin <b>{$candidate['confidence']}%</b>" . ($good->isNotEmpty() ? ': ' . e($good->implode(' · ')) : '') : null,
+            $bad->isNotEmpty() ? '⚠️ ' . e($bad->implode(' · ')) : null,
+        ]));
+    }
+
+    /**
+     * Sisa tagihan setelah mutasi terpilih sebelum baris ini dicatat, untuk
+     * layar Tinjau.
+     *
+     * @return array<string, float>
+     */
+    private function runningBefore(array $state, int $index): array
+    {
+        $targets = [];
+
+        foreach ($this->selection($state) as $other => $candidate) {
+            if ($other < $index) {
+                array_push($targets, ...$state['results'][$other]['candidates'][$candidate]['targets']);
+            }
+        }
+
+        $models  = $this->targetModels($targets);
+        $running = [];
+
+        foreach ($targets as $target) {
+            if ($target['type'] === 'invoice' && ($invoice = $models['invoice']->get($target['id']))) {
+                $key           = "invoice:{$invoice->id}";
+                $running[$key] = ($running[$key] ?? InvoicePayment::remaining($invoice)) - (float) $target['amount'] - (float) ($target['withholding'] ?? 0);
+            }
+        }
+
+        return $running;
+    }
+
+    /**
+     * Hasil pencatatan satu target, dari data terbaru.
+     */
+    private function recordedLine(array $target, float $paidLater = 0.0): string
+    {
+        if (! isset($target['id'])) {
+            return '➡️ ' . ($target['type'] === 'bank_interest' ? 'Bunga bank' : 'Biaya / pajak bank') . ' dicatat ' . $this->rupiah($target['amount']);
+        }
+
+        if ($target['type'] === 'invoice') {
+            $invoice = Invoice::with('deal')->find($target['id']);
+
+            if (! $invoice) {
+                return "➡️ Invoice #{$target['id']}: dicatat";
+            }
+
+            // $paidLater: dibayar mutasi berikutnya di daftar yang sama.
+            $remaining = InvoicePayment::remaining($invoice) + $paidLater;
+
+            return '➡️ Invoice <b>' . e($invoice->uuid) . '</b>' . (isset($target['converted_from']) ? ' (dari proforma ' . e($target['converted_from']) . ')' : '')
+                . ' · ' . e(Text::short(ClientLabel::invoice($invoice), 35))
+                . ': masuk ' . $this->rupiah($target['amount'])
+                . (($target['withholding'] ?? 0) > 0 ? ' + potongan ' . $this->rupiah($target['withholding']) : '')
+                . ' → ' . ($remaining <= 1 || ($invoice->status === 'paid' && $paidLater <= 1) ? '<b>LUNAS</b>' : 'sisa ' . $this->rupiah($remaining));
+        }
+
+        return '➡️ ' . ucfirst($target['type']) . " #{$target['id']}: dibayarkan " . $this->rupiah($target['amount']);
+    }
+
+    /**
+     * Panjang pesan seperti yang dihitung Telegram (unit UTF-16, tanpa tag HTML).
+     *
+     * @param  array<int, string>  $lines
+     */
+    private function length(array $lines): int
+    {
+        $text = html_entity_decode(strip_tags(implode("\n", $lines)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return intdiv(strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')), 2);
+    }
+
+    /**
+     * Pengaman batas 4096: baris paling bawah dibuang bila pesan terlalu
+     * panjang (setiap baris menutup tag HTML-nya sendiri).
+     */
+    private function fit(string $html): string
+    {
+        $lines = explode("\n", $html);
+
+        if ($this->length($lines) <= 4000) {
+            return $html;
+        }
+
+        while (count($lines) > 1 && $this->length([...$lines, '…']) > 4000) {
+            array_pop($lines);
+        }
+
+        return implode("\n", [...$lines, '…']);
     }
 
     private function paymentType(\App\Models\Invoice $invoice): string
@@ -1002,6 +1417,8 @@ class BankStatementFlow
 
     private function show(int|string $chatId, ?int $messageId, string $html, array $buttons): void
     {
+        $html = $this->fit($html);
+
         if ($messageId && $this->telegram->editMessage($chatId, $messageId, $html, $buttons)) {
             return;
         }
