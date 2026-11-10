@@ -24,6 +24,9 @@
         <div class="rl-item" role="row" wire:key="item-{{ $item['id'] }}">
             <div role="cell">
                 <div class="name">{{ $item['name'] }}</div>
+                @if(filled($item['receipt_date'] ?? null))
+                    <div class="date">Tanggal struk {{ \Carbon\Carbon::parse($item['receipt_date'])->locale('id')->translatedFormat('j M Y') }}</div>
+                @endif
                 @if(filled($item['description']))
                     <div class="desc">{{ $item['description'] }}</div>
                 @endif
@@ -35,6 +38,13 @@
                                 <x-filament::icon :icon="$file['is_image'] ? 'heroicon-m-photo' : 'heroicon-m-document-text'" class="h-3.5 w-3.5" />
                                 {{ $fileLabel($file['original_name']) }}
                             </a>
+                            {{-- Foto sebelum dirapikan seperti scan: untuk hasil olahan yang kurang jelas. --}}
+                            @if(! empty($file['original']))
+                                <a href="{{ url('storage/' . $file['original']) }}" target="_blank" rel="noopener" class="rl-file" title="Foto asli {{ $file['original_name'] }}">
+                                    <x-filament::icon icon="heroicon-m-photo" class="h-3.5 w-3.5" />
+                                    Foto asli
+                                </a>
+                            @endif
                         @endforeach
                     </div>
                 @endif

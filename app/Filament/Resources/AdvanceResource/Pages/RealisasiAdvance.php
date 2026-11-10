@@ -38,6 +38,9 @@ class RealisasiAdvance extends Page
     public string $batchNotes = '';
     /** @var array<int, array<string, mixed>> */
     public $batchItems = [];
+
+    /** @var array<string, bool> file unggahan yang tanggalnya sudah dibaca AI */
+    public array $readFiles = [];
     /** @var UploadedFile|null */
     public $returnAttachment = null;
     /** @var array<int, array<string, mixed>> */
@@ -315,10 +318,8 @@ class RealisasiAdvance extends Page
 
     public function openBatchModal(): void
     {
-        $this->reset(['batchNotes', 'uploadedFiles', 'batchItems']);
-        $this->batchItems = [
-            ['name' => '', 'description' => '', 'quantity' => 1, 'price' => 0]
-        ];
+        $this->reset(['batchNotes', 'uploadedFiles', 'batchItems', 'readFiles']);
+        $this->batchItems = [self::emptyItem()];
         $this->showBatchModal = true;
         $this->dispatch('open-modal', id: 'realisasi-batch');
     }
@@ -352,7 +353,48 @@ class RealisasiAdvance extends Page
 
     public function addBatchItem(): void
     {
-        $this->batchItems[] = ['name' => '', 'description' => '', 'quantity' => 1, 'price' => 0];
+        $this->batchItems[] = self::emptyItem();
+    }
+
+    /** receipt_date: tanggal pembelian di struk; date_ai: diisi dari bacaan AI. */
+    private static function emptyItem(): array
+    {
+        return ['name' => '', 'description' => '', 'quantity' => 1, 'price' => 0, 'receipt_date' => null, 'date_ai' => false];
+    }
+
+    /**
+     * Begitu bukti diunggah, AI membaca tanggal pembelian di struk, invoice,
+     * atau bukti bayar dan mengisinya ke item pertama yang tanggalnya masih
+     * kosong. Realisasi sering dikirim jauh setelah uangnya dipakai, jadi
+     * tanggal kirim tidak menunjukkan kapan pembelian itu dibayar.
+     */
+    public function updatedUploadedFiles(): void
+    {
+        $parser = app(\App\Services\Telegram\SubmissionParser::class);
+
+        foreach ((array) $this->uploadedFiles as $file) {
+            if (! $file instanceof UploadedFile || isset($this->readFiles[$file->getFilename()])) {
+                continue;
+            }
+
+            $this->readFiles[$file->getFilename()] = true;
+            $mime = (string) $file->getMimeType();
+
+            if (! in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], true) || $file->getSize() > 5 * 1024 * 1024) {
+                continue;
+            }
+
+            $date = RealisasiService::receiptDate($parser->readReceipt(['mime' => $mime, 'data' => (string) $file->get()])['date'] ?? null);
+
+            foreach ($this->batchItems as $index => $item) {
+                if ($date && empty($item['receipt_date'])) {
+                    $this->batchItems[$index]['receipt_date'] = $date;
+                    $this->batchItems[$index]['date_ai']      = true;
+
+                    break;
+                }
+            }
+        }
     }
 
     public function removeBatchItem(int $index): void
@@ -411,6 +453,7 @@ class RealisasiAdvance extends Page
                             'description' => $item['description'] ?? '',
                             'quantity' => $item['quantity'] ?? 1,
                             'price' => $item['price'],
+                            'receipt_date' => $item['receipt_date'] ?? null,
                         ];
                     }
                 }

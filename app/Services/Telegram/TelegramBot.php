@@ -1380,8 +1380,22 @@ class TelegramBot
         return collect($draft->receipts)
             ->map(fn (array $receipt, int $index) => ($index + 1) . '. 📎 ' . e($this->receiptName($draft, $index))
                 . ' — ' . ($receipt['amount'] ? $this->rupiah($receipt['amount']) : '❓')
+                . (! empty($receipt['date']) ? ' · 🗓 ' . Carbon::parse($receipt['date'])->locale('id')->translatedFormat('j M Y') : '')
                 . ($withItems && ! empty($receipt['items']) ? "\n" . rtrim($this->itemLines($receipt['items'], 3, '     ')) : ''))
             ->implode("\n");
+    }
+
+    /**
+     * Tanggal pembelian di struk realisasi: dibaca AI, atau tanggal draft bila
+     * tidak terbaca (bisa diubah lewat ✏️ Tanggal).
+     */
+    private function receiptDateLine(Draft $draft): string
+    {
+        $date = Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y');
+
+        return ! empty($draft->attachment['date']) && $draft->attachment['date'] === $draft->date
+            ? "🗓 Tanggal struk: <b>{$date}</b> (dibaca dari struk)"
+            : "🗓 Tanggal struk: <b>{$date}</b>" . (! empty($draft->attachment) && empty($draft->attachment['date']) ? ' <i>(tidak terbaca di struk, ubah bila beda)</i>' : '');
     }
 
     private function receiptName(Draft $draft, int $index): string
@@ -1576,7 +1590,7 @@ class TelegramBot
                 . 'Periksa lagi, lalu tekan <b>Kirim</b>.',
             [
                 [$this->button('✅ Kirim', $draft, 'submit')],
-                [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description')],
+                [$this->button('✏️ Nominal', $draft, 'edit', 'amount'), $this->button('✏️ Keterangan', $draft, 'edit', 'description'), $this->button('✏️ Tanggal', $draft, 'edit', 'date')],
                 [$this->button('🔁 Advance lain', $draft, 'advlist'), $this->button('💰 Jadikan Expense', $draft, 'type', 'expense')],
                 [$this->button('❌ Batal', $draft, 'cancel')],
             ]
@@ -1736,6 +1750,7 @@ class TelegramBot
             '🗒 Item: ' . e($draft->description),
             $draft->lineItems() ? "🧾 Rincian:\n" . rtrim($this->itemLines($draft->lineItems(), 12)) : null,
             '💰 Nominal: <b>' . $this->rupiah($draft->amount) . '</b>',
+            $this->receiptDateLine($draft),
             '📎 Lampiran: ' . $this->attachmentLabel($draft),
             '📉 Sisa advance: ' . $this->rupiah($remaining) . ' → ' . $this->rupiah($remaining - $draft->amount),
         ]));
@@ -1784,6 +1799,8 @@ class TelegramBot
                 'description' => $this->itemsText($receipt['items'] ?? []) ?? $draft->description,
                 'quantity'    => 1,
                 'price'       => $receipt['amount'],
+                // Tanggal pembelian di struk (AI), atau tanggal draft bila tidak terbaca.
+                'receipt_date' => $receipt['date'] ?? $draft->date,
                 'files'       => [$fileRow($files[$index])],
             ])->all()
             : [[
@@ -1791,6 +1808,7 @@ class TelegramBot
                 'description' => $this->itemsText($draft->lineItems()) ?? $draft->description,
                 'quantity'    => 1,
                 'price'       => $draft->amount,
+                'receipt_date' => $draft->date,
                 'files'       => $files ? [$fileRow($files[0])] : [],
             ]];
 

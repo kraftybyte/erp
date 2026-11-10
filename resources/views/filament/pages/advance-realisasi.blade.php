@@ -180,6 +180,12 @@
                                 </x-filament::input.wrapper>
                             </div>
                             <div>
+                                <label class="rl-label" for="item-date-{{ $index }}">Tanggal struk</label>
+                                <x-filament::input.wrapper>
+                                    <x-filament::input id="item-date-{{ $index }}" type="date" max="{{ today()->toDateString() }}" wire:model="batchItems.{{ $index }}.receipt_date" />
+                                </x-filament::input.wrapper>
+                            </div>
+                            <div>
                                 <label class="rl-label" for="item-qty-{{ $index }}">Qty</label>
                                 <x-filament::input.wrapper>
                                     <x-filament::input id="item-qty-{{ $index }}" type="number" min="1" inputmode="numeric" wire:model.live.debounce.400ms="batchItems.{{ $index }}.quantity" />
@@ -195,6 +201,9 @@
                         <div class="mt-2 flex items-center justify-between text-sm">
                             <span class="text-gray-500 dark:text-gray-300">
                                 Subtotal <strong class="text-gray-950 dark:text-white">{{ $rp(((float) ($item['price'] ?: 0)) * ((float) ($item['quantity'] ?: 1))) }}</strong>
+                                @if(! empty($item['date_ai']) && filled($item['receipt_date']))
+                                    · tanggal dibaca dari struk
+                                @endif
                             </span>
                             @if(count($batchItems) > 1)
                                 <x-filament::link tag="button" type="button" color="danger" size="sm" wire:click="removeBatchItem({{ $index }})">Hapus item</x-filament::link>

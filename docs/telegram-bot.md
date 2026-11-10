@@ -54,6 +54,15 @@ Bot : 🧾 Draft Realisasi
   masih punya advance terbuka ditanyakan dulu ("dibayar dari advance itu?").
   Expense yang ditulis jelas tetap diberi peringatan dan tombol "Jadikan realisasi".
 - `/status` menampilkan progres setiap advance terbuka.
+- **Tanggal struk:** setiap item realisasi menyimpan tanggal pembelian yang dibaca
+  AI dari struk, invoice, atau bukti bayar (`realisasi_items.receipt_date`), karena
+  realisasi bisa dikirim jauh setelah uangnya dipakai. Draft bot menampilkannya
+  (✏️ Tanggal untuk mengubah); di ERP, tanggalnya terisi begitu bukti diunggah di
+  Tambah batch. Tampil di halaman Realisasi dan kolom *Tanggal struk* di Excel.
+- **Screenshot dan bukti digital** (detail order aplikasi, bukti transfer,
+  e-receipt) disimpan apa adanya; hanya foto kertas yang dirapikan seperti scan
+  (`ReceiptScanner::isDigital()`). Hasil scan lama tetap punya tautan *Foto asli*
+  di halaman Realisasi.
 
 **Bayar paralel (petty cash).** Settings → General → Persetujuan → *Advance
 bayar paralel*. Selama menyala, advance yang sudah **Disetujui** langsung

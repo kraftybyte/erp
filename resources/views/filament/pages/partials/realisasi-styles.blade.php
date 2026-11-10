@@ -76,6 +76,8 @@
     .rl-form-item { border-radius: .75rem; padding: .875rem; background: rgba(var(--gray-950), .03); }
     .dark .rl-form-item { background: rgba(255, 255, 255, .04); }
     .rl-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 9rem; gap: .5rem; align-items: end; }
+    .rl-item .date { margin-top: .125rem; font-size: .75rem; color: rgb(var(--gray-500)); }
+    .dark .rl-item .date { color: rgb(var(--gray-400)); }
     .rl-label { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 500; color: rgb(var(--gray-600)); }
     .dark .rl-label { color: rgb(var(--gray-300)); }
     .rl-total { display: flex; justify-content: space-between; align-items: baseline; padding: .75rem 1rem; border-radius: .75rem; background: rgba(var(--primary-500), .07); font-variant-numeric: tabular-nums; }

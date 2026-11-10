@@ -203,6 +203,8 @@ class ExpenseAdvanceExport
             $this->overview->projectLabel($advances[$batch->advance_id]->project),
             'Batch ' . $batch->batch_number,
             $batch->created_at,
+            // Tanggal pembelian di struk/bukti bayar (dibaca AI), bisa jauh sebelum dicatat.
+            $item->receipt_date,
             $item->name,
             $item->description,
             (float) $item->quantity,
@@ -219,7 +221,8 @@ class ExpenseAdvanceExport
             ['Pengaju', 20, 'text'],
             ['Project', 32, 'wrap'],
             ['Batch', 9, 'text'],
-            ['Tanggal', 13, 'date'],
+            ['Dicatat', 13, 'date'],
+            ['Tanggal struk', 13, 'date'],
             ['Item', 28, 'wrap'],
             ['Keterangan', 40, 'wrap'],
             ['Qty', 7, 'number'],

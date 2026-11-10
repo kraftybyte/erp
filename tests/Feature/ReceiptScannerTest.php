@@ -190,6 +190,28 @@ class ReceiptScannerTest extends TestCase
         $this->assertSame([], Storage::disk('public')->allFiles());
     }
 
+    public function test_screenshot_dan_bukti_digital_disimpan_apa_adanya(): void
+    {
+        $scanner = app(ReceiptScanner::class);
+
+        // Dikirim lewat Telegram sebagai foto: JPEG, tanpa noise kamera.
+        $jpeg = $this->jpeg($this->screenshot(), camera: false);
+        $this->assertNull($scanner->scan($jpeg), 'Screenshot tidak diolah seperti foto kertas.');
+
+        $stored = $scanner->store($jpeg, 'image/jpeg', 'realisasi/tes');
+        $this->assertFalse($stored['scanned']);
+        $this->assertSame($jpeg, Storage::disk('public')->get($stored['path']), 'Disimpan persis seperti dikirim.');
+        $this->assertNull(ReceiptScanner::original($stored['path']));
+
+        // PNG (dikirim sebagai file) juga.
+        ob_start();
+        imagepng($this->screenshot());
+        $this->assertNull($scanner->scan((string) ob_get_clean()));
+
+        // Foto kamera kertas yang memenuhi gambar tetap diolah.
+        $this->assertFalse($scanner->isDigital(imagecreatefromstring($this->photo(900, 1200, [[0, 0], [899, 0], [899, 1199], [0, 1199]]))));
+    }
+
     public function test_pdf_dan_file_rusak_disimpan_apa_adanya(): void
     {
         $scanner = app(ReceiptScanner::class);
@@ -254,12 +276,63 @@ class ReceiptScannerTest extends TestCase
         }
     }
 
-    private function jpeg(GdImage $image): string
+    /**
+     * Foto uji diberi noise sensor seperti foto kamera; tanpa noise, warna yang
+     * rata sempurna membuatnya dikenali sebagai screenshot (tidak diolah).
+     */
+    private function jpeg(GdImage $image, bool $camera = true): string
     {
+        if ($camera) {
+            mt_srand(7);
+            $tile = imagecreatetruecolor(61, 59);
+
+            for ($y = 0; $y < 59; $y++) {
+                for ($x = 0; $x < 61; $x++) {
+                    imagesetpixel($tile, $x, $y, (mt_rand(0, 255) << 16) | (mt_rand(0, 255) << 8) | mt_rand(0, 255));
+                }
+            }
+
+            for ($y = 0; $y < imagesy($image); $y += 59) {
+                for ($x = 0; $x < imagesx($image); $x += 61) {
+                    imagecopymerge($image, $tile, $x, $y, 0, 0, 61, 59, 5);
+                }
+            }
+        }
+
         ob_start();
         imagejpeg($image, null, 90);
 
         return (string) ob_get_clean();
+    }
+
+    /**
+     * Screenshot aplikasi (seperti detail order ojek/kurir): latar putih, kartu
+     * abu-abu muda, teks abu-abu, foto kecil, dan tombol merah.
+     */
+    private function screenshot(): GdImage
+    {
+        $image = imagecreatetruecolor(720, 1560);
+        imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
+        imagefilledrectangle($image, 0, 0, 719, 60, imagecolorallocate($image, 250, 250, 250));
+        imagefilledrectangle($image, 30, 400, 690, 900, imagecolorallocate($image, 245, 246, 247));
+        imagefilledrectangle($image, 90, 520, 650, 620, imagecolorallocate($image, 229, 245, 244));
+        imagefilledrectangle($image, 30, 1440, 690, 1520, imagecolorallocate($image, 230, 30, 40));
+
+        $dark = imagecolorallocate($image, 20, 20, 20);
+        $gray = imagecolorallocate($image, 140, 140, 140);
+        for ($y = 120; $y < 1400; $y += 46) {
+            imagestring($image, 5, 60, $y, 'CV Contoh Jaya - Rp281.663 - Hari ini, 13:20', $y % 92 ? $gray : $dark);
+        }
+
+        // Foto kecil di dalam screenshot.
+        mt_srand(5);
+        for ($y = 530; $y < 610; $y++) {
+            for ($x = 100; $x < 180; $x++) {
+                imagesetpixel($image, $x, $y, mt_rand(0, 0xFFFFFF));
+            }
+        }
+
+        return $image;
     }
 
     private function scan(string $jpeg): GdImage

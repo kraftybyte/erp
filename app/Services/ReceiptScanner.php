@@ -8,6 +8,9 @@ use Illuminate\Support\Str;
 
 /**
  * Foto struk/nota dibuat seperti hasil scan (ala CamScanner), otomatis:
+ * 0. gambar digital (screenshot aplikasi, bukti transfer, e-receipt) tidak
+ *    diolah sama sekali: sudah tajam, dan diolah seperti foto kertas justru
+ *    merusaknya (huruf menebal/pecah, teks abu-abu hilang, foto jadi hitam);
  * 1. rotasi EXIF dari HP diterapkan;
  * 2. kertas struk dicari dari warnanya (terang dan tidak berwarna; kayu,
  *    kulit, dan benda berwarna tidak ikut), baris demi baris, lalu tepinya
@@ -49,6 +52,11 @@ class ReceiptScanner
     // Piksel "kertas": cukup terang dan hampir tidak berwarna.
     private const PAPER_MIN_GRAY       = 105;
     private const PAPER_MAX_SATURATION = 0.18;
+
+    // Gambar digital: tiga warna terbanyak menutupi sebagian besar gambar
+    // (latar dan kartu UI yang rata sempurna). Terukur: screenshot 0,70–0,93;
+    // foto struk 0,02–0,05; foto produk paling tinggi 0,25.
+    private const DIGITAL_TOP_COLORS = 0.40;
 
     public function __construct(private GeminiService $gemini) {}
 
@@ -124,7 +132,7 @@ class ReceiptScanner
         // Dikecilkan dulu baru diputar: memutar foto penuh menggandakan memorinya.
         $image = $this->orient($this->workingCopy($image), $data);
 
-        if (imagesx($image) < 150 || imagesy($image) < 150) {
+        if (imagesx($image) < 150 || imagesy($image) < 150 || $this->isDigital($image)) {
             return null;
         }
 
@@ -160,6 +168,32 @@ class ReceiptScanner
             8       => imagerotate($image, 90, 0),
             default => $image,
         };
+    }
+
+    /**
+     * Screenshot atau dokumen digital: warnanya rata sempurna (latar putih,
+     * kartu abu-abu, tombol berwarna), sedangkan foto kamera selalu punya
+     * noise sehingga hampir tidak ada dua piksel yang persis sama warnanya.
+     */
+    public function isDigital(GdImage $image): bool
+    {
+        $w      = imagesx($image);
+        $h      = imagesy($image);
+        $step   = max(1, intdiv(max($w, $h), 400));
+        $counts = [];
+        $total  = 0;
+
+        for ($y = 0; $y < $h; $y += $step) {
+            for ($x = 0; $x < $w; $x += $step) {
+                $color          = imagecolorat($image, $x, $y) & 0xFFFFFF;
+                $counts[$color] = ($counts[$color] ?? 0) + 1;
+                $total++;
+            }
+        }
+
+        rsort($counts);
+
+        return $total > 0 && array_sum(array_slice($counts, 0, 3)) / $total >= self::DIGITAL_TOP_COLORS;
     }
 
     private function workingCopy(GdImage $image): GdImage
