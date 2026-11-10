@@ -23,6 +23,7 @@
 #
 #   bash migrate-cwp.sh upgrade ~/erp.domain.com    # backup → kode baru → composer update → migrate
 #   bash migrate-cwp.sh rollback ~/erp.domain.com   # kembali ke kondisi sebelum upgrade terakhir
+#   bash migrate-cwp.sh check ~/erp.domain.com      # bandingkan database dengan migrasi terbaru (baca saja)
 #
 # Opsi lewat variabel lingkungan (melewati pertanyaan): CWP_USER, DOMAIN, SITE,
 # SRC (user@host server lama), SRC_PORT, SRC_PATH, DB_NAME, DB_USER, DB_PASS,
@@ -268,6 +269,43 @@ restore_backup() { # restore_backup BACKUP_DIR
     fix_permissions
     info "Kode, paket, dan database kembali seperti sebelum upgrade."
 }
+
+# check <folder>: bandingkan database situs dengan migrasi versi terbaru (hanya membaca).
+if [ "${1:-}" = check ]; then
+    SITE=${2:-${SITE:-}}
+    [ -n "$SITE" ] && [ -f "$SITE/.env" ] || die "Pemakaian: bash migrate-cwp.sh check /path/ke/folder/website"
+    SITE=$(cd "$SITE" && pwd)
+    PHP=$(pick_php)
+    site_mysql mysql -e 'SELECT 1' >/dev/null || die "Tidak bisa masuk ke database situs dengan kredensial di .env."
+
+    say "Cek database $(env_value "$SITE/.env" DB_DATABASE) terhadap kode terbaru (tidak ada yang diubah)"
+    mkdir -p "$WORK/code"
+    curl -fsSL "$REPO_TARBALL" | tar xz --strip-components=1 -C "$WORK/code" || die "Kode tidak bisa diunduh dari GitHub."
+    site_mysql mysql -N -e 'SELECT migration FROM migrations' | tr -d '\r' | sort > "$WORK/ran.txt"
+    site_mysql mysql -N -e 'SHOW TABLES' | tr -d '\r' | sort > "$WORK/tables.txt"
+
+    pending=() missing=()
+    for file in "$WORK"/code/database/migrations/*.php "$WORK"/code/database/settings/*.php; do
+        name=$(basename "$file" .php)
+        if ! grep -qxF "$name" "$WORK/ran.txt"; then
+            pending+=("$name")
+            continue
+        fi
+        for table in $(grep -oE "Schema::create\(['\"][A-Za-z0-9_]+['\"]" "$file" | sed -E "s/.*\(['\"]//; s/['\"]$//" | sort -u); do
+            grep -qxF "$table" "$WORK/tables.txt" || missing+=("$table ← $name")
+        done
+    done
+
+    info "Tabel di database: $(wc -l < "$WORK/tables.txt") · migrasi tercatat: $(wc -l < "$WORK/ran.txt") · migrasi belum jalan: ${#pending[@]}"
+    say "Tercatat sudah jalan, tapi tabelnya tidak ada (${#missing[@]})"
+    for row in "${missing[@]}"; do info "$row"; done
+    say "Migrasi yang akan dijalankan saat upgrade (${#pending[@]})"
+    for row in "${pending[@]}"; do info "$row"; done
+    say "Tabel di database"
+    tr '\n' ' ' < "$WORK/tables.txt" | fold -s -w 110 | sed 's/^/   /'
+    echo
+    exit 0
+fi
 
 if [ "${1:-}" = upgrade ] || [ "${1:-}" = rollback ]; then
     MODE=$1
