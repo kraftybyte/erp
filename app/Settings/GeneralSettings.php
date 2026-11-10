@@ -81,6 +81,15 @@ class GeneralSettings extends Settings
     // Advance bayar paralel (petty cash): realisasi boleh sebelum dibayar, pembayaran menyusul
     public mixed $advance_parallel_payment = false;
 
+    // Slip gaji bulanan (Settings → General → Gaji)
+    public mixed $payroll_auto_generate = false;
+    public mixed $payroll_generate_day = 25;
+    public mixed $payroll_review = true;
+    public mixed $payroll_send_telegram = true;
+    public mixed $payroll_signature_name = null;
+    public mixed $payroll_signature_title = 'HRD';
+    public mixed $payroll_slip_note = '';
+
     // Kop dan kaki surat kontrak (path di disk public).
     public mixed $contract_header = null;
     public mixed $contract_footer = null;

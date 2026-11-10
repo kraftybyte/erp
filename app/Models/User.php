@@ -51,6 +51,8 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'task_user'              => 'user_id',
         'telegram_receipts'      => 'user_id',
         'connected_accounts'     => 'user_id',
+        // Slip gaji adalah catatan keuangan: karyawan yang pernah digaji tidak dihapus.
+        'payslips'               => 'user_id',
     ];
 
     /**
@@ -217,6 +219,17 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         public function advances()
         {
             return $this->hasMany(Advance::class);
+        }
+
+        /** Komponen gaji tetap (pendapatan & potongan), disalin ke slip setiap bulan. */
+        public function payrollComponents()
+        {
+            return $this->hasMany(PayrollComponent::class)->orderBy('sort')->orderBy('id');
+        }
+
+        public function payslips()
+        {
+            return $this->hasMany(Payslip::class);
         }
 
 }

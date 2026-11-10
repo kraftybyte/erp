@@ -7,11 +7,13 @@ use App\Enums\FinanceCategory;
 use App\Helpers\ClientLabel;
 use App\Models\Advance;
 use App\Models\Expense;
+use App\Models\Payslip;
 use App\Models\ItemAdvance;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\AutoApproval;
 use App\Services\GeminiService;
+use App\Services\Payroll;
 use App\Services\RealisasiService;
 use App\Services\ReceiptScanner;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -159,6 +161,7 @@ class TelegramBot
         match ($command) {
             'expense', 'advance', 'realisasi' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
             'status'             => $this->sendStatus($chatId, $user),
+            'slip', 'gaji'       => $this->sendPayslip($chatId, $user, (string) $argument),
             'listadvance', 'daftaradvance' => $this->sendAdvanceList($chatId, $user, query: $argument),
             'batal'              => $this->cancel($chatId),
             null                 => $this->handleText($chatId, $user, $text),
@@ -2364,8 +2367,43 @@ class TelegramBot
         /realisasi – laporkan pemakaian advance
         /listadvance – daftar advance terbuka & ID-nya
         /status – pengajuan terakhir & progres advance
+        /slip – slip gaji terakhir (PDF), atau bulan tertentu: <i>/slip oktober 2026</i>
         /batal – batalkan draft
         HTML;
+    }
+
+    /**
+     * Slip gaji milik pengirim yang sudah final (terakhir, atau bulan yang
+     * disebut), sebagai PDF.
+     */
+    private function sendPayslip(int|string $chatId, User $user, string $argument): void
+    {
+        $query = Payslip::where('user_id', $user->id)->where('status', '!=', Payslip::DRAFT);
+
+        if (trim($argument) !== '' && ($period = \App\Services\ReportPeriod::parse($argument)) && $period->from) {
+            $query->whereDate('period', $period->from->startOfMonth()->toDateString());
+        }
+
+        $slip = $query->orderByDesc('period')->first();
+
+        if (! $slip) {
+            $this->telegram->sendMessage($chatId, trim($argument) !== ''
+                ? 'Slip gaji bulan itu belum ada atau belum difinalkan Finance.'
+                : 'Belum ada slip gaji untukmu. Slip muncul di sini setelah difinalkan Finance.');
+
+            return;
+        }
+
+        $this->telegram->typing($chatId);
+
+        $path = storage_path('app/slip-' . Str::random(16) . '.pdf');
+        file_put_contents($path, app(Payroll::class)->pdf($slip)->output());
+
+        try {
+            $this->telegram->sendDocument($chatId, $path, $slip->fileName(), "🧾 <b>Slip gaji {$slip->periodLabel()}</b>\nTake home pay: <b>" . $this->rupiah($slip->net) . '</b>');
+        } finally {
+            @unlink($path);
+        }
     }
 
     // =================================================================

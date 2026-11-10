@@ -3,7 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\EmployeeResource\Pages;
+use App\Helpers\Money;
+use App\Models\PayrollComponent;
 use App\Models\User;
+use App\Services\Payroll;
+use Filament\Forms\Get;
 use App\Filament\Concerns\GuardsUserDeletion;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -110,12 +114,65 @@ class EmployeeResource extends Resource
                 ->default(true)
                 // Akun sendiri tidak bisa dinonaktifkan, supaya tidak terkunci di luar.
                 ->disabled(fn ($record) => $record?->is(auth()->user())),
+
+            // Gaji hanya untuk Director/Finance/super_admin: bagian ini tidak tampil
+            // (dan tidak disimpan) untuk peran lain yang boleh mengelola karyawan.
+            Forms\Components\Section::make('Gaji')
+                ->description('Komponen tetap setiap bulan. PPh 21 dan BPJS ditulis sebagai potongan. Penyesuaian sekali pakai (lembur, bonus) diisi di slip bulan itu, HR → Slip Gaji.')
+                ->visible(fn () => Payroll::canManage(auth()->user()))
+                ->columnSpanFull()
+                ->schema([
+                    Forms\Components\Repeater::make('payrollComponents')
+                        ->relationship()
+                        ->label('Komponen gaji')
+                        ->orderColumn('sort')
+                        ->schema([
+                            Forms\Components\TextInput::make('name')
+                                ->label('Komponen')
+                                ->placeholder('mis. Gaji pokok, Tunjangan transport, BPJS Kesehatan, PPh 21')
+                                ->required()
+                                ->maxLength(100)
+                                ->columnSpan(3),
+                            Forms\Components\Select::make('type')
+                                ->label('Jenis')
+                                ->options(PayrollComponent::TYPES)
+                                ->default(PayrollComponent::EARNING)
+                                ->required()
+                                ->native(false)
+                                ->live()
+                                ->columnSpan(2),
+                            Forms\Components\TextInput::make('amount')
+                                ->label('Nominal per bulan')
+                                ->numeric()
+                                ->prefix('Rp')
+                                ->minValue(0)
+                                ->required()
+                                ->live(onBlur: true)
+                                ->columnSpan(2),
+                        ])
+                        ->columns(7)
+                        ->defaultItems(0)
+                        ->addActionLabel('Tambah komponen')
+                        ->live(),
+                    Forms\Components\Placeholder::make('take_home')
+                        ->label('Take home pay per bulan')
+                        ->content(function (Get $get) {
+                            $items = collect($get('payrollComponents') ?? []);
+                            $sum   = fn (string $type) => (float) $items->where('type', $type)->sum(fn ($item) => (float) ($item['amount'] ?? 0));
+
+                            return $items->isEmpty()
+                                ? 'Belum ada komponen: karyawan ini belum masuk slip gaji.'
+                                : Money::rupiah($sum(PayrollComponent::EARNING) - $sum(PayrollComponent::DEDUCTION))
+                                    . ' (pendapatan ' . Money::rupiah($sum(PayrollComponent::EARNING)) . ' − potongan ' . Money::rupiah($sum(PayrollComponent::DEDUCTION)) . ')';
+                        }),
+                ]),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with('payrollComponents'))
             ->columns([
                 Tables\Columns\TextColumn::make('nik')
                 ->label('NIK')
@@ -134,6 +191,17 @@ class EmployeeResource extends Resource
             Tables\Columns\TextColumn::make('division')
                 ->label('Divisi')
                 ->sortable(),
+            Tables\Columns\TextColumn::make('take_home')
+                ->label('Gaji (take home)')
+                ->alignEnd()
+                ->visible(fn () => Payroll::canManage(auth()->user()))
+                ->state(function (User $record) {
+                    $components = $record->payrollComponents;
+
+                    return $components->isEmpty() ? '—' : Money::rupiah(
+                        $components->where('type', PayrollComponent::EARNING)->sum('amount') - $components->where('type', PayrollComponent::DEDUCTION)->sum('amount')
+                    );
+                }),
             Tables\Columns\IconColumn::make('is_active')
                 ->label('Aktif')
                 ->boolean(),

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\FileService;
 use App\Settings\GeneralSettings;
 use Filament\Forms;
+use Filament\Forms\Get;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\SettingsPage;
@@ -406,6 +407,46 @@ class ManageGeneral extends SettingsPage
                                             ->label('Realisasi boleh sebelum advance dibayar')
                                             ->helperText('Berlaku untuk advance baru dan advance Disetujui yang belum dibayar. Advance yang sudah berjalan dengan bayar paralel tetap memakai aturannya walau ini dimatikan.'),
                                     ]),
+                            ]),
+                        Forms\Components\Tabs\Tab::make('Gaji')
+                            ->icon('heroicon-o-banknotes')
+                            ->schema([
+                                Forms\Components\Section::make('Slip gaji bulanan')
+                                    ->description('Komponen gaji tiap karyawan diisi di HR → Employee (bagian Gaji). Slip bisa selalu dibuat manual di HR → Slip Gaji → Buat slip.')
+                                    ->schema([
+                                        Forms\Components\Toggle::make('payroll_auto_generate')
+                                            ->label('Buat slip otomatis setiap bulan')
+                                            ->helperText('Butuh jadwal server (cron schedule:run) aktif.')
+                                            ->live(),
+                                        Forms\Components\TextInput::make('payroll_generate_day')
+                                            ->label('Tanggal dibuat')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(31)
+                                            ->suffix('setiap bulan')
+                                            ->helperText('Bulan yang lebih pendek memakai tanggal terakhirnya.')
+                                            ->visible(fn (Get $get) => (bool) $get('payroll_auto_generate')),
+                                        Forms\Components\Toggle::make('payroll_review')
+                                            ->label('Dicek Finance dulu sebelum dikirim')
+                                            ->helperText('Nyala: slip dibuat sebagai draft dan Finance diberi tahu. Mati: slip otomatis langsung final dan dikirim ke karyawan.')
+                                            ->visible(fn (Get $get) => (bool) $get('payroll_auto_generate')),
+                                        Forms\Components\Toggle::make('payroll_send_telegram')
+                                            ->label('Kirim PDF slip ke Telegram karyawan saat final'),
+                                    ])->columns(2),
+                                Forms\Components\Section::make('Tampilan slip')
+                                    ->description('Logo, nama, dan alamat perusahaan mengikuti pengaturan invoice.')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('payroll_signature_name')
+                                            ->label('Nama penanda tangan')
+                                            ->placeholder('Kosong: memakai penanda tangan invoice'),
+                                        Forms\Components\TextInput::make('payroll_signature_title')
+                                            ->label('Jabatan penanda tangan')
+                                            ->placeholder('mis. HRD'),
+                                        Forms\Components\Textarea::make('payroll_slip_note')
+                                            ->label('Catatan di bawah slip')
+                                            ->rows(2)
+                                            ->columnSpanFull(),
+                                    ])->columns(2),
                             ]),
                         Forms\Components\Tabs\Tab::make('Code Editor')
                             ->schema([
