@@ -75,7 +75,18 @@
 
     .rl-form-item { border-radius: .75rem; padding: .875rem; background: rgba(var(--gray-950), .03); }
     .dark .rl-form-item { background: rgba(255, 255, 255, .04); }
-    .rl-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 9rem; gap: .5rem; align-items: end; }
+    /* Form item: nama selebar penuh, lalu tanggal struk · qty · harga satu baris. */
+    .rl-form-grid { display: grid; grid-template-columns: 11rem 5.5rem minmax(0, 1fr); gap: .75rem; align-items: end; }
+    .rl-form-grid .span-all { grid-column: 1 / -1; }
+    .rl-form-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .625rem; font-size: .8125rem; font-weight: 600; color: rgb(var(--gray-700)); }
+    .rl-form-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .25rem .75rem; margin-top: .75rem; font-size: .8125rem; color: rgb(var(--gray-500)); }
+    .rl-form-foot > :last-child { margin-left: auto; white-space: nowrap; }
+    .rl-form-foot strong { font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(var(--gray-950)); }
+    .rl-hint { color: rgb(var(--success-700)); }
+    .dark .rl-form-head { color: rgb(var(--gray-200)); }
+    .dark .rl-form-foot { color: rgb(var(--gray-300)); }
+    .dark .rl-form-foot strong { color: #fff; }
+    .dark .rl-hint { color: rgb(var(--success-400)); }
     .rl-item .date { margin-top: .125rem; font-size: .75rem; color: rgb(var(--gray-500)); }
     .dark .rl-item .date { color: rgb(var(--gray-400)); }
     .rl-label { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 500; color: rgb(var(--gray-600)); }
@@ -114,7 +125,7 @@
         .rl-item { grid-template-columns: minmax(0, 1fr) auto; }
         .rl-item .qty, .rl-item .price { display: none; }
         .rl-item .qty-mobile { display: block; margin-top: .125rem; color: rgb(var(--gray-500)); }
-        .rl-form-grid { grid-template-columns: 1fr 1fr; }
-        .rl-form-grid .span-all { grid-column: 1 / -1; }
+        .rl-form-grid { grid-template-columns: minmax(0, 1fr) 5rem; }
+        .rl-form-grid .span-mobile { grid-column: 1 / -1; }
     }
 </style>
