@@ -110,6 +110,7 @@ class AiReconciler
             'date'         => optional($invoice->date)->format('Y-m-d') ?? (string) $invoice->date,
             'due'          => optional($invoice->due_date)->format('Y-m-d') ?? (string) $invoice->due_date,
             'payment_type' => $invoice->type_payment,
+            'billed'       => round($invoice->amountDue(), 2),
             'dpp'          => round(max((float) $invoice->subtotal - (float) $invoice->total_discount, 0), 2),
             'ppn'          => (float) $invoice->total_vat,
             'total'        => (float) $invoice->grand_total,
@@ -131,6 +132,7 @@ class AiReconciler
             - Uang masuk (direction "in") hanya untuk open_invoices; uang keluar ("out") hanya untuk approved_payouts (expense/advance karyawan).
             - Klien badan usaha sering memotong PPh 23 2% dari DPP; BUMN/instansi pemerintah (pemungut/WAPU) memungut PPN 11% dan memotong PPh 23, sehingga yang ditransfer = DPP − PPh 23.
             - Pembayaran bisa berupa DP (mis. 30%/50% dari total), termin, pelunasan sisa, atau satu transfer untuk beberapa invoice klien yang sama.
+            - payment_type di ERP: "full_payment" menagih total; "dp_50" (dst.) adalah invoice DP yang menagih 50% dari total (total = harga penuh pekerjaan); "final_payment" adalah invoice pelunasan yang menagih harga penuh dikurangi DP. Yang ditagih ada di billed, sisanya di remaining; jangan memakai total untuk invoice DP/pelunasan.
             - Pengirim bisa berupa PIC pribadi, pemilik, atau perusahaan lain dalam grup klien; nama di berita transfer BCA sering terpotong di belakang.
             - Biaya transfer (2.500 BI-FAST, 6.500 online, 2.900/5.000 LLG, 25.000/30.000 RTGS) kadang dipotong pengirim.
             - Tanggal: pembayaran biasanya beberapa hari/minggu setelah invoice dibuat, sekitar jatuh tempo; DP bisa sebelum invoice dibuat.

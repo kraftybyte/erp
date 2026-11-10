@@ -35,7 +35,8 @@ class FunnelIntelligenceEngine
             ->whereBetween('created_at', [$monthStart, $now])
             ->get();
 
-        $invoiceSales = Invoice::where('type', 'sale')
+        $invoiceSales = Invoice::with('parentInvoice')->where('type', 'sale')
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'cancelled'))
             ->whereBetween('created_at', [$monthStart, $now])
             ->get();
 
@@ -47,10 +48,11 @@ class FunnelIntelligenceEngine
             : 0;
 
         $overdueInvoices = $invoiceSales
-            ->filter(fn ($i) => $i->due_date && $i->due_date < $now && $i->paid < $i->grand_total);
+            ->filter(fn ($i) => $i->due_date && $i->due_date < $now && \App\Services\InvoicePayment::remaining($i) > 0);
 
         // DSO = rata-rata hari dari invoice dibuat sampai lunas
-        $paidInvoices = $invoiceSales->filter(fn ($i) => $i->paid >= $i->grand_total);
+        // Lunas = yang ditagih sudah terbayar (invoice DP: DP-nya; pelunasan: sisanya).
+        $paidInvoices = $invoiceSales->filter(fn ($i) => \App\Services\InvoicePayment::remaining($i) <= 0);
 
         $dso = $paidInvoices->count() > 0
             ? round($paidInvoices->avg(fn ($i) =>

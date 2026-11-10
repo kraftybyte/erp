@@ -27,6 +27,12 @@ class CheckDbScriptTest extends TestCase
             '== Penomoran invoice bulan ini',
             '== Pelunasan belum tertaut ke invoice DP',
             '== Pemakaian bot 7 hari terakhir',
+            '== Jenis pembayaran invoice',
+            '== Status vs nominal (yang ditagih = amountDue)',
+            'Kolom dibayar ≠ uang masuk di rekening + potongan:',
+            '== DP dan pelunasan',
+            'DP lunas, invoice pelunasan belum dibuat:',
+            'Total pelunasan berbeda dari total invoice DP-nya',
         ] as $expected) {
             $this->assertStringContainsString($expected, $result->output());
         }

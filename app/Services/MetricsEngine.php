@@ -19,7 +19,10 @@ class MetricsEngine
         $weekStart = $now->copy()->startOfWeek();
 
         // ================= FINANCE =================
-        $invoiceSales = Invoice::where('type', 'sale')
+        // Yang ditagih per invoice mengikuti Invoice::amountDue(): invoice DP menagih
+        // persennya, pelunasan menagih harga penuh − DP (grand_total keduanya = harga penuh).
+        $invoiceSales = Invoice::with('parentInvoice')->where('type', 'sale')
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'cancelled'))
             ->whereBetween('created_at', [$monthStart, $now])
             ->get();
 
@@ -28,7 +31,7 @@ class MetricsEngine
             ->get();
 
         $revenue = (float) $invoiceSales->sum('paid'); // uang masuk nyata
-        $billed = (float) $invoiceSales->sum('grand_total'); // total ditagih
+        $billed = (float) $invoiceSales->sum(fn (Invoice $invoice) => $invoice->amountDue()); // total ditagih
         $proformaValue = (float) $proforma->sum('grand_total');
         $proformaPaid = (float) $proforma->sum('paid');
 
@@ -98,7 +101,7 @@ class MetricsEngine
             ->filter(fn ($i) =>
                 $i->due_date &&
                 Carbon::parse($i->due_date)->lt($now) &&
-                $i->paid < $i->grand_total
+                \App\Services\InvoicePayment::remaining($i) > 0
             )
             ->count();
 

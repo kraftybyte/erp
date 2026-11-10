@@ -27,7 +27,9 @@ $end = $start->copy()->endOfMonth();
 
 $history[] = [
 'month' => $start->format('Y-m'),
-'revenue' => Invoice::whereBetween('created_at', [$start, $end])->sum('grand_total'),
+// Yang ditagih invoice penjualan (Invoice::amountDue()), tanpa proforma dan yang dibatalkan.
+'revenue' => Invoice::with('parentInvoice')->where('type', 'sale')->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'cancelled'))
+    ->whereBetween('created_at', [$start, $end])->get()->sum(fn (Invoice $invoice) => $invoice->amountDue()),
 'expenses' => Expense::whereBetween('created_at', [$start, $end])->sum('amount'),
 'advances' => Advance::whereBetween('created_at', [$start, $end])->sum('amount'),
 'leads' => Leads::whereBetween('created_at', [$start, $end])->count(),

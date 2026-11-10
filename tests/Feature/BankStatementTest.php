@@ -381,7 +381,7 @@ class BankStatementTest extends TestCase
         $this->sendDocument($this->klikBca([['03/11', 'SETORAN TUNAI', 15_440_000, 'CR']], opening: 0));
         $this->send($this->tap('mut:rev'));
         $this->assertStringContainsString('🗓 28 Okt 2026 · jatuh tempo 20 Nov · DP 50%', $this->lastText());
-        $this->assertStringContainsString('💰 Total Rp 30.880.000 · terbayar Rp 0 · sisa Rp 15.440.000', $this->lastText());
+        $this->assertStringContainsString('💰 Ditagih Rp 15.440.000 (DP 50% dari Rp 30.880.000) · terbayar Rp 0 · sisa Rp 15.440.000', $this->lastText());
         $this->assertStringContainsString('📦 Booth pameran 3x3 — Rp 30.000.000', $this->lastText());
         $this->assertStringContainsString('📦 Cetak banner — 2 × Rp 440.000', $this->lastText());
 
@@ -398,6 +398,35 @@ class BankStatementTest extends TestCase
         $this->assertStringContainsString('   📦 Cetak banner — 2 × Rp 440.000', $text);
         $this->assertStringContainsString('   ✍️ Masuk <b>Rp 15.440.000</b> → <b>LUNAS</b>', $text);
         $this->assertStringContainsString('🎯 Yakin <b>', $text);
+    }
+
+    public function test_invoice_dp_dan_pelunasan_dibaca_dari_yang_ditagih(): void
+    {
+        $this->user('Finance');
+
+        // Invoice DP 50%: Total = harga penuh Rp 20.014.000, yang ditagih Rp 10.007.000.
+        $dp = $this->invoice(20_014_000, ['type_payment' => 'dp_50']);
+
+        // 30% dari harga penuh bukan "DP 30%" untuk invoice yang sudah berupa DP.
+        $loose = $this->match([$this->row('in', 6_004_200, 'SETORAN TUNAI')])[0];
+        $this->assertFalse(collect($loose['candidates'])->contains(fn ($c) => ($c['targets'][0]['id'] ?? null) === $dp->id));
+
+        // "DP" di berita dengan nominal kurang: tetap pembayaran sebagian dari DP-nya.
+        $partial = $this->match([$this->row('in', 4_000_000, 'TRSF E-BANKING CR DP ' . strtoupper($this->client))])[0];
+        $this->assertStringContainsString('pembayaran sebagian; sisa setelah ini Rp 6.007.000', $partial['candidates'][0]['note']);
+
+        // Pelunasan tertaut ke DP yang sudah lunas: ditagih harga penuh − DP.
+        $dp->update(['paid' => 10_007_000, 'status' => 'paid']);
+        $final = $this->invoice(20_014_000, ['type_payment' => 'final_payment', 'parent_invoice_id' => $dp->id]);
+
+        $result = $this->match([$this->row('in', 10_007_000, 'TRSF E-BANKING CR ' . strtoupper($this->client))])[0];
+        $this->assertSame('sure', $result['status']);
+        $this->assertSame($final->id, $result['candidates'][$result['pick']]['targets'][0]['id']);
+        $this->assertContains('✓ nominal = sisa tagihan Rp 10.007.000 persis', $result['candidates'][$result['pick']]['reasons']);
+
+        $this->sendDocument($this->klikBca([['03/11', 'TRSF E-BANKING CR ' . strtoupper($this->client), 10_007_000, 'CR']], opening: 0));
+        $this->assertStringContainsString("💰 Ditagih Rp 10.007.000 (pelunasan: Rp 20.014.000 − DP 50% Rp 10.007.000 {$dp->uuid}) · terbayar Rp 0 · sisa Rp 10.007.000", $this->lastText());
+        $this->assertStringContainsString('✍️ Masuk <b>Rp 10.007.000</b> → <b>LUNAS</b>', $this->lastText());
     }
 
     public function test_uang_keluar_ke_expense_dan_advance_karyawan(): void

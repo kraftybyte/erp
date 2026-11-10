@@ -434,7 +434,7 @@ class MutationMatcher
 
             $score += 40 * $this->nameScore($words, $this->clientTokens($invoice));
 
-            if ($amount && (abs($remaining - $amount) <= self::TOLERANCE || abs((float) $invoice->grand_total - $amount) <= self::TOLERANCE)) {
+            if ($amount && collect([$remaining, $invoice->amountDue(), (float) $invoice->grand_total])->contains(fn ($value) => abs($value - $amount) <= self::TOLERANCE)) {
                 $score += 60;
             }
 
@@ -486,13 +486,21 @@ class MutationMatcher
     }
 
     /**
+     * Invoice bayar penuh (bukan invoice DP, bukan pelunasan): yang ditagih = Total.
+     */
+    public static function billsFullPrice(Invoice $invoice): bool
+    {
+        return $invoice->dpPercentage() === null && $invoice->type_payment !== 'final_payment';
+    }
+
+    /**
      * Invoice penjualan yang belum lunas dan proforma yang belum dibayar.
      *
      * @return Collection<int, Invoice>
      */
     public static function openInvoices(): Collection
     {
-        return Invoice::with(['deal', 'invoicesItems:id,invoice_id,item,description', 'projects:id,invoice_id,nama_project'])
+        return Invoice::with(['deal', 'parentInvoice', 'invoicesItems:id,invoice_id,item,description', 'projects:id,invoice_id,nama_project'])
             ->whereIn('type', ['sale', 'estimate'])->whereNotIn('status', ['paid', 'cancelled'])->get()
             ->filter(fn (Invoice $invoice) => $invoice->type === 'estimate' ? InvoicePayment::remaining($invoice) > 0 : InvoicePayment::isPayable($invoice))
             ->values();
@@ -671,7 +679,7 @@ class MutationMatcher
             }
 
             // "DP" di berita: pembayaran sebagian pertama berapa pun persennya adalah uang muka.
-            if ($purpose === 'dp' && $explanation['kind'] === 'partial' && (float) $invoice->paid <= 0 && (float) $invoice->grand_total > 0) {
+            if ($purpose === 'dp' && $explanation['kind'] === 'partial' && (float) $invoice->paid <= 0 && (float) $invoice->grand_total > 0 && self::billsFullPrice($invoice)) {
                 $percent     = round($amount / (float) $invoice->grand_total * 100);
                 $explanation = ['kind' => 'dp', 'score' => 35, 'withholding' => 0.0, 'label' => null,
                     'reason' => "berita menyebut DP: {$percent}% dari total " . $this->rupiah($invoice->grand_total),
@@ -804,7 +812,9 @@ class MutationMatcher
             return $cut('wapu', 40, 'PPN (WAPU)', 'nominal = DPP ' . $this->rupiah($dpp) . '; PPN dipungut klien (WAPU)', 'dicatat lunas dengan potongan PPN ' . $this->rupiah($diff) . '; minta bukti pungutnya ke klien');
         }
 
-        if ((float) $invoice->paid <= 0 && $total > 0) {
+        // Pola DP hanya untuk invoice bayar penuh: invoice DP dan pelunasan sudah
+        // menagih bagiannya sendiri (Invoice::amountDue()), jadi DP-nya = sisa tagihan persis.
+        if ((float) $invoice->paid <= 0 && $total > 0 && self::billsFullPrice($invoice)) {
             foreach (self::DP_PERCENTS as $percent) {
                 if ($near(round($total * $percent / 100, 2))) {
                     return ['kind' => 'dp', 'score' => 45, 'withholding' => 0.0, 'label' => null, 'reason' => "nominal = DP {$percent}% dari total " . $this->rupiah($total), 'note' => "pembayaran DP {$percent}%; sisa setelah ini " . $this->rupiah($diff)];
