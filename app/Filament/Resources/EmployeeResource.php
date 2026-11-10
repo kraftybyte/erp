@@ -19,6 +19,11 @@ class EmployeeResource extends Resource
 {
     protected static ?string $model = User::class;
 
+    /** Pilihan Jabatan dan Divisi; dipakai juga Import Excel (EmployeeImport). */
+    public const POSITIONS = ['Staff', 'Supervisor', 'Manager', 'Director'];
+
+    public const DIVISIONS = ['Social Media Specialist', 'Finance', 'HR', 'Graphic Design', 'Video Editor'];
+
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
     public static function getNavigationLabel(): string
@@ -69,12 +74,7 @@ class EmployeeResource extends Resource
                 ->required(),
             Forms\Components\Select::make('position')
                 ->label('Jabatan')
-                ->options([
-                    'Staff' => 'Staff',
-                    'Supervisor' => 'Supervisor',
-                    'Manager' => 'Manager',
-                    'Director' => 'Director',
-                ])
+                ->options(array_combine(self::POSITIONS, self::POSITIONS))
                 ->searchable()
                 ->required(),
             Forms\Components\TextInput::make('npwp')
@@ -99,13 +99,7 @@ class EmployeeResource extends Resource
                 ->openable(),
             Forms\Components\Select::make('division')
                 ->label('Divisi')
-                ->options([
-                    'Social Media Specialist' => 'Social Media Specialist',
-                    'Finance' => 'Finance',
-                    'HR' => 'HR',
-                    'Graphic Design' => 'Graphic Design',
-                    'Video Editor' => 'Video Editor',
-                ])
+                ->options(array_combine(self::DIVISIONS, self::DIVISIONS))
                 ->searchable()
                 ->required(),
             Forms\Components\Toggle::make('is_active')
@@ -214,13 +208,7 @@ class EmployeeResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('division')
                     ->label('Divisi')
-                    ->options([
-                        'Social Media Specialist' => 'Social Media Specialist',
-                        'Finance' => 'Finance',
-                        'HR' => 'HR',
-                        'Graphic Design' => 'Graphic Design',
-                        'Video Editor' => 'Video Editor',
-                    ]),
+                    ->options(array_combine(self::DIVISIONS, self::DIVISIONS)),
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Akun aktif'),
             ])
