@@ -10,6 +10,23 @@ use Illuminate\Support\Str;
 
 class ContractTemplateService
 {
+    /**
+     * Penanda tangan pihak kita (Pihak Pertama) bila kontraknya tidak mengisi
+     * sendiri: Settings → Contract Template, lalu penanda tangan invoice;
+     * jabatannya "Direksi".
+     *
+     * @return array{name: ?string, title: string}
+     */
+    public static function defaultAgencySignatory(?GeneralSettings $settings = null): array
+    {
+        $settings ??= app(GeneralSettings::class);
+
+        return [
+            'name'  => collect([$settings->contract_signature_name, $settings->inv_signature_name])->first(fn ($name) => filled($name)),
+            'title' => filled($settings->contract_signature_title) ? $settings->contract_signature_title : 'Direksi',
+        ];
+    }
+
     public function generate(Contract $contract): string
     {
         $settings = app(GeneralSettings::class);
@@ -46,8 +63,9 @@ class ContractTemplateService
         $clientEmail = $contract->client_email ?? '';
         $clientSignName = $contract->client_signatory_name ?? '..................';
         $clientSignTitle = $contract->client_signatory_title ?? '..................';
-        $agencySignName = $contract->agency_signatory_name ?? $settings->inv_signature_name ?? '..................';
-        $agencySignTitle = $contract->agency_signatory_title ?? 'Direksi';
+        $agencyDefault = self::defaultAgencySignatory($settings);
+        $agencySignName = filled($contract->agency_signatory_name) ? $contract->agency_signatory_name : ($agencyDefault['name'] ?? '..................');
+        $agencySignTitle = filled($contract->agency_signatory_title) ? $contract->agency_signatory_title : $agencyDefault['title'];
 
         // === PRICING ===
         $totalValue = (float)($contract->total_value ?? 0);

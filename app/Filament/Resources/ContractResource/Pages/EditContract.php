@@ -117,6 +117,8 @@ class EditContract extends EditRecord
                             ]),
                     ]),
 
+                static::agencySignatorySection(prefill: false),
+
                 // Section 3: Project Description
                 Section::make('Deskripsi Project')
                     ->icon('heroicon-o-briefcase')

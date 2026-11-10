@@ -332,6 +332,19 @@ class ManageGeneral extends SettingsPage
                             ]),
                         Forms\Components\Tabs\Tab::make('Contract Template')
                             ->schema([
+                                Forms\Components\Section::make('Penanda tangan kontrak')
+                                    ->description('Bawaan wakil perusahaan kita (Pihak Pertama) untuk kontrak baru. Tiap kontrak tetap bisa diganti di form kontraknya.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('contract_signature_name')
+                                            ->label('Nama penanda tangan')
+                                            ->placeholder('Kosong: memakai penanda tangan invoice')
+                                            ->maxLength(255),
+                                        Forms\Components\TextInput::make('contract_signature_title')
+                                            ->label('Jabatan penanda tangan')
+                                            ->placeholder('Kosong: Direksi')
+                                            ->maxLength(255),
+                                    ]),
                                 Forms\Components\Section::make('Kop & Kaki Surat Kontrak')
                                     ->description('Dipakai semua kontrak yang tidak punya kop sendiri. Kosongkan untuk memakai kop bawaan.')
                                     ->columns(2)
