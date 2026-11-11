@@ -2,6 +2,7 @@
 
 use App\Support\SchemaDrift;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -32,12 +33,26 @@ return new class extends Migration
             require database_path('schema/expected-columns.php'),
         );
 
+        // Satu per satu: bila ada yang gagal, semua kegagalan dilaporkan sekaligus
+        // (upgrade di CWP lalu dikembalikan dari backup), bukan berhenti di yang pertama.
+        $failed = [];
+
         foreach ($plan['statements'] as $table => $clauses) {
-            DB::statement('ALTER TABLE `' . $table . '` ' . implode(', ', $clauses));
+            foreach ($clauses as $clause) {
+                try {
+                    DB::statement('ALTER TABLE `' . $table . '` ' . $clause);
+                } catch (QueryException $e) {
+                    $failed[] = "{$table}: {$clause} — " . ($e->errorInfo[2] ?? $e->getMessage());
+                }
+            }
         }
 
         if ($plan['statements'] !== []) {
-            Log::info('Kolom database disamakan dengan acuan', array_intersect_key($plan, array_flip(['added', 'relaxed', 'widened'])));
+            Log::info('Kolom database disamakan dengan acuan', array_intersect_key($plan, array_flip(['added', 'relaxed', 'widened'])) + ['failed' => $failed]);
+        }
+
+        if ($failed !== []) {
+            throw new RuntimeException('Sebagian kolom tidak bisa disamakan (' . count($failed) . "):\n- " . implode("\n- ", $failed));
         }
     }
 

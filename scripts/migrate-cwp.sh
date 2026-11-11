@@ -168,7 +168,7 @@ install_vendor() {
 finish_laravel() {
     say "Paket & Laravel"
     install_vendor
-    (cd "$SITE" && "$PHP" artisan migrate --force > "$WORK/migrate.log" 2>&1) || { tail -20 "$WORK/migrate.log"; die "php artisan migrate gagal."; }
+    (cd "$SITE" && "$PHP" artisan migrate --force > "$WORK/migrate.log" 2>&1) || { tail -60 "$WORK/migrate.log"; die "php artisan migrate gagal."; }
     grep -E 'DONE|Nothing to migrate' "$WORK/migrate.log" | sed 's/^ */   /' | tail -5 || true
     (cd "$SITE" && rm -rf public/storage && "$PHP" artisan storage:link >/dev/null 2>&1 && info "public/storage → storage/app/public")
     (cd "$SITE" && "$PHP" artisan optimize:clear >/dev/null 2>&1 && "$PHP" artisan permission:cache-reset >/dev/null 2>&1 || true)
@@ -436,7 +436,7 @@ if [ "${1:-}" = upgrade ] || [ "${1:-}" = rollback ]; then
 
     say "Database (migrate)"
     if ! (cd "$SITE" && "$PHP" artisan migrate --force > "$WORK/migrate.log" 2>&1); then
-        tail -20 "$WORK/migrate.log"
+        tail -60 "$WORK/migrate.log"
         die "php artisan migrate gagal."
     fi
     grep -cE 'DONE' "$WORK/migrate.log" | sed 's/^/   Migrasi dijalankan: /' || true
