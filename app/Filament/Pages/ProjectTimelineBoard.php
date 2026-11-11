@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Resources\ProjectResource;
 use App\Models\Project;
 use App\Models\ProjectTimeline;
+use App\Models\ProjectTimelineLog;
 use App\Models\Task;
 use App\Models\TaskStage;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -15,6 +16,7 @@ use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
@@ -277,7 +279,7 @@ class ProjectTimelineBoard extends Page
             }
 
             // Jam mulai/selesai task dipertahankan; hanya tanggalnya yang pindah.
-            $task->update([
+            $this->updateTask($task, [
                 'mulai_task'   => $this->keepTime($from, $task->mulai_task),
                 'selesai_task' => $this->keepTime($last, $task->selesai_task ?? $task->mulai_task),
             ]);
@@ -291,7 +293,26 @@ class ProjectTimelineBoard extends Page
 
     protected function getHeaderActions(): array
     {
-        return [$this->addPhaseAction()];
+        return [$this->historyAction(), $this->addPhaseAction()];
+    }
+
+    /** Riwayat perubahan (mengikuti pencarian); hanya bisa dibaca, tidak bisa dihapus. */
+    public function historyAction(): Action
+    {
+        return Action::make('history')
+            ->label('Riwayat')
+            ->icon('heroicon-o-clock')
+            ->color('gray')
+            ->authorize(fn () => auth()->user()->can('viewAny', ProjectTimeline::class))
+            ->slideOver()
+            ->modalWidth('md')
+            ->modalHeading('Riwayat perubahan')
+            ->modalDescription(fn () => filled(trim($this->search))
+                ? 'Project yang cocok dengan "' . trim($this->search) . '", 100 perubahan terakhir.'
+                : '100 perubahan terakhir di semua project.')
+            ->modalContent(fn () => view('filament.pages.partials.timeline-history', ['logs' => $this->historyLogs(), 'compact' => false]))
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Tutup');
     }
 
     /**
@@ -350,25 +371,35 @@ class ProjectTimelineBoard extends Page
                 'status'     => array_key_exists((string) $record->status, ProjectTimeline::STATUSES) ? $record->status : 'ongoing',
                 'notes'      => $record->notes,
             ])
-            ->form(fn () => $this->phaseFields())
+            ->form(fn (ProjectTimeline $record) => [
+                ...$this->phaseFields(),
+                Forms\Components\Placeholder::make('history')
+                    ->label('Riwayat')
+                    ->content(fn () => view('filament.pages.partials.timeline-history', [
+                        'logs'    => $record->logs()->with('user')->limit(10)->get(),
+                        'compact' => true,
+                    ])),
+            ])
             ->modalSubmitActionLabel('Simpan')
             ->action(function (ProjectTimeline $record, array $data): void {
-                $record->update($data + [
+                $record->update(Arr::only($data, ['nama_phase', 'start_date', 'end_date', 'status', 'notes']) + [
                     'color'      => ProjectTimeline::colorFor($data['nama_phase']),
                     'updated_by' => auth()->id(),
                 ]);
                 $this->boardChanged('Phase disimpan.');
             })
-            ->extraModalFooterActions(fn (ProjectTimeline $record): array => [
+            ->extraModalFooterActions(fn (?ProjectTimeline $record): array => $record === null ? [] : [
+                // Hapus hanya untuk yang punya izin Shield delete_project::timeline.
                 Action::make('deletePhase')
                     ->label('Hapus phase')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->modalHeading('Hapus phase ini?')
-                    ->modalDescription("{$record->nama_phase} akan dihapus dari timeline.")
+                    ->modalDescription("{$record->nama_phase} akan dihapus dari timeline. Penghapusan tercatat di riwayat.")
                     ->modalSubmitActionLabel('Hapus')
-                    ->visible(auth()->user()->can('delete', $record))
+                    ->authorize(fn () => auth()->user()->can('delete', $record))
                     ->action(function () use ($record): void {
+                        abort_unless(auth()->user()->can('delete', $record), 403);
                         $record->delete();
                         $this->boardChanged('Phase dihapus.');
                     })
@@ -402,7 +433,7 @@ class ProjectTimelineBoard extends Page
             ])
             ->modalSubmitActionLabel('Simpan')
             ->action(function (Task $record, array $data): void {
-                $record->update([
+                $this->updateTask($record, [
                     'mulai_task'   => $this->keepTime(CarbonImmutable::parse($data['mulai']), $record->mulai_task),
                     'selesai_task' => $this->keepTime(CarbonImmutable::parse($data['selesai']), $record->selesai_task ?? $record->mulai_task),
                     'status'       => $data['status'],
@@ -415,6 +446,36 @@ class ProjectTimelineBoard extends Page
                     ->color('gray')
                     ->url(TaskKanbanBoard::getUrl()),
             ]);
+    }
+
+    /** Ubah task dari board, dicatat di riwayat (tanggal dan status lama → baru). */
+    private function updateTask(Task $task, array $attributes): void
+    {
+        $values = fn (Task $t): array => [
+            'start'  => ProjectTimelineLog::day($t->mulai_task),
+            'end'    => ProjectTimelineLog::day($t->selesai_task ?? $t->mulai_task),
+            'status' => strtolower((string) $t->status),
+        ];
+
+        $old = $values($task);
+        $task->update($attributes);
+
+        ProjectTimelineLog::record('task', $task->getKey(), $task->project_id, (string) $task->nama_task, 'updated', $old, $values($task));
+    }
+
+    /** @return Collection<int, ProjectTimelineLog> */
+    private function historyLogs(): Collection
+    {
+        $projectIds = filled(trim($this->search))
+            ? $this->searchProjects(Project::query())->pluck('id')
+            : null;
+
+        return ProjectTimelineLog::query()
+            ->with(['user', 'project'])
+            ->when($projectIds !== null, fn (Builder $q) => $q->whereIn('project_id', $projectIds))
+            ->latest('id')
+            ->limit(100)
+            ->get();
     }
 
     /** @return list<Forms\Components\Component> */
