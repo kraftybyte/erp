@@ -51,15 +51,21 @@ final class SchemaDrift
     {
         $plan = ['statements' => [], 'added' => [], 'relaxed' => [], 'widened' => [], 'notes' => []];
 
+        // Nama kolom di MySQL/MariaDB tidak peka huruf besar-kecil: "Description"
+        // di database lama adalah kolom "description" yang sama.
+        $expected = array_map(fn (array $columns) => array_change_key_case($columns), array_change_key_case($expected));
+
         foreach ($site as $table => $columns) {
-            $wanted = $expected[$table] ?? null;
+            $wanted = $expected[strtolower($table)] ?? null;
 
             if ($wanted === null) {
                 continue; // tabel di luar acuan (milik situs itu sendiri)
             }
 
+            $existing = array_change_key_case($columns);
+
             foreach ($wanted as $column => $want) {
-                if (isset($columns[$column]) || ! empty($want['auto'])) {
+                if (isset($existing[$column]) || ! empty($want['auto'])) {
                     continue;
                 }
 
@@ -72,7 +78,7 @@ final class SchemaDrift
                     continue;
                 }
 
-                $want  = $wanted[$column] ?? null;
+                $want  = $wanted[strtolower($column)] ?? null;
                 $relax = ! $have['nullable'] && ! array_key_exists('default', $have)
                     && ($want === null || $want['nullable'] || array_key_exists('default', $want));
                 $widen = $want !== null && self::widens(self::normalize($have['type']), self::normalize($want['type']));

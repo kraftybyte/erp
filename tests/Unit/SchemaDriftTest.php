@@ -74,6 +74,23 @@ class SchemaDriftTest extends TestCase
         $this->assertSame([], $plan['notes']);
     }
 
+    public function test_nama_kolom_tidak_peka_huruf_besar_kecil(): void
+    {
+        // erp.getkrafty.id: quotation_items.Description (D besar) = kolom description.
+        $site = SchemaDrift::siteColumns([
+            ['quotation_items', 'id', 'bigint(20) unsigned', 'NO', null, 'auto_increment', 'PRI'],
+            ['quotation_items', 'Description', 'varchar(100)', 'NO', null, '', ''],
+        ]);
+
+        $plan = SchemaDrift::plan($site, ['quotation_items' => [
+            'id'          => ['type' => 'bigint unsigned', 'nullable' => false, 'auto' => true],
+            'description' => ['type' => 'varchar(255)', 'nullable' => true],
+        ]]);
+
+        $this->assertSame([], $plan['added'], 'Kolom yang sama tidak ditambahkan lagi.');
+        $this->assertSame(['MODIFY COLUMN `Description` varchar(255) NULL'], $plan['statements']['quotation_items'], 'Diubah dengan nama aslinya.');
+    }
+
     public function test_perbedaan_tipe_lain_hanya_dilaporkan(): void
     {
         $site = SchemaDrift::siteColumns([
