@@ -164,9 +164,11 @@ class ProjectTimelineBoard extends Page
             ->groupBy('project_id')
             ->pluck('late', 'project_id');
 
-        // Project diurutkan dari yang paling awal dimulai di periode ini.
-        $firstStart = $phases->map(fn ($p) => [$p->project_id, $p->start_date->toDateString()])
-            ->merge($tasks->map(fn ($t) => [$t->project_id, Carbon::parse($t->mulai_task)->toDateString()]))
+        // Project diurutkan dari yang paling awal dimulai di periode ini. toBase():
+        // koleksi Eloquent yang kosong tetap Eloquent setelah map(), dan merge()
+        // miliknya memanggil getKey() pada setiap baris (di sini array).
+        $firstStart = $phases->toBase()->map(fn ($p) => [$p->project_id, $p->start_date->toDateString()])
+            ->merge($tasks->toBase()->map(fn ($t) => [$t->project_id, Carbon::parse($t->mulai_task)->toDateString()]))
             ->groupBy(0)
             ->map(fn (Collection $rows) => $rows->min(1));
         $projects = Project::query()->whereIn('id', $projectIds)->get()
