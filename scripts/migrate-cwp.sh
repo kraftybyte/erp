@@ -313,6 +313,28 @@ if [ "${1:-}" = check ]; then
     say "Tabel di database"
     tr '\n' ' ' < "$WORK/tables.txt" | fold -s -w 110 | sed 's/^/   /'
     echo
+
+    # Kolom dibanding acuan kode terbaru (SchemaDrift; sama dengan yang diperbaiki migrasi saat upgrade).
+    if [ -f "$WORK/code/app/Support/SchemaDrift.php" ] && [ -f "$WORK/code/database/schema/expected-columns.php" ]; then
+        say "Kolom dibanding kode terbaru (diperbaiki otomatis saat upgrade)"
+        site_mysql mysql -N -B -e "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, IFNULL(COLUMN_DEFAULT, '<null>'), EXTRA, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()" > "$WORK/columns.tsv"
+        "$PHP" -r '
+            require $argv[1];
+            $rows = [];
+            foreach (file($argv[3], FILE_IGNORE_NEW_LINES) as $line) {
+                $cells = explode("\t", rtrim($line, "\r"));
+                if (count($cells) < 7) { continue; }
+                $cells[4] = $cells[4] === "<null>" ? null : $cells[4];
+                $rows[] = $cells;
+            }
+            $plan = App\Support\SchemaDrift::plan(App\Support\SchemaDrift::siteColumns($rows), require $argv[2]);
+            $labels = ["added" => "Kolom hilang, akan ditambahkan", "relaxed" => "Wajib diisi tapi tidak diisi kode, akan dibuat boleh kosong", "widened" => "Akan diperlebar", "notes" => "Tipe berbeda, tidak diubah (cek bila muncul error)"];
+            foreach ($labels as $key => $label) {
+                printf("   %s (%d)\n", $label, count($plan[$key]));
+                foreach ($plan[$key] as $item) { echo "      ", $item, "\n"; }
+            }
+        ' "$WORK/code/app/Support/SchemaDrift.php" "$WORK/code/database/schema/expected-columns.php" "$WORK/columns.tsv"
+    fi
     exit 0
 fi
 
