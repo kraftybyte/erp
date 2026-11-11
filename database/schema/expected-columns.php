@@ -1092,6 +1092,11 @@ return array (
       'type' => 'timestamp',
       'nullable' => true,
     ),
+    'estimate' => 
+    array (
+      'type' => 'varchar(255)',
+      'nullable' => true,
+    ),
   ),
   'contracts' => 
   array (
@@ -1336,6 +1341,21 @@ return array (
     'deleted_at' => 
     array (
       'type' => 'timestamp',
+      'nullable' => true,
+    ),
+    'table_a_columns' => 
+    array (
+      'type' => 'json',
+      'nullable' => true,
+    ),
+    'table_a_total_label' => 
+    array (
+      'type' => 'varchar(255)',
+      'nullable' => true,
+    ),
+    'table_b_columns' => 
+    array (
+      'type' => 'json',
       'nullable' => true,
     ),
   ),

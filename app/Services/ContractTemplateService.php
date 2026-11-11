@@ -10,6 +10,83 @@ use Illuminate\Support\Str;
 
 class ContractTemplateService
 {
+    /** Judul kolom bawaan Tabel A (biaya jasa) dan Tabel B (pihak ketiga); bisa diganti per kontrak. */
+    public const TABLE_A_COLUMNS = ['no' => 'No', 'item' => 'Item', 'estimate' => 'Estimasi', 'date' => 'Tanggal', 'amount' => 'Jumlah'];
+
+    public const TABLE_B_COLUMNS = ['no' => 'No', 'item' => 'Item', 'amount' => 'Amount (IDR)'];
+
+    public const TABLE_A_DESCRIPTION = 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Pertama selama {durasi} bulan';
+
+    public const TABLE_B_DESCRIPTION = 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Ketiga (Pihak yang menyediakan third-party yang dibutuhkan selama project berjalan)';
+
+    public const TOTAL_LABEL = 'TOTAL';
+
+    /**
+     * Angka pembayaran kontrak, satu sumber untuk isi kontrak, Tabel A, dan
+     * tombol "Isi otomatis dari Pembayaran" di form.
+     *
+     * @return array{total: float, dp: float, remaining: float, months: int, monthly: float, duration: int}
+     */
+    public function pricing(Contract $contract): array
+    {
+        $duration  = (int) ($contract->duration_months ?? 12);
+        $total     = (float) ($contract->total_value ?? 0);
+        $dp        = ($total * (float) ($contract->down_payment_percent ?? 0)) / 100;
+        $remaining = $total - $dp;
+        $months    = (int) ($contract->installment_months ?? $duration);
+
+        return [
+            'total'     => $total,
+            'dp'        => $dp,
+            'remaining' => $remaining,
+            'months'    => $months,
+            'monthly'   => $months > 0 ? $remaining / $months : 0,
+            'duration'  => $duration,
+        ];
+    }
+
+    /**
+     * Baris Tabel A bila kontrak belum punya item biaya: dari tipe pembayaran
+     * (lunas, DP + cicilan, cicilan per bulan).
+     *
+     * @return list<array{item: string, estimate: string, due_date: string, amount: float}>
+     */
+    public function defaultFeeRows(Contract $contract): array
+    {
+        $p    = $this->pricing($contract);
+        $date = ($contract->effective_date ? Carbon::parse($contract->effective_date) : now())->format('d/m/Y');
+
+        return match ($contract->payment_type ?? 'full') {
+            'dp_monthly' => [
+                ['item' => 'Fase 1 - Down Payment', 'estimate' => $this->formatRupiah($p['dp']), 'due_date' => $date, 'amount' => $p['dp']],
+                ['item' => "Sisa Pembayaran ({$p['months']}x)", 'estimate' => $this->formatRupiah($p['remaining']), 'due_date' => 'Setiap tanggal 15', 'amount' => $p['remaining']],
+            ],
+            'monthly' => [
+                ['item' => "Pembayaran per Bulan ({$p['months']}x)", 'estimate' => $this->formatRupiah($p['monthly']), 'due_date' => 'Setiap tanggal 15', 'amount' => $p['total']],
+            ],
+            default => [
+                ['item' => 'Pembayaran Lunas', 'estimate' => $this->formatRupiah($p['total']), 'due_date' => $date, 'amount' => $p['total']],
+            ],
+        };
+    }
+
+    /**
+     * Judul kolom: isian kontrak, kolom yang kosong memakai bawaan.
+     *
+     * @param  array<string, string>  $defaults
+     * @return array<string, string>
+     */
+    public static function columnLabels(?array $custom, array $defaults): array
+    {
+        $labels = [];
+
+        foreach ($defaults as $key => $default) {
+            $labels[$key] = filled($custom[$key] ?? null) ? trim((string) $custom[$key]) : $default;
+        }
+
+        return $labels;
+    }
+
     /**
      * Penanda tangan pihak kita (Pihak Pertama) bila kontraknya tidak mengisi
      * sendiri: Settings → Contract Template, lalu penanda tangan invoice;
@@ -68,15 +145,16 @@ class ContractTemplateService
         $agencySignTitle = filled($contract->agency_signatory_title) ? $contract->agency_signatory_title : $agencyDefault['title'];
 
         // === PRICING ===
-        $totalValue = (float)($contract->total_value ?? 0);
+        $pricing = $this->pricing($contract);
+        $totalValue = $pricing['total'];
         $formattedTotal = $this->formatRupiah($totalValue);
         $downPaymentPercent = (float)($contract->down_payment_percent ?? 0);
-        $downPaymentValue = ($totalValue * $downPaymentPercent) / 100;
+        $downPaymentValue = $pricing['dp'];
         $formattedDp = $this->formatRupiah($downPaymentValue);
-        $remainingValue = $totalValue - $downPaymentValue;
+        $remainingValue = $pricing['remaining'];
         $formattedRemaining = $this->formatRupiah($remainingValue);
-        $installmentMonths = (int)($contract->installment_months ?? $durationMonths);
-        $monthlyValue = $installmentMonths > 0 ? $remainingValue / $installmentMonths : 0;
+        $installmentMonths = $pricing['months'];
+        $monthlyValue = $pricing['monthly'];
         $formattedMonthly = $this->formatRupiah($monthlyValue);
 
         // === SCOPE OF WORK ===
@@ -90,11 +168,14 @@ class ContractTemplateService
         $penaltyClause = $contract->penalty_clause ?? '';
 
         // === LAMPIRAN CUSTOMIZATION ===
-        $lampiranTitle = $contract->lampiran_title ?? 'Lampiran 2 — Rincian Biaya Jasa';
-        $lampiranDescription = str_replace('{duration}', $durationMonths, $contract->lampiran_description ?? 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Pertama selama ' . $durationMonths . ' bulan');
-        $tableATitle = $contract->table_a_title ?? 'Tabel A';
-        $tableBTitle = $contract->table_b_title ?? 'Tabel B';
-        $tableBDescription = $contract->table_b_description ?? 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Ketiga (Pihak yang menyediakan third-party yang dibutuhkan selama project berjalan)';
+        // Isian kosong memakai teks bawaan; {durasi} (atau {duration}) = jumlah bulan.
+        $lampiranTitle = filled($contract->lampiran_title) ? $contract->lampiran_title : 'Lampiran 2 — Rincian Biaya Jasa';
+        $lampiranDescription = str_replace(['{durasi}', '{duration}'], (string) $durationMonths, filled($contract->lampiran_description) ? $contract->lampiran_description : self::TABLE_A_DESCRIPTION);
+        $tableATitle = filled($contract->table_a_title) ? $contract->table_a_title : 'Tabel A';
+        $tableBTitle = filled($contract->table_b_title) ? $contract->table_b_title : 'Tabel B';
+        $tableBDescription = str_replace(['{durasi}', '{duration}'], (string) $durationMonths, filled($contract->table_b_description) ? $contract->table_b_description : self::TABLE_B_DESCRIPTION);
+        $tableAColumns = self::columnLabels($contract->table_a_columns, self::TABLE_A_COLUMNS);
+        $tableBColumns = self::columnLabels($contract->table_b_columns, self::TABLE_B_COLUMNS);
 
         // === BANK INFO (dari Invoice Settings) ===
         $agencyBankName = $settings->inv_bank_name ?? 'Bank';
@@ -119,7 +200,7 @@ class ContractTemplateService
             'scopeOfWork', 'additionalClauses', 'paymentType', 'contract',
             'projectDescription', 'forceMajeureExtended', 'terminationDays', 'penaltyClause',
             'agencyBankName', 'agencyBankAccount', 'agencyBankAccountName',
-            'lampiranTitle', 'lampiranDescription', 'tableATitle', 'tableBTitle', 'tableBDescription',
+            'lampiranTitle', 'lampiranDescription', 'tableATitle', 'tableBTitle', 'tableBDescription', 'tableAColumns', 'tableBColumns',
             'headerSrc', 'footerSrc'
         ));
     }
@@ -868,15 +949,15 @@ table th {
   <table>
     <thead>
       <tr>
-        <th style="width: 25px; text-align: center;">No</th>
-        <th>Item</th>
-        <th style="width: 150px;">Estimasi</th>
-        <th style="width: 100px;">Tanggal</th>
-        <th style="width: 120px; text-align: right;">Jumlah</th>
+        <th style="width: 25px; text-align: center;">' . htmlspecialchars($tableAColumns['no']) . '</th>
+        <th>' . htmlspecialchars($tableAColumns['item']) . '</th>
+        <th style="width: 150px;">' . htmlspecialchars($tableAColumns['estimate']) . '</th>
+        <th style="width: 100px;">' . htmlspecialchars($tableAColumns['date']) . '</th>
+        <th style="width: 120px; text-align: right;">' . htmlspecialchars($tableAColumns['amount']) . '</th>
       </tr>
     </thead>
     <tbody>
-      ' . $this->buildFeeTableFromItems($contract, $formattedDp, $formattedRemaining, $formattedMonthly, $installmentMonths) . '
+      ' . $this->buildFeeTableFromItems($contract) . '
     </tbody>
   </table>';
 
@@ -889,9 +970,9 @@ table th {
   <table>
     <thead>
       <tr>
-        <th style="width: 25px; text-align: center;">No</th>
-        <th>Item</th>
-        <th style="width: 120px; text-align: right;">Amount (IDR)</th>
+        <th style="width: 25px; text-align: center;">' . htmlspecialchars($tableBColumns['no']) . '</th>
+        <th>' . htmlspecialchars($tableBColumns['item']) . '</th>
+        <th style="width: 120px; text-align: right;">' . htmlspecialchars($tableBColumns['amount']) . '</th>
       </tr>
     </thead>
     <tbody>
@@ -910,84 +991,43 @@ table th {
     }
 
     /**
-     * @param string $formattedDp        Pre-computed, already-formatted down payment amount.
-     * @param string $formattedRemaining Pre-computed, already-formatted remaining balance.
-     * @param string $formattedMonthly   Pre-computed, already-formatted monthly installment amount.
-     * @param int    $installmentMonths  Number of installments, already resolved by generate().
-     *
-     * These values are passed in (rather than recalculated here) so the fee
-     * breakdown always matches the figures shown elsewhere in the contract -
-     * previously this method duplicated the calculation with slightly
-     * different rounding/guard logic, which could produce mismatched totals.
+     * Baris Tabel A: item biaya kontrak (Estimasi = teks sendiri atau sama
+     * dengan Jumlah), atau baris bawaan dari tipe pembayaran bila belum ada.
+     * Baris total memakai nilai kontrak dan labelnya bisa diganti.
      */
-    private function buildFeeTableFromItems(
-        Contract $contract,
-        string $formattedDp,
-        string $formattedRemaining,
-        string $formattedMonthly,
-        int $installmentMonths
-    ): string {
+    private function buildFeeTableFromItems(Contract $contract): string
+    {
         $items = $contract->feeItems ?? collect();
+
+        $rows = $items->isEmpty()
+            ? $this->defaultFeeRows($contract)
+            : $items->values()->map(function ($item) {
+                $amount = $item->amount ? $this->formatRupiah((float) $item->amount) : '-';
+
+                return [
+                    'item'     => $item->item ?? '-',
+                    'estimate' => filled($item->estimate) ? $item->estimate : $amount,
+                    'due_date' => $item->due_date ?? '-',
+                    'amount'   => $item->amount ? (float) $item->amount : null,
+                ];
+            })->all();
+
         $html = '';
 
-        if ($items->isEmpty()) {
-            // Default: Generate from payment type
-            $paymentType = $contract->payment_type ?? 'full';
-            $totalValue = (float)($contract->total_value ?? 0);
-            $formattedTotal = $this->formatRupiah($totalValue);
-            $effectiveDate = $contract->effective_date ? Carbon::parse($contract->effective_date) : now();
-
-            if ($paymentType === 'dp_monthly') {
-                $html .= '<tr>
-                    <td class="text-center">1</td>
-                    <td>Fase 1 - Down Payment</td>
-                    <td>' . $formattedDp . '</td>
-                    <td>' . $effectiveDate->format('d/m/Y') . '</td>
-                    <td class="text-right">' . $formattedDp . '</td>
-                  </tr>';
-                $html .= '<tr>
-                    <td class="text-center">2</td>
-                    <td>Sisa Pembayaran (' . $installmentMonths . 'x)</td>
-                    <td>' . $formattedRemaining . '</td>
-                    <td>Setiap tanggal 15</td>
-                    <td class="text-right">' . $formattedRemaining . '</td>
-                  </tr>';
-            } elseif ($paymentType === 'monthly') {
-                $html .= '<tr>
-                    <td class="text-center">1</td>
-                    <td>Pembayaran per Bulan (' . $installmentMonths . 'x)</td>
-                    <td>' . $formattedMonthly . '</td>
-                    <td>Setiap tanggal 15</td>
-                    <td class="text-right">' . $formattedTotal . '</td>
-                  </tr>';
-            } else {
-                $html .= '<tr>
-                    <td class="text-center">1</td>
-                    <td>Pembayaran Lunas</td>
-                    <td>' . $formattedTotal . '</td>
-                    <td>' . $effectiveDate->format('d/m/Y') . '</td>
-                    <td class="text-right">' . $formattedTotal . '</td>
-                  </tr>';
-            }
-        } else {
-            foreach ($items as $index => $item) {
-                $amount = $item->amount ? $this->formatRupiah((float)$item->amount) : '-';
-                $html .= '<tr>
+        foreach ($rows as $index => $row) {
+            $html .= '<tr>
                     <td class="text-center">' . ($index + 1) . '</td>
-                    <td>' . htmlspecialchars($item->item ?? '-') . '</td>
-                    <td>' . $amount . '</td>
-                    <td>' . htmlspecialchars($item->due_date ?? '-') . '</td>
-                    <td class="text-right">' . $amount . '</td>
+                    <td>' . htmlspecialchars((string) $row['item']) . '</td>
+                    <td>' . htmlspecialchars((string) $row['estimate']) . '</td>
+                    <td>' . htmlspecialchars((string) $row['due_date']) . '</td>
+                    <td class="text-right">' . ($row['amount'] !== null ? $this->formatRupiah($row['amount']) : '-') . '</td>
                   </tr>';
-            }
         }
 
-        // Total row
-        $totalValue = (float)($contract->total_value ?? 0);
-        $formattedTotal = $this->formatRupiah($totalValue);
+        $label = filled($contract->table_a_total_label) ? $contract->table_a_total_label : self::TOTAL_LABEL;
         $html .= '<tr>
-            <td colspan="4" class="text-left font-bold">TOTAL</td>
-            <td class="text-right font-bold">' . $formattedTotal . '</td>
+            <td colspan="4" class="text-left font-bold">' . htmlspecialchars($label) . '</td>
+            <td class="text-right font-bold">' . $this->formatRupiah((float) ($contract->total_value ?? 0)) . '</td>
           </tr>';
 
         return $html;
