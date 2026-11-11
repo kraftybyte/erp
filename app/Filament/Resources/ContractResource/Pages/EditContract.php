@@ -33,6 +33,7 @@ class EditContract extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            \App\Filament\Resources\ContractResource\Actions\DuplicateContract::page(),
             \Filament\Actions\DeleteAction::make(),
         ];
     }

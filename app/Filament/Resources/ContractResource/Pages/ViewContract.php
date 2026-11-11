@@ -26,6 +26,7 @@ class ViewContract extends ViewRecord
                 ->color('success')
                 ->url(fn () => route('filament.admin.resources.contracts.download-pdf', $this->record)),
 
+            \App\Filament\Resources\ContractResource\Actions\DuplicateContract::page(),
             Actions\EditAction::make(),
         ];
     }
