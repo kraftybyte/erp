@@ -14,6 +14,7 @@ class ContractItem extends Model
         'item',
         'description',
         'amount',
+        'estimate', // teks kolom Estimasi di Tabel A; kosong = sama dengan amount
         'due_date',
         'notes',
         'type', // 'fee', 'third_party', 'sow'

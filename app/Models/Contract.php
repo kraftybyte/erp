@@ -52,6 +52,9 @@ class Contract extends Model
         'table_a_title',
         'table_b_title',
         'table_b_description',
+        'table_a_columns',
+        'table_a_total_label',
+        'table_b_columns',
         'has_third_party',
     ];
 
@@ -66,6 +69,8 @@ class Contract extends Model
         'termination_notice_days' => 'integer',
         'has_third_party' => 'boolean',
         'articles' => 'array',
+        'table_a_columns' => 'array',
+        'table_b_columns' => 'array',
     ];
 
     public function deal(): BelongsTo

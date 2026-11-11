@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ContractResource\Pages;
 
+use App\Filament\Resources\ContractResource\Schemas\ContractLampiran;
 use App\Filament\Resources\ContractResource;
 use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
@@ -211,51 +212,8 @@ class CreateContract extends CreateRecord
                             ]),
                     ]),
 
-                // Section 7: Lampiran
-                Section::make('Lampiran')
-                    ->icon('heroicon-o-paper-clip')
-                    ->collapsed()
-                    ->schema([
-                        TextInput::make('lampiran_title')
-                            ->label('Judul Lampiran')
-                            ->default('Lampiran 1 — Rincian Biaya Jasa')
-                            ->columnSpanFull(),
-
-                        Grid::make(2)
-                            ->schema([
-                                TextInput::make('table_a_title')
-                                    ->label('Judul Tabel A'),
-                                TextInput::make('table_b_title')
-                                    ->label('Judul Tabel a'),
-                            ]),
-
-                        Toggle::make('has_third_party')
-                            ->label('Aktifkan Tabel a (Biaya Pihak Ketiga)')
-                            ->default(false),
-
-                        Repeater::make('fee_items')
-                            ->label('Item Biaya (Tabel A)')
-                            ->relationship('feeItems')
-                            ->schema([
-                                TextInput::make('item')->label('Nama Item')->required(),
-                                TextInput::make('amount')->label('Jumlah')->numeric()->prefix('Rp '),
-                                TextInput::make('due_date')->label('Jatuh Tempo'),
-                            ])
-                            ->columns(3)
-                            ->defaultItems(1),
-
-                        Repeater::make('third_party_items')
-                            ->label('Item Pihak Ketiga (Tabel a)')
-                            ->relationship('thirdPartyItems')
-                            ->schema([
-                                TextInput::make('item')->label('Nama Item'),
-                                TextInput::make('amount')->label('Jumlah')->numeric()->prefix('Rp '),
-                                Textarea::make('notes')->label('Keterangan')->rows(2),
-                            ])
-                            ->columns(3)
-                            ->defaultItems(0)
-                            ->visible(fn (callable $get) => $get('has_third_party')),
-                    ]),
+                // Section 7: Lampiran (semua teks Tabel A/B bisa diubah)
+                ContractLampiran::section(),
 
                 // Isi kontrak (semua teks bisa diedit) dan kop/kaki surat.
                 ...static::contractBodySections(),

@@ -203,7 +203,7 @@ trait HasContractPreview
     private function previewItems(array $rows, string $type): Collection
     {
         return collect($rows)->values()->map(fn (array $row, int $i) => $this->previewItem(
-            ['type' => $type, 'sort_order' => $i + 1] + array_map($this->blankToNull(...), Arr::only($row, ['item', 'amount', 'due_date', 'notes'])),
+            ['type' => $type, 'sort_order' => $i + 1] + array_map($this->blankToNull(...), Arr::only($row, ['item', 'estimate', 'amount', 'due_date', 'notes'])),
         ));
     }
 

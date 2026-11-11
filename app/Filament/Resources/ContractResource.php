@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\ContractResource\Schemas\ContractLampiran;
 use App\Filament\Resources\ContractResource\Pages;
 use App\Models\Contract;
 use App\Models\Deal;
@@ -307,89 +308,8 @@ class ContractResource extends Resource
                             ]),
                     ]),
 
-                // Section 8: Lampiran - Table Items
-                Forms\Components\Section::make('Lampiran - Rincian Biaya')
-                    ->icon('heroicon-o-table-cells')
-                    ->schema([
-                        TextInput::make('lampiran_title')
-                            ->label('Judul Lampiran')
-                            ->default('Lampiran 1 — Rincian Biaya Jasa')
-                            ->columnSpanFull(),
-
-                        // Tabel A - Fee Items
-                        Grid::make(2)
-                            ->schema([
-                                TextInput::make('table_a_title')
-                                    ->label('Judul Tabel A')
-                                    ->default('Tabel A'),
-
-                                TextInput::make('table_b_title')
-                                    ->label('Judul Tabel a')
-                                    ->default('Tabel a'),
-                            ]),
-
-                        // Tabel A - Fee Items
-                        Forms\Components\Placeholder::make('table_a_placeholder')
-                            ->label('Tabel A - Biaya Jasa')
-                            ->content('Klik tombol "+ Tambah" untuk menambah item biaya')
-                            ->columnSpanFull(),
-
-                        Forms\Components\Repeater::make('fee_items')
-                            ->label('Item Biaya (Tabel A)')
-                            ->relationship('feeItems')
-                            ->schema([
-                                TextInput::make('item')
-                                    ->label('Nama Item')
-                                    ->required(),
-                                TextInput::make('amount')
-                                    ->label('Jumlah')
-                                    ->numeric()
-                                    ->prefix('Rp '),
-                                TextInput::make('due_date')
-                                    ->label('Jatuh Tempo'),
-                            ])
-                            ->columns(3)
-                            ->defaultItems(1),
-
-                        // Tabel a - Third Party (toggle)
-                        Toggle::make('has_third_party')
-                            ->label('Aktifkan Tabel a (Biaya Pihak Ketiga)')
-                            ->default(false)
-                            ->reactive()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                if (!$state) {
-                                    $set('third_party_items', []);
-                                }
-                            }),
-
-                        Forms\Components\Placeholder::make('table_b_placeholder')
-                            ->label('Tabel a - Biaya Pihak Ketiga')
-                            ->content('Klik tombol "+ Tambah" untuk menambah item pihak ketiga')
-                            ->columnSpanFull()
-                            ->hidden(function (callable $get) {
-                                return !$get('has_third_party');
-                            }),
-
-                        Forms\Components\Repeater::make('third_party_items')
-                            ->label('Item Pihak Ketiga (Tabel a)')
-                            ->relationship('thirdPartyItems')
-                            ->schema([
-                                TextInput::make('item')
-                                    ->label('Nama Item'),
-                                TextInput::make('amount')
-                                    ->label('Jumlah')
-                                    ->numeric()
-                                    ->prefix('Rp '),
-                                Textarea::make('notes')
-                                    ->label('Keterangan')
-                                    ->rows(2),
-                            ])
-                            ->columns(3)
-                            ->defaultItems(0)
-                            ->hidden(function (callable $get) {
-                                return !$get('has_third_party');
-                            }),
-                    ]),
+                // Section 8: Lampiran (semua teks Tabel A/B bisa diubah)
+                ContractLampiran::section(),
 
                 // Section 9: Additional Terms
                 Forms\Components\Section::make('Ketentuan Tambahan')
