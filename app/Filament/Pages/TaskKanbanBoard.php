@@ -387,7 +387,7 @@ class TaskKanbanBoard extends KanbanBoard
         } else {
             Event::create([
                 'title' => $task->nama_task,
-                'description' => $task->detail_task ?? '',
+                'description' => Event::plainText($task->detail_task),
                 'start_time' => $task->mulai_task,
                 'end_time' => $task->selesai_task ?? $task->mulai_task,
                 'color' => $this->getEventColor($task->status),

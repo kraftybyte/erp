@@ -105,6 +105,8 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
+            // Persistent: juga untuk aksi Livewire di halaman yang sudah terbuka.
+            ->authMiddleware([\App\Http\Middleware\EnsureSiteActive::class], isPersistent: true)
             ->plugins([
                 FilamentFullCalendarPlugin::make(),
                 \BezhanSalleh\FilamentShield\FilamentShieldPlugin::make(),

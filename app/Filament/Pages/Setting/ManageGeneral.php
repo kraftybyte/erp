@@ -88,9 +88,10 @@ class ManageGeneral extends SettingsPage
                             Forms\Components\Select::make('site_active')
                                 ->label(fn () => __('page.general_settings.fields.site_active'))
                                 ->options([
-                                    0 => "Not Active",
-                                    1 => "Active",
+                                    1 => 'Aktif',
+                                    0 => 'Tidak aktif (sedang perbaikan)',
                                 ])
+                                ->helperText('Tidak aktif: semua pengguna melihat halaman "ERP sedang diperbaiki", kecuali yang boleh membuka halaman Settings ini. Bot Telegram dan jadwal otomatis tetap jalan.')
                                 ->native(false)
                                 ->required(),
                         ]),
@@ -186,11 +187,7 @@ class ManageGeneral extends SettingsPage
                                 Forms\Components\Section::make('ID Settings')
                                     ->description('Pengaturan format ID quotation')
                                     ->schema([
-                                        Forms\Components\TextInput::make('quotation_prefix')
-                                            ->label('Prefix Quotation ID')
-                                            ->placeholder('DG')
-                                            ->maxLength(10)
-                                            ->helperText('Contoh: DG → #DG/2605/00001'),
+                                        static::numberPrefixInput('quotation_prefix', 'Prefix Quotation ID'),
                                     ]),
                                 Forms\Components\Section::make('Cover Pages')
                                     ->description('Atur tampilan cover page quotation')
@@ -270,13 +267,11 @@ class ManageGeneral extends SettingsPage
                         Forms\Components\Tabs\Tab::make('Invoice Template')
                             ->schema([
                                 Forms\Components\Section::make('ID Settings')
-                                    ->description('Pengaturan format ID invoice')
+                                    ->description('Pengaturan format ID invoice. Berlaku untuk nomor baru; nomor yang sudah ada tidak berubah.')
+                                    ->columns(2)
                                     ->schema([
-                                        Forms\Components\TextInput::make('invoice_prefix')
-                                            ->label('Prefix Invoice ID')
-                                            ->placeholder('INV')
-                                            ->maxLength(10)
-                                            ->helperText('Contoh: INV → #INV/2605/00001'),
+                                        static::numberPrefixInput('invoice_prefix', 'Prefix Invoice ID', differFrom: 'proforma_prefix'),
+                                        static::numberPrefixInput('proforma_prefix', 'Prefix Proforma ID', differFrom: 'invoice_prefix'),
                                     ]),
                                 Forms\Components\Section::make('Theme Color')
                                     ->description('Pilih warna utama untuk invoice')
@@ -642,6 +637,39 @@ class ManageGeneral extends SettingsPage
         } catch (\Throwable $th) {
             throw $th;
         }
+    }
+
+    /** Prefix nomor dokumen bawaan, dipakai bila isiannya dikosongkan. */
+    private const NUMBER_PREFIX_DEFAULTS = ['quotation_prefix' => 'DG', 'invoice_prefix' => 'SC', 'proforma_prefix' => 'PI'];
+
+    private static function normalizePrefix(string $name, mixed $state): string
+    {
+        return filled($state) ? strtoupper(trim((string) $state)) : self::NUMBER_PREFIX_DEFAULTS[$name];
+    }
+
+    /**
+     * Prefix nomor dokumen: 1–5 huruf, disimpan kapital; kosong = bawaan.
+     * Contohnya mengikuti format nomor yang sebenarnya (#PREFIX/013YYMM/00001).
+     * $differFrom: prefix lain yang tidak boleh sama (invoice dan proforma
+     * masing-masing punya urutan nomor sendiri per prefix).
+     */
+    protected static function numberPrefixInput(string $name, string $label, ?string $differFrom = null): Forms\Components\TextInput
+    {
+        return Forms\Components\TextInput::make($name)
+            ->label($label)
+            ->placeholder(self::NUMBER_PREFIX_DEFAULTS[$name])
+            ->maxLength(5)
+            ->regex('/^[A-Za-z]{1,5}$/')
+            ->validationMessages(['regex' => 'Isi 1–5 huruf saja, tanpa angka, spasi, atau garis miring.'])
+            ->rule(fn (Get $get) => function (string $attribute, mixed $value, \Closure $fail) use ($get, $name, $differFrom) {
+                if ($differFrom && self::normalizePrefix($name, $value) === self::normalizePrefix($differFrom, $get($differFrom))) {
+                    $fail('Prefix invoice dan proforma harus berbeda.');
+                }
+            })
+            ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+            ->dehydrateStateUsing(fn (mixed $state) => self::normalizePrefix($name, $state))
+            ->live(onBlur: true)
+            ->helperText(fn (Get $get) => 'Contoh nomor: #' . self::normalizePrefix($name, $get($name)) . '/013' . now()->format('ym') . '/00001');
     }
 
     public static function getNavigationGroup(): ?string

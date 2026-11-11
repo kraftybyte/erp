@@ -44,7 +44,10 @@ class EventResource extends Resource
                 TextInput::make('title')->required()
                 ->label('Judul Acara'),
                 Textarea::make('description')
-                ->label('Keterangan Acara'),
+                ->label('Keterangan Acara')
+                ->rows(3)
+                ->maxLength(5000)
+                ->helperText(fn (?Event $record) => $record?->task_id ? 'Event ini dari task: keterangan ikut diperbarui saat detail task diubah.' : null),
                 DateTimePicker::make('start_time')
                     ->required()
                     ->timezone('Asia/Jakarta')
@@ -72,8 +75,9 @@ class EventResource extends Resource
                 Tables\Columns\TextColumn::make('title')
                 ->searchable(),
                 Tables\Columns\TextColumn::make('description')
-                ->limit(10) // Memotong teks setelah 50 karakter
-                ->tooltip(fn ($record) => $record->description), // Menampilkan teks lengkap saat hover
+                ->label('Keterangan')
+                ->limit(50)
+                ->tooltip(fn ($record) => mb_strlen((string) $record->description) > 50 ? $record->description : null),
                 Tables\Columns\TextColumn::make('start_time')
                 ->dateTime()
                 ->sortable(),

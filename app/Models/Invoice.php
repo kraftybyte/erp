@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Settings\GeneralSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use TomatoPHP\FilamentInvoices\Models\Invoice as BaseInvoice;
@@ -287,7 +288,8 @@ class Invoice extends BaseInvoice
 
     /**
      * Generate UUID based on type and reset per month
-     * Format: #SC/0132607/XXXXX atau #PI/0132607/XXXXX
+     * Format: #SC/0132607/XXXXX atau #PI/0132607/XXXXX. Prefix diatur di
+     * Settings → General → Invoice Template (bawaan SC dan PI).
      *
      * Nomor urut diambil langsung di database (MAX atas 5 digit terakhir), bukan
      * dengan menarik seluruh invoice bulan berjalan ke memory. Nomor yang sudah
@@ -300,16 +302,16 @@ class Invoice extends BaseInvoice
      */
     public static function generateUuid(string $type = 'sale'): string
     {
-        $prefix = match ($type) {
-            'estimate' => 'PI',
-            'sale' => 'SC',
-            default => 'SC',
-        };
+        $settings   = app(GeneralSettings::class);
+        $isProforma = $type === 'estimate';
+        $prefix     = $isProforma
+            ? $settings->numberPrefix('proforma_prefix', 'PI')
+            : $settings->numberPrefix('invoice_prefix', 'SC');
 
         // Format: 013YYMM (mis. 0132607 untuk Juli 2026)
         $awalan = '#' . $prefix . '/013' . now()->format('ym') . '/';
 
-        if ($prefix === 'PI' && ($dilepas = static::nomorProformaDilepas($awalan))) {
+        if ($isProforma && ($dilepas = static::nomorProformaDilepas($awalan))) {
             return $dilepas;
         }
 
