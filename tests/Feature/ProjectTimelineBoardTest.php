@@ -86,6 +86,16 @@ class ProjectTimelineBoardTest extends TestCase
         $this->assertNotContains("tasks-{$this->project->id}", array_column($noTasks['resources'][0]['children'], 'id'));
     }
 
+    public function test_periode_hanya_berisi_task_tanpa_phase(): void
+    {
+        $task = Task::create(['nama_task' => 'Cetak backdrop', 'project_id' => $this->project->id, 'status' => 'process', 'proritas' => 'High', 'mulai_task' => '2026-11-12 09:00:00', 'selesai_task' => '2026-11-13 17:00:00']);
+
+        $data = Livewire::test(ProjectTimelineBoard::class)->set('search', $this->client)->instance()->boardData('2026-11-01', '2026-12-01');
+
+        $this->assertSame(["tasks-{$this->project->id}"], array_column($data['resources'][0]['children'], 'id'));
+        $this->assertSame(["task-{$task->id}"], array_column($data['events'], 'id'));
+    }
+
     public function test_geser_bar_menyimpan_tanggal_inklusif(): void
     {
         $phase = $this->phase('Design', '2026-11-03', '2026-11-07');
