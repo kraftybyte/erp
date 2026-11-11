@@ -473,6 +473,7 @@ class ContractResource extends Resource
                 // kolom aksi mendorong tabel keluar layar.
                 Tables\Actions\ViewAction::make()->hiddenLabel()->tooltip('Detail'),
                 Tables\Actions\EditAction::make()->hiddenLabel()->tooltip('Edit'),
+                \App\Filament\Resources\ContractResource\Actions\DuplicateContract::table(),
                 Tables\Actions\DeleteAction::make()->hiddenLabel()->tooltip('Hapus'),
             ])
             ->bulkActions([
