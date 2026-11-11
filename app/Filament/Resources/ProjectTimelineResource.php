@@ -48,11 +48,7 @@ class ProjectTimelineResource extends Resource
 
             Forms\Components\Select::make('status')
                 ->label('Status')
-                ->options([
-                    'ongoing' => 'Ongoing',
-                    'done' => 'Done',
-                    'delayed' => 'Delayed',
-                ])
+                ->options(ProjectTimeline::STATUSES)
                 ->default('ongoing')
                 ->required(),
 
@@ -93,6 +89,7 @@ class ProjectTimelineResource extends Resource
 
                 Tables\Columns\BadgeColumn::make('status')
                     ->label('Status')
+                    ->formatStateUsing(fn (?string $state) => ProjectTimeline::STATUSES[$state] ?? $state)
                     ->color(fn ($record) => ColorHelper::status($record->status)),
 
                 Tables\Columns\TextColumn::make('notes')
@@ -109,11 +106,7 @@ class ProjectTimelineResource extends Resource
 
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
-                    ->options([
-                        'ongoing' => 'Ongoing',
-                        'done' => 'Done',
-                        'delayed' => 'Delayed',
-                    ]),
+                    ->options(ProjectTimeline::STATUSES),
 
                 Tables\Filters\SelectFilter::make('project_id')
                     ->label('Perusahaan')

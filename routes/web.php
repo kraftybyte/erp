@@ -49,33 +49,6 @@ Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
         ->name('filament.admin.resources.contracts.download-pdf');
 });
 
-// Timeline Update API (with rate limiting)
-Route::post('/timeline/update', function (\Illuminate\Http\Request $request) {
-    $timeline = \App\Models\ProjectTimeline::find($request->id);
-
-    if (!$timeline) {
-        return response()->json(['success' => false]);
-    }
-
-    /** @var \App\Models\User|null $user */
-    $user = Auth::user();
-    $userName = $user?->name ?? 'Unknown';
-
-    $timeline->update([
-        'start_date' => $request->start,
-        'end_date'   => $request->end,
-        'updated_by' => $user?->id,
-    ]);
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Perubahan terakhir: '
-            . $userName
-            . ' – '
-            . now()->format('d F Y, H:i')
-    ]);
-})->middleware(['auth', 'throttle:timeline'])->name('timeline.update');
-
 // Thermal Print Routes (protected with auth)
 Route::middleware(['auth'])->group(function () {
     Route::get('/thermal/{projectId}/print', [ThermalPrintController::class, 'print'])
