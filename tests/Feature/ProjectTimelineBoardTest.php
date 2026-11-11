@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\ProjectTimelineBoard;
+use App\Filament\Resources\ProjectTimelineResource\Pages\ListProjectTimelines;
 use App\Models\Project;
 use App\Models\ProjectTimeline;
+use App\Models\ProjectTimelineLog;
 use App\Models\Task;
 use App\Models\User;
 use Filament\Facades\Filament;
@@ -163,6 +165,93 @@ class ProjectTimelineBoardTest extends TestCase
 
         $page->callAction(['editPhase', 'deletePhase'], arguments: ['editPhase' => ['id' => $phase->id]]);
         $this->assertNull(ProjectTimeline::find($phase->id));
+    }
+
+    public function test_riwayat_mencatat_siapa_mengubah_apa(): void
+    {
+        $user = auth()->user();
+        $page = Livewire::test(ProjectTimelineBoard::class);
+
+        $page->callAction('addPhase', data: ['project_id' => $this->project->id, 'nama_phase' => 'Design', 'start_date' => '2026-11-03', 'end_date' => '2026-11-07', 'status' => 'ongoing']);
+        $phase = ProjectTimeline::where('project_id', $this->project->id)->sole();
+
+        $page->instance()->move("phase-{$phase->id}", '2026-11-04', '2026-11-09');   // digeser
+        $page->instance()->move("phase-{$phase->id}", '2026-11-04', '2026-11-11');   // ujungnya ditarik
+        Livewire::test(ProjectTimelineBoard::class)->callAction('editPhase', data: ['status' => 'completed'], arguments: ['id' => $phase->id]);
+
+        $task = Task::create(['nama_task' => 'Cetak backdrop', 'project_id' => $this->project->id, 'status' => 'process', 'proritas' => 'High', 'mulai_task' => '2026-11-12 09:00:00', 'selesai_task' => '2026-11-13 17:00:00']);
+        $page->instance()->move("task-{$task->id}", '2026-11-20', '2026-11-22');
+
+        $logs = ProjectTimelineLog::where('project_id', $this->project->id)->oldest('id')->get();
+        $this->assertSame(['created', 'moved', 'moved', 'updated', 'moved'], $logs->pluck('action')->all());
+        $this->assertSame([$user->id], $logs->pluck('user_id')->unique()->values()->all());
+        $this->assertSame([$user->name], $logs->pluck('user_name')->unique()->values()->all());
+
+        $this->assertEquals(['start' => ['2026-11-03', '2026-11-04'], 'end' => ['2026-11-07', '2026-11-08']], $logs[1]->diff);
+        $this->assertSame(['2026-11-04', '2026-11-04'], $logs[2]->diff['start'], 'Hanya ujung yang ditarik: tanggal mulai tetap tersimpan supaya rentangnya utuh.');
+        $this->assertStringContainsString('menggeser phase Design: 03–07 Nov 2026 → 04–08 Nov 2026', $logs[1]->summary());
+        $this->assertStringContainsString('status Berjalan → Selesai', $logs[3]->summary());
+        $this->assertSame(['task', 'Cetak backdrop'], [$logs[4]->subject_type, $logs[4]->title]);
+        $this->assertStringContainsString('menggeser task Cetak backdrop: 12–13 Nov 2026 → 20–21 Nov 2026', $logs[4]->summary());
+
+        // Riwayat terbaca di slide-over dan di modal phase; tetap ada setelah phase dihapus.
+        Livewire::test(ProjectTimelineBoard::class)->set('search', $this->client)->mountAction('history')
+            ->assertSee($user->name)->assertSee('menggeser task Cetak backdrop');
+        Livewire::test(ProjectTimelineBoard::class)->mountAction('editPhase', ['id' => $phase->id])->assertSee('menambah phase Design');
+
+        Livewire::test(ProjectTimelineBoard::class)
+            ->mountAction('editPhase', ['id' => $phase->id])
+            ->call('mountAction', 'deletePhase')
+            ->call('callMountedAction');
+        $this->assertNull(ProjectTimeline::find($phase->id));
+        $deleted = ProjectTimelineLog::forSubject('phase', $phase->id)->latest('id')->first();
+        $this->assertSame(['deleted', $user->id], [$deleted->action, $deleted->user_id]);
+        $this->assertSame(5, ProjectTimelineLog::forSubject('phase', $phase->id)->count());
+
+        // Perubahan tanpa pengguna (mis. perintah terjadwal) tercatat sebagai Sistem.
+        auth()->logout();
+        $this->phase('Brief', '2026-11-01', '2026-11-02');
+        $this->assertNull(ProjectTimelineLog::latest('id')->first()->user_id);
+    }
+
+    public function test_hapus_phase_hanya_dengan_izin_shield(): void
+    {
+        $phase = $this->phase('Design', '2026-11-03', '2026-11-07');
+
+        Permission::findOrCreate('page_ProjectTimelineBoard', 'web');
+        foreach (['view_any_project::timeline', 'view_project::timeline', 'update_project::timeline', 'delete_project::timeline', 'delete_any_project::timeline'] as $name) {
+            Permission::findOrCreate($name, 'web');
+        }
+
+        $editor = Role::create(['name' => 'Tes Editor Timeline ' . Str::random(5), 'guard_name' => 'web']);
+        $editor->givePermissionTo(['page_ProjectTimelineBoard', 'view_any_project::timeline', 'view_project::timeline', 'update_project::timeline']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->actingAs($this->user($editor->name));
+
+        // Boleh mengubah, tidak boleh menghapus: di board maupun di menu Timeline.
+        $page   = Livewire::test(ProjectTimelineBoard::class)->mountAction('editPhase', ['id' => $phase->id]);
+        $delete = collect($page->instance()->getMountedAction()->getExtraModalFooterActions())->first(fn ($action) => $action->getName() === 'deletePhase');
+        $this->assertTrue($delete->isHidden(), 'Tombol Hapus tidak tampil tanpa izin delete.');
+
+        $page->call('mountAction', 'deletePhase');
+        $this->assertNotContains('deletePhase', $page->instance()->mountedActions, 'Hapus tidak bisa dibuka lewat panggilan langsung.');
+        $this->assertNotNull(ProjectTimeline::find($phase->id));
+
+        Livewire::test(ListProjectTimelines::class)
+            ->assertTableActionVisible('edit', $phase)
+            ->assertTableActionHidden('delete', $phase)
+            ->assertTableBulkActionHidden('delete');
+
+        $editor->givePermissionTo(['delete_project::timeline', 'delete_any_project::timeline']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        Livewire::test(ListProjectTimelines::class)->assertTableActionVisible('delete', $phase);
+        Livewire::test(ProjectTimelineBoard::class)
+            ->mountAction('editPhase', ['id' => $phase->id])
+            ->call('mountAction', 'deletePhase')
+            ->call('callMountedAction');
+        $this->assertNull(ProjectTimeline::find($phase->id));
+        $this->assertSame('deleted', ProjectTimelineLog::forSubject('phase', $phase->id)->latest('id')->value('action'));
     }
 
     public function test_halaman_tampil_dan_route_lama_dihapus(): void

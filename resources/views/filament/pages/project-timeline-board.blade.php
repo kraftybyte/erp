@@ -141,6 +141,19 @@
     .tl-row-phase.is-editable:hover { text-decoration: underline; }
     .tl-row-tasks { color: rgb(var(--gray-500)); }
     .dark .tl-row-tasks { color: rgb(var(--gray-400)); }
+
+    /* Riwayat (slide-over dan modal edit phase) */
+    .tl-log { display: flex; flex-direction: column; }
+    .tl-log-item { padding: .625rem 0; border-top: 1px solid rgba(var(--gray-950), .06); }
+    .tl-log-item:first-child { padding-top: 0; border-top: 0; }
+    .dark .tl-log-item { border-top-color: rgba(255, 255, 255, .08); }
+    .tl-log-text { font-size: .875rem; line-height: 1.4; color: rgb(var(--gray-700)); }
+    .dark .tl-log-text { color: rgb(var(--gray-200)); }
+    .tl-log-text strong { font-weight: 600; color: rgb(var(--gray-950)); }
+    .dark .tl-log-text strong { color: #fff; }
+    .tl-log-meta { margin-top: .125rem; font-size: .75rem; color: rgb(var(--gray-500)); }
+    .dark .tl-log-meta { color: rgb(var(--gray-400)); }
+    .tl-log-empty { font-size: .875rem; color: rgb(var(--gray-500)); }
 </style>
 @endassets
 

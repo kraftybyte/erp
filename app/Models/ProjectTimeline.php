@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Observers\ProjectTimelineObserver;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -46,6 +47,16 @@ class ProjectTimeline extends Model
         'start_date' => 'datetime',
         'end_date'   => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::observe(ProjectTimelineObserver::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(ProjectTimelineLog::class, 'subject_id')->where('subject_type', 'phase')->latest('id');
+    }
 
     public function updater()
     {
