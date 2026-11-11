@@ -34,7 +34,7 @@ class TaskObserver
         // dihapus — ia juga melewatkan update sah yang datang dalam 3 detik.
 
         // Sync to Event if dates or title changed
-        if ($task->wasChanged(['mulai_task', 'selesai_task', 'nama_task', 'status'])) {
+        if ($task->wasChanged(['mulai_task', 'selesai_task', 'nama_task', 'detail_task', 'status'])) {
             $this->syncTaskToEvent($task);
         }
 
@@ -151,7 +151,7 @@ class TaskObserver
 
         $eventData = [
             'title' => $task->nama_task,
-            'description' => $task->detail_task ?? '',
+            'description' => Event::plainText($task->detail_task),
             'start_time' => $task->mulai_task,
             'end_time' => $task->selesai_task ?? $task->mulai_task,
             'task_id' => $task->id,

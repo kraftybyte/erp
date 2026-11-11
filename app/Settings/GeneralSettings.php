@@ -96,7 +96,8 @@ class GeneralSettings extends Settings
 
     // ID Prefix Settings
     public mixed $quotation_prefix = 'DG';
-    public mixed $invoice_prefix = 'INV';
+    public mixed $invoice_prefix = 'SC';
+    public mixed $proforma_prefix = 'PI';
 
     // Navigation Label Settings
     public mixed $nav_leads = 'Leads';
@@ -206,7 +207,8 @@ class GeneralSettings extends Settings
             ],
             // ID Prefix Settings
             'quotation_prefix' => 'DG',
-            'invoice_prefix' => 'INV',
+            'invoice_prefix' => 'SC',
+            'proforma_prefix' => 'PI',
             // Navigation Labels
             'nav_leads' => 'Leads',
             'nav_client' => 'Client',
@@ -237,6 +239,20 @@ class GeneralSettings extends Settings
             'footer_copyright_text' => 'All Rights Reserved.',
             'footer_custom_text' => '',
         ];
+    }
+
+    /**
+     * Prefix nomor dokumen: 1–5 huruf kapital (pola yang juga dikenali analisa
+     * AI keuangan sebagai nomor dokumen). Isian kosong atau tidak sah memakai
+     * $fallback.
+     */
+    public const NUMBER_PREFIX_PATTERN = '/^[A-Z]{1,5}$/';
+
+    public function numberPrefix(string $key, string $fallback): string
+    {
+        $prefix = strtoupper(trim((string) ($this->{$key} ?? '')));
+
+        return preg_match(self::NUMBER_PREFIX_PATTERN, $prefix) ? $prefix : $fallback;
     }
 
     // Get quotation settings as array for view
