@@ -175,12 +175,21 @@ class CreateContract extends CreateRecord
                             ->schema([
                                 TextInput::make('down_payment_percent')
                                     ->label('DP (%)')
+                                    ->visible(fn (Get $get) => $get('payment_type') === 'dp_monthly')
                                     ->numeric()
                                     ->default(0),
                                 TextInput::make('installment_months')
                                     ->label('Jumlah Cicilan')
                                     ->numeric()
                                     ->default(1),
+                                TextInput::make('payment_due_day')
+                                    ->label('Jatuh tempo tiap bulan (tanggal)')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue(31)
+                                    ->default(\App\Services\ContractTemplateService::DEFAULT_DUE_DAY)
+                                    ->placeholder((string) \App\Services\ContractTemplateService::DEFAULT_DUE_DAY)
+                                    ->helperText('Penanda {tanggal_jatuh_tempo}: pasal pembayaran dan baris Tabel A ikut tanggal ini.'),
                             ]),
                     ]),
 

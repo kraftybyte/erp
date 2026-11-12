@@ -1373,6 +1373,11 @@ return array (
       'type' => 'text',
       'nullable' => true,
     ),
+    'payment_due_day' => 
+    array (
+      'type' => 'tinyint unsigned',
+      'nullable' => true,
+    ),
   ),
   'countries' => 
   array (

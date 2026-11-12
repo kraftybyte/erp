@@ -107,6 +107,56 @@ class ContractPksFormatTest extends TestCase
         $this->assertStringContainsString('class="lampiran lampiran-continue"', $html, 'Lampiran 2 menyambung Lampiran 1.');
     }
 
+    public function test_angka_di_setiap_pasal_mengikuti_data_kontrak(): void
+    {
+        $contract = Contract::create(ContractFormats::make('pks') + [
+            'contract_number'         => '002/PKS/TES',
+            'client_name_full'        => 'PT Ikut Data',
+            'effective_date'          => '2026-12-15',
+            'expiration_date'         => '2027-06-15',
+            'duration_months'         => 6,
+            'payment_type'            => 'monthly',
+            'total_value'             => 48_000_000,
+            'down_payment_percent'    => 50, // bawaan kolom; "Cicilan per Bulan" tidak memakai DP
+            'installment_months'      => 6,
+            'payment_due_day'         => 10,
+            'termination_notice_days' => 14,
+        ]);
+
+        $html = app(ContractTemplateService::class)->generate($contract->fresh());
+        $text = preg_replace('/\s+/', ' ', html_entity_decode(strip_tags(str_replace(['<br>', '<br />', '</td>', '</th>'], ' ', $html)), ENT_QUOTES));
+
+        foreach ([
+            'Jangka waktu layanan adalah 6 (enam) bulan, dimulai pada 15 Desember 2026 dan berakhir pada 15 Juni 2027',
+            'biaya tetap sebesar Rp8.000.000 per bulan, total Rp48.000.000 untuk 6 bulan',
+            'paling lambat setiap tanggal 10 sebelum Bulan Layanan berikutnya dimulai',
+            'Jika tanggal 10 jatuh pada hari bukan Hari Kerja',
+            'tidak memperbaikinya dalam 14 (empat belas) Hari Kalender sejak menerima surat peringatan',
+            'Tabel A. Biaya Jasa selama 6 bulan',
+            '1 Biaya Jasa per Bulan (6x) Rp8.000.000 Setiap tanggal 10, dibayar di muka Rp48.000.000',
+            'TOTAL Rp48.000.000',
+        ] as $expected) {
+            $this->assertStringContainsString($expected, $text);
+        }
+
+        $this->assertStringNotContainsString('tanggal 25', $text);
+        $this->assertStringNotContainsString('Rp4.000.000', $text, 'DP 50% tersimpan tidak memotong cicilan per bulan.');
+    }
+
+    public function test_peringatan_bila_baris_biaya_tidak_sama_dengan_total(): void
+    {
+        $contract = Contract::create(ContractFormats::make('pks') + [
+            'contract_number' => 'TES/' . Str::random(6), 'client_name_full' => 'PT Cek Total', 'effective_date' => now(),
+            'payment_type' => 'monthly', 'total_value' => 66_000_000, 'installment_months' => 12, 'duration_months' => 12,
+        ]);
+        $contract->feeItems()->create(['type' => 'fee', 'item' => 'Biaya Jasa', 'amount' => 5_500_000, 'sort_order' => 1]);
+
+        Livewire::test(EditContract::class, ['record' => $contract->getRouteKey()])
+            ->assertSee('Jumlah baris Tabel A Rp 5.500.000 tidak sama dengan Total Nilai Kontrak Rp 66.000.000')
+            ->callFormComponentAction('fee_items', 'fillFeeRowsFromPayment')
+            ->assertDontSee('tidak sama dengan Total Nilai Kontrak');
+    }
+
     public function test_kontrak_baru_memakai_format_bawaan_settings(): void
     {
         $this->settings(['contract_default_format' => 'pks']);

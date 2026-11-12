@@ -22,6 +22,9 @@ class ContractTemplateService
 
     public const TOTAL_LABEL = 'TOTAL';
 
+    /** Tanggal jatuh tempo bulanan bila kontrak belum mengisinya. */
+    public const DEFAULT_DUE_DAY = 25;
+
     /**
      * Tampilan kontrak yang bisa diatur (kolom layout); kosong = tampilan lama.
      * scope_*: ruang lingkup sebagai halaman Lampiran sendiri (judul, pembuka,
@@ -78,7 +81,9 @@ class ContractTemplateService
     {
         $duration  = (int) ($contract->duration_months ?? 12);
         $total     = (float) ($contract->total_value ?? 0);
-        $dp        = ($total * (float) ($contract->down_payment_percent ?? 0)) / 100;
+        // "Cicilan per Bulan" tidak memakai DP; DP tersimpan (bawaan kolom 50%) tidak dihitung.
+        $dpPercent = ($contract->payment_type ?? 'full') === 'monthly' ? 0.0 : (float) ($contract->down_payment_percent ?? 0);
+        $dp        = ($total * $dpPercent) / 100;
         $remaining = $total - $dp;
         $months    = (int) ($contract->installment_months ?? $duration);
 
@@ -103,15 +108,16 @@ class ContractTemplateService
         $p      = $this->pricing($contract);
         $layout = self::layout($contract);
         $money  = fn (float $value) => $this->formatRupiah($value, $layout['rupiah_space']);
+        $due    = str_replace('{tanggal_jatuh_tempo}', (string) self::dueDay($contract), (string) $layout['fee_due_text']);
         $date   = ($contract->effective_date ? Carbon::parse($contract->effective_date) : now())->format('d/m/Y');
 
         return match ($contract->payment_type ?? 'full') {
             'dp_monthly' => [
                 ['item' => 'Fase 1 - Down Payment', 'estimate' => $money($p['dp']), 'due_date' => $date, 'amount' => $p['dp']],
-                ['item' => "Sisa Pembayaran ({$p['months']}x)", 'estimate' => $money($p['remaining']), 'due_date' => $layout['fee_due_text'], 'amount' => $p['remaining']],
+                ['item' => "Sisa Pembayaran ({$p['months']}x)", 'estimate' => $money($p['remaining']), 'due_date' => $due, 'amount' => $p['remaining']],
             ],
             'monthly' => [
-                ['item' => "{$layout['fee_monthly_label']} ({$p['months']}x)", 'estimate' => $money($p['monthly']), 'due_date' => $layout['fee_due_text'], 'amount' => $p['total']],
+                ['item' => "{$layout['fee_monthly_label']} ({$p['months']}x)", 'estimate' => $money($p['monthly']), 'due_date' => $due, 'amount' => $p['total']],
             ],
             default => [
                 ['item' => 'Pembayaran Lunas', 'estimate' => $money($p['total']), 'due_date' => $date, 'amount' => $p['total']],
@@ -134,6 +140,14 @@ class ContractTemplateService
         }
 
         return $labels;
+    }
+
+    /** Tanggal jatuh tempo bulanan kontrak (1–31), bawaan 25. */
+    public static function dueDay(Contract $contract): int
+    {
+        $day = (int) ($contract->payment_due_day ?? 0);
+
+        return $day >= 1 && $day <= 31 ? $day : self::DEFAULT_DUE_DAY;
     }
 
     /**
@@ -571,6 +585,8 @@ class ContractTemplateService
             'dasar_hukum_agensi'    => nl2br(htmlspecialchars($agencyLegalBasis)),
             'dasar_hukum_klien'     => nl2br(htmlspecialchars($clientLegalBasis)),
             'durasi_terbilang'      => Terbilang::withNumber($durationMonths),
+            'tanggal_jatuh_tempo'   => (string) self::dueDay($contract),
+            'hari_pengakhiran_terbilang' => Terbilang::withNumber((int) $terminationDays),
             'jumlah_cicilan'        => (string) $installmentMonths,
             'duration'              => (string) $durationMonths, // nama lama di keterangan lampiran
         ];
@@ -1036,7 +1052,7 @@ table th {
       </tr>
     </thead>
     <tbody>
-      ' . $this->buildFeeTableFromItems($contract) . '
+      ' . $this->buildFeeTableFromItems($contract, $data) . '
     </tbody>
   </table>' . (filled($layout['table_a_note']) ? '
   <div class="note">' . $this->fillText($layout['table_a_note'], $data) . '</div>' : '');
@@ -1075,8 +1091,11 @@ table th {
      * dengan Jumlah), atau baris bawaan dari tipe pembayaran bila belum ada.
      * Baris total memakai nilai kontrak dan labelnya bisa diganti.
      */
-    private function buildFeeTableFromItems(Contract $contract): string
+    private function buildFeeTableFromItems(Contract $contract, array $data = []): string
     {
+        // Teks baris bisa memakai penanda isian, mis. "Setiap tanggal {tanggal_jatuh_tempo}".
+        $text = fn ($value) => $data !== [] ? $this->fillText((string) $value, $data) : htmlspecialchars((string) $value);
+
         $items = $contract->feeItems ?? collect();
 
         $rows = $items->isEmpty()
@@ -1097,9 +1116,9 @@ table th {
         foreach ($rows as $index => $row) {
             $html .= '<tr>
                     <td class="text-center">' . ($index + 1) . '</td>
-                    <td>' . htmlspecialchars((string) $row['item']) . '</td>
-                    <td>' . htmlspecialchars((string) $row['estimate']) . '</td>
-                    <td>' . htmlspecialchars((string) $row['due_date']) . '</td>
+                    <td>' . $text($row['item']) . '</td>
+                    <td>' . $text($row['estimate']) . '</td>
+                    <td>' . $text($row['due_date']) . '</td>
                     <td class="text-right">' . ($row['amount'] !== null ? $this->formatRupiah($row['amount']) : '-') . '</td>
                   </tr>';
         }

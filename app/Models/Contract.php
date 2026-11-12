@@ -58,6 +58,7 @@ class Contract extends Model
         'layout',
         'signing_city',
         'client_legal_basis',
+        'payment_due_day',
         'has_third_party',
     ];
 
@@ -75,6 +76,7 @@ class Contract extends Model
         'table_a_columns' => 'array',
         'table_b_columns' => 'array',
         'layout' => 'array',
+        'payment_due_day' => 'integer',
     ];
 
     public function deal(): BelongsTo

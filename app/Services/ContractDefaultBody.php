@@ -41,6 +41,8 @@ class ContractDefaultBody
         'dasar_hukum_klien'     => 'Dasar kewenangan client (akta/SK)',
         'durasi_terbilang'      => 'Durasi dengan terbilang, mis. 12 (dua belas)',
         'jumlah_cicilan'        => 'Jumlah cicilan (angka)',
+        'tanggal_jatuh_tempo'   => 'Tanggal jatuh tempo bulanan (angka, mis. 25)',
+        'hari_pengakhiran_terbilang' => 'Hari pemberitahuan pengakhiran dengan terbilang, mis. 30 (tiga puluh)',
         'tabel_ruang_lingkup'   => 'Tabel ruang lingkup pekerjaan',
     ];
 
