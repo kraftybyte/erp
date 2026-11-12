@@ -39,7 +39,18 @@ class ContractTemplateService
         'scope_outro'              => '',
         'table_a_note'             => '',
         'table_a_show_description' => true,
+        // Penulisan: "01 November 2026" / "1 November 2026", "Rp 5.500.000" / "Rp5.500.000".
+        'date_leading_zero'        => true,
+        'rupiah_space'             => true,
+        // Teks baris Tabel A yang dibuat otomatis dari Pembayaran (cicilan per bulan).
+        'fee_monthly_label'        => 'Pembayaran per Bulan',
+        'fee_due_text'             => 'Setiap tanggal 15',
     ];
+
+    /** Gaya penulisan kontrak yang sedang dibuat (dari layout-nya). */
+    private bool $rupiahSpace = true;
+
+    private bool $dateLeadingZero = true;
 
     /** Layout kontrak lengkap: isian kontrak, kolom yang kosong memakai bawaan. */
     public static function layout(Contract $contract): array
@@ -51,6 +62,8 @@ class ContractTemplateService
         $layout['signature_show_title']     = (bool) $layout['signature_show_title'];
         $layout['scope_appendix']           = (bool) $layout['scope_appendix'];
         $layout['table_a_show_description'] = (bool) $layout['table_a_show_description'];
+        $layout['date_leading_zero']        = (bool) $layout['date_leading_zero'];
+        $layout['rupiah_space']             = (bool) $layout['rupiah_space'];
 
         return $layout;
     }
@@ -87,19 +100,21 @@ class ContractTemplateService
      */
     public function defaultFeeRows(Contract $contract): array
     {
-        $p    = $this->pricing($contract);
-        $date = ($contract->effective_date ? Carbon::parse($contract->effective_date) : now())->format('d/m/Y');
+        $p      = $this->pricing($contract);
+        $layout = self::layout($contract);
+        $money  = fn (float $value) => $this->formatRupiah($value, $layout['rupiah_space']);
+        $date   = ($contract->effective_date ? Carbon::parse($contract->effective_date) : now())->format('d/m/Y');
 
         return match ($contract->payment_type ?? 'full') {
             'dp_monthly' => [
-                ['item' => 'Fase 1 - Down Payment', 'estimate' => $this->formatRupiah($p['dp']), 'due_date' => $date, 'amount' => $p['dp']],
-                ['item' => "Sisa Pembayaran ({$p['months']}x)", 'estimate' => $this->formatRupiah($p['remaining']), 'due_date' => 'Setiap tanggal 15', 'amount' => $p['remaining']],
+                ['item' => 'Fase 1 - Down Payment', 'estimate' => $money($p['dp']), 'due_date' => $date, 'amount' => $p['dp']],
+                ['item' => "Sisa Pembayaran ({$p['months']}x)", 'estimate' => $money($p['remaining']), 'due_date' => $layout['fee_due_text'], 'amount' => $p['remaining']],
             ],
             'monthly' => [
-                ['item' => "Pembayaran per Bulan ({$p['months']}x)", 'estimate' => $this->formatRupiah($p['monthly']), 'due_date' => 'Setiap tanggal 15', 'amount' => $p['total']],
+                ['item' => "{$layout['fee_monthly_label']} ({$p['months']}x)", 'estimate' => $money($p['monthly']), 'due_date' => $layout['fee_due_text'], 'amount' => $p['total']],
             ],
             default => [
-                ['item' => 'Pembayaran Lunas', 'estimate' => $this->formatRupiah($p['total']), 'due_date' => $date, 'amount' => $p['total']],
+                ['item' => 'Pembayaran Lunas', 'estimate' => $money($p['total']), 'due_date' => $date, 'amount' => $p['total']],
             ],
         };
     }
@@ -141,6 +156,11 @@ class ContractTemplateService
     public function generate(Contract $contract): string
     {
         $settings = app(GeneralSettings::class);
+
+        // Gaya penulisan uang dan tanggal mengikuti layout kontrak ini.
+        $style = self::layout($contract);
+        $this->rupiahSpace = $style['rupiah_space'];
+        $this->dateLeadingZero = $style['date_leading_zero'];
 
         // Eager-load relations used in this template so we don't trigger N+1
         // queries when generating documents for many contracts in a batch.
@@ -645,9 +665,9 @@ class ContractTemplateService
      * Centralized here so every place that prints a money value formats
      * it identically.
      */
-    private function formatRupiah(float $value): string
+    private function formatRupiah(float $value, ?bool $space = null): string
     {
-        return 'Rp ' . number_format($value, 0, ',', '.');
+        return 'Rp' . (($space ?? $this->rupiahSpace) ? ' ' : '') . number_format($value, 0, ',', '.');
     }
 
     private function generateContractNumber(Contract $contract, string $shortName, ?Carbon $referenceDate = null): string
@@ -1153,7 +1173,7 @@ table th {
             'December' => 'Desember',
         ];
 
-        $day = $date->format('d');
+        $day = $date->format($this->dateLeadingZero ? 'd' : 'j');
         $month = $months[$date->format('F')] ?? $date->format('F');
         $year = $date->format('Y');
 
@@ -1244,8 +1264,10 @@ table th {
         }
 
         if (filled(trim(strip_tags((string) $layout['scope_outro'])))) {
+            // {nomor_berikut}: nomor sesudah kategori terakhir, mis. "3. Pengecualian".
+            $outro = str_replace('{nomor_berikut}', (string) ($categories->count() + 1), $layout['scope_outro']);
             $html .= '
-  <div class="rich" style="margin-top: 0.3cm;">' . $this->fillPlaceholders($layout['scope_outro'], $data) . '</div>';
+  <div class="rich" style="margin-top: 0.3cm;">' . $this->fillPlaceholders($outro, $data) . '</div>';
         }
 
         return $html . '

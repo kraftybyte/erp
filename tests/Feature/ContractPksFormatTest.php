@@ -71,29 +71,37 @@ class ContractPksFormatTest extends TestCase
 
         foreach ([
             'Nomor: 001/PKS/KNC-MDC/XI/2026',
-            'dibuat pada hari Minggu 01 November 2026, di Kota Contoh, oleh dan antara:',
+            'dibuat pada hari Minggu 1 November 2026, di Kota Contoh, oleh dan antara:',
             '1. PT Kreasi Nusa Contoh, perseroan terbatas',
             'diwakili oleh Budi Contoh selaku Direktur Utama, yang berwenang bertindak untuk dan atas nama perseroan tersebut berdasarkan Akta Pendirian No. 1 dan SK Kemenkumham No. AHU-0001',
             'berdasarkan Akta Pendirian No. 2 dan SK Kemenkumham No. AHU-0002. Selanjutnya disebut "Pihak Kedua"',
             'Deskripsi proyek: pengelolaan media sosial dan konten website contoh.id',
-            'Jangka waktu layanan adalah 12 (dua belas) bulan, dimulai pada 01 November 2026 ("Tanggal Mulai") dan berakhir pada 01 November 2027',
-            'biaya tetap sebesar Rp 5.500.000 per bulan, total Rp 66.000.000 untuk 12 bulan',
+            'Jangka waktu layanan adalah 12 (dua belas) bulan, dimulai pada 1 November 2026 dan berakhir pada 1 November 2027',
+            'biaya tetap sebesar Rp5.500.000 per bulan, total Rp66.000.000 untuk 12 bulan',
+            'Biaya Jasa Belum termasuk PPN. PPN [11%/sesuai ketentuan yang berlaku] ditambahkan pada Invoice.',
+            'Para Pihak menempuh mediasi lembaga mediasi yang disepakati',
+            'diselesaikan melalui (A) Pengadilan Negeri Kota Contoh / (B) arbitrase BANI di Jakarta',
+            'Pasal 12 Pemberitahuan dan Komunikasi Komunikasi operasional sehari-hari',
             'Bank: Bank Contoh; No. Rekening: 000 111 222; Atas nama: PT Kreasi Nusa Contoh',
             'Pasal 13 Ketentuan Lain-lain',
             'Demikian Perjanjian ini dibuat dan ditandatangani',
-            'Lampiran 1 — Ruang Lingkup Pekerjaan',
+            'Lampiran 1 Ruang Lingkup Pekerjaan',
             '1. Pengelolaan Media Sosial Akun: Instagram @contoh',
             '1.1 15 Feed Image/Carousel Diposting di Instagram',
-            'Pengecualian (tidak termasuk dalam Biaya Jasa)',
-            'Lampiran 2 — Rincian Biaya Jasa',
+            '2. Pengecualian (tidak termasuk dalam Biaya Jasa)',
+            'Lampiran 2 Rincian Biaya Jasa',
             'Tabel A. Biaya Jasa selama 12 bulan',
             'Biaya Tetap per Bulan',
+            '1 Biaya Jasa per Bulan (12x) Rp5.500.000 Setiap tanggal 25, dibayar di muka Rp66.000.000',
+            'TOTAL Rp66.000.000',
             'Catatan: Jumlah di atas belum termasuk PPN.',
         ] as $expected) {
             $this->assertStringContainsString($expected, $text);
         }
 
         $this->assertStringNotContainsString('Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Pertama', $text, 'Keterangan bawaan Tabel A disembunyikan di format PKS.');
+        $this->assertStringNotContainsString('("Tanggal Mulai")', $text, 'Teks mengikuti draft.');
+        $this->assertStringNotContainsString('Setiap pemberitahuan resmi', $text, 'Pasal 12 mengikuti draft (2 ayat).');
         $this->assertSame(0, preg_match('/\{[a-z_]+\}/', $html), 'Semua penanda terisi.');
         $this->assertMatchesRegularExpression('/<strong>PIHAK PERTAMA<\/strong>.*?<strong>Budi Contoh<\/strong><\/p>\s*<p style="margin: 0;">Direktur Utama<\/p>/s', $html, 'Nama tebal dan jabatan di bawah tanda tangan.');
         $this->assertStringContainsString('class="lampiran lampiran-continue"', $html, 'Lampiran 2 menyambung Lampiran 1.');
