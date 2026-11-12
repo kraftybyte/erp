@@ -6,6 +6,7 @@ use App\Models\Contract;
 use App\Services\ContractTemplateService;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\Fieldset;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Textarea;
@@ -98,6 +99,10 @@ final class ContractLampiran
                                     ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['fee_due_text'])
                                     ->maxLength(255),
                             ]),
+                        Placeholder::make('fee_total_check')
+                            ->hiddenLabel()
+                            ->content(fn (Get $get) => self::feeTotalWarning($get))
+                            ->visible(fn (Get $get): bool => self::feeTotalWarning($get) !== null),
                         TextInput::make('table_a_total_label')
                             ->label('Label baris total')
                             ->placeholder(ContractTemplateService::TOTAL_LABEL)
@@ -150,6 +155,30 @@ final class ContractLampiran
             ]);
     }
 
+    /**
+     * Baris Tabel A yang diketik sendiri tapi jumlahnya tidak sama dengan
+     * Total Nilai Kontrak (yang dipakai baris TOTAL dan pasal biaya).
+     */
+    private static function feeTotalWarning(Get $get): ?string
+    {
+        $amounts = collect($get('fee_items') ?? [])->pluck('amount')->filter(fn ($amount) => is_numeric($amount));
+
+        if ($amounts->isEmpty()) {
+            return null;
+        }
+
+        $sum   = (float) $amounts->sum();
+        $total = is_numeric($get('total_value')) ? (float) $get('total_value') : 0.0;
+
+        if (abs($sum - $total) < 1) {
+            return null;
+        }
+
+        $money = fn (float $value) => 'Rp ' . number_format($value, 0, ',', '.');
+
+        return "Jumlah baris Tabel A {$money($sum)} tidak sama dengan Total Nilai Kontrak {$money($total)}. Baris TOTAL dan pasal biaya memakai Total Nilai Kontrak; sesuaikan barisnya atau klik \"Isi otomatis dari Pembayaran\".";
+    }
+
     /** Judul kolom tabel; placeholder = judul bawaan. */
     private static function columnLabels(string $name, array $defaults): Fieldset
     {
@@ -186,6 +215,7 @@ final class ContractLampiran
                     'duration_months'      => is_numeric($get('duration_months')) ? (int) $get('duration_months') : null,
                     'effective_date'       => $get('effective_date') ?: null,
                     'layout'               => is_array($get('layout')) ? $get('layout') : null,
+                    'payment_due_day'      => is_numeric($get('payment_due_day')) ? (int) $get('payment_due_day') : null,
                 ]);
 
                 $rows = [];
