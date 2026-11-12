@@ -327,6 +327,33 @@ class ManageGeneral extends SettingsPage
                             ]),
                         Forms\Components\Tabs\Tab::make('Contract Template')
                             ->schema([
+                                Forms\Components\Section::make('Format kontrak')
+                                    ->description('Bawaan untuk kontrak baru. Setiap kontrak tetap bisa diubah, atau diganti formatnya lewat tombol "Pakai format" di form kontrak.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Select::make('contract_default_format')
+                                            ->label('Format isi kontrak baru')
+                                            ->options(\App\Services\ContractFormats::OPTIONS)
+                                            ->required(),
+                                        Forms\Components\TextInput::make('contract_number_format')
+                                            ->label('Format nomor kontrak')
+                                            ->placeholder(\App\Models\Contract::DEFAULT_NUMBER_FORMAT)
+                                            ->required()
+                                            ->maxLength(100)
+                                            ->live(onBlur: true)
+                                            ->helperText(fn (?string $state) => 'Contoh: ' . \App\Models\Contract::generateContractNumber('PT Contoh Client (CTK)', now(), $state)
+                                                . '. Penanda: ' . collect(\App\Models\Contract::NUMBER_TOKENS)->map(fn ($label, $token) => "{$token} {$label}")->implode('; ') . '.'),
+                                        Forms\Components\TextInput::make('contract_city')
+                                            ->label('Kota penandatanganan')
+                                            ->placeholder('mis. Tangerang')
+                                            ->helperText('Penanda {kota}; tiap kontrak bisa mengisi kotanya sendiri.')
+                                            ->maxLength(255),
+                                        Forms\Components\Textarea::make('contract_agency_legal_basis')
+                                            ->label('Dasar kewenangan perusahaan kita')
+                                            ->placeholder('mis. Akta Pendirian No. ... dan SK Kemenkumham No. ...')
+                                            ->helperText('Penanda {dasar_hukum_agensi} di pembukaan kontrak.')
+                                            ->rows(2),
+                                    ]),
                                 Forms\Components\Section::make('Penanda tangan kontrak')
                                     ->description('Bawaan wakil perusahaan kita (Pihak Pertama) untuk kontrak baru. Tiap kontrak tetap bisa diganti di form kontraknya.')
                                     ->columns(2)

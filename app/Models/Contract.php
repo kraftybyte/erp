@@ -55,6 +55,9 @@ class Contract extends Model
         'table_a_columns',
         'table_a_total_label',
         'table_b_columns',
+        'layout',
+        'signing_city',
+        'client_legal_basis',
         'has_third_party',
     ];
 
@@ -71,6 +74,7 @@ class Contract extends Model
         'articles' => 'array',
         'table_a_columns' => 'array',
         'table_b_columns' => 'array',
+        'layout' => 'array',
     ];
 
     public function deal(): BelongsTo
@@ -111,24 +115,61 @@ class Contract extends Model
             ->orderBy('sort_order');
     }
 
+    /** Penanda di format nomor kontrak (Settings → Contract Template), dengan keterangannya. */
+    public const NUMBER_TOKENS = [
+        '{no}'           => 'nomor urut 3 digit (001)',
+        '{kode_agensi}'  => 'kode perusahaan kita (PT Sinergi Citra Nusantara → SCN)',
+        '{kode_klien}'   => 'kode client (singkatan dalam kurung, atau huruf awal nama)',
+        '{bulan}'        => 'bulan angka (11)',
+        '{bulan_romawi}' => 'bulan romawi (XI)',
+        '{tahun}'        => 'tahun (2026)',
+        '{tahun2}'       => 'tahun 2 digit (26)',
+    ];
+
+    public const DEFAULT_NUMBER_FORMAT = '{no}/SPK/{bulan}{tahun2}';
+
+    private const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
     /**
-     * Generate contract number
+     * Nomor kontrak berikutnya menurut format di Settings (bawaan 001/SPK/1126).
+     * Nomor urut = angka di depan nomor kontrak terakhir + 1.
      */
-    public static function generateContractNumber(): string
+    public static function generateContractNumber(?string $clientName = null, ?\DateTimeInterface $date = null, ?string $format = null): string
     {
-        $month = now()->format('m');
-        $year = now()->format('y');
+        $settings = app(\App\Settings\GeneralSettings::class);
+        $format   = filled($format) ? $format : (filled($settings->contract_number_format) ? $settings->contract_number_format : self::DEFAULT_NUMBER_FORMAT);
+        $date     = \Illuminate\Support\Carbon::instance($date ?? now());
 
-        // Get last contract number
-        $lastContract = static::whereNotNull('contract_number')
-            ->orderBy('id', 'desc')
-            ->first();
+        $last = static::whereNotNull('contract_number')->orderByDesc('id')->value('contract_number');
+        $next = $last && preg_match('/^\s*(\d+)/', $last, $matches) ? (int) $matches[1] + 1 : 1;
 
-        $nextNum = 1;
-        if ($lastContract && preg_match('/(\d+)\/SPK\//', $lastContract->contract_number ?? '', $matches)) {
-            $nextNum = ((int)$matches[1]) + 1;
+        return strtr($format, [
+            '{no}'           => str_pad((string) $next, 3, '0', STR_PAD_LEFT),
+            '{kode_agensi}'  => self::companyCode($settings->inv_company_name),
+            '{kode_klien}'   => self::companyCode($clientName),
+            '{bulan}'        => $date->format('m'),
+            '{bulan_romawi}' => self::ROMAN_MONTHS[(int) $date->format('n') - 1],
+            '{tahun}'        => $date->format('Y'),
+            '{tahun2}'       => $date->format('y'),
+        ]);
+    }
+
+    /**
+     * Kode perusahaan untuk nomor kontrak: singkatan di dalam kurung bila ada
+     * ("PT Citra Meta Data (CMD)" → CMD), selain itu huruf awal tiap kata
+     * tanpa bentuk usaha ("PT Sinergi Citra Nusantara" → SCN).
+     */
+    public static function companyCode(?string $name): string
+    {
+        $name = trim((string) $name);
+
+        if (preg_match('/\(([A-Za-z0-9]{2,10})\)/', $name, $matches)) {
+            return strtoupper($matches[1]);
         }
 
-        return str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/SPK/' . $month . $year;
+        $words = preg_split('/[\s.,]+/', preg_replace('/\(.*?\)/', '', $name), -1, PREG_SPLIT_NO_EMPTY);
+        $words = array_filter($words, fn (string $word) => ! in_array(strtoupper($word), ['PT', 'CV', 'UD', 'TBK', 'PERSERO', 'LTD', 'LLC', 'INC'], true));
+
+        return strtoupper(implode('', array_map(fn (string $word) => mb_substr($word, 0, 1), $words)));
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\Terbilang;
 use App\Models\Contract;
 use App\Settings\GeneralSettings;
 use Carbon\Carbon;
@@ -20,6 +21,39 @@ class ContractTemplateService
     public const TABLE_B_DESCRIPTION = 'Biaya yang perlu dibayarkan oleh Pihak Kedua kepada Pihak Ketiga (Pihak yang menyediakan third-party yang dibutuhkan selama project berjalan)';
 
     public const TOTAL_LABEL = 'TOTAL';
+
+    /**
+     * Tampilan kontrak yang bisa diatur (kolom layout); kosong = tampilan lama.
+     * scope_*: ruang lingkup sebagai halaman Lampiran sendiri (judul, pembuka,
+     * judul kolom, penutup) alih-alih tabel di dalam pasal.
+     */
+    public const LAYOUT_DEFAULTS = [
+        'number_line'              => '{nomor_kontrak}',
+        'signature_first_label'    => 'Pihak Pertama,',
+        'signature_second_label'   => 'Pihak Kedua,',
+        'signature_show_title'     => false,
+        'scope_appendix'           => false,
+        'scope_title'              => 'Lampiran 1 — Ruang Lingkup Pekerjaan',
+        'scope_intro'              => '',
+        'scope_columns'            => ['no' => 'No', 'item' => 'Layanan', 'detail' => 'Rincian'],
+        'scope_outro'              => '',
+        'table_a_note'             => '',
+        'table_a_show_description' => true,
+    ];
+
+    /** Layout kontrak lengkap: isian kontrak, kolom yang kosong memakai bawaan. */
+    public static function layout(Contract $contract): array
+    {
+        $custom = is_array($contract->layout) ? $contract->layout : [];
+        $layout = array_merge(self::LAYOUT_DEFAULTS, array_filter($custom, fn ($value) => $value !== null && $value !== ''));
+
+        $layout['scope_columns']            = self::columnLabels(is_array($custom['scope_columns'] ?? null) ? $custom['scope_columns'] : null, self::LAYOUT_DEFAULTS['scope_columns']);
+        $layout['signature_show_title']     = (bool) $layout['signature_show_title'];
+        $layout['scope_appendix']           = (bool) $layout['scope_appendix'];
+        $layout['table_a_show_description'] = (bool) $layout['table_a_show_description'];
+
+        return $layout;
+    }
 
     /**
      * Angka pembayaran kontrak, satu sumber untuk isi kontrak, Tabel A, dan
@@ -170,12 +204,18 @@ class ContractTemplateService
         // === LAMPIRAN CUSTOMIZATION ===
         // Isian kosong memakai teks bawaan; {durasi} (atau {duration}) = jumlah bulan.
         $lampiranTitle = filled($contract->lampiran_title) ? $contract->lampiran_title : 'Lampiran 2 — Rincian Biaya Jasa';
-        $lampiranDescription = str_replace(['{durasi}', '{duration}'], (string) $durationMonths, filled($contract->lampiran_description) ? $contract->lampiran_description : self::TABLE_A_DESCRIPTION);
+        $lampiranDescription = filled($contract->lampiran_description) ? $contract->lampiran_description : self::TABLE_A_DESCRIPTION;
         $tableATitle = filled($contract->table_a_title) ? $contract->table_a_title : 'Tabel A';
         $tableBTitle = filled($contract->table_b_title) ? $contract->table_b_title : 'Tabel B';
-        $tableBDescription = str_replace(['{durasi}', '{duration}'], (string) $durationMonths, filled($contract->table_b_description) ? $contract->table_b_description : self::TABLE_B_DESCRIPTION);
+        $tableBDescription = filled($contract->table_b_description) ? $contract->table_b_description : self::TABLE_B_DESCRIPTION;
         $tableAColumns = self::columnLabels($contract->table_a_columns, self::TABLE_A_COLUMNS);
         $tableBColumns = self::columnLabels($contract->table_b_columns, self::TABLE_B_COLUMNS);
+
+        // === FORMAT: layout, kota penandatanganan, dasar kewenangan Para Pihak ===
+        $layout = self::layout($contract);
+        $signingCity = filled($contract->signing_city) ? $contract->signing_city : (filled($settings->contract_city ?? null) ? $settings->contract_city : '..................');
+        $agencyLegalBasis = filled($settings->contract_agency_legal_basis ?? null) ? $settings->contract_agency_legal_basis : '..................';
+        $clientLegalBasis = filled($contract->client_legal_basis) ? $contract->client_legal_basis : '..................';
 
         // === BANK INFO (dari Invoice Settings) ===
         $agencyBankName = $settings->inv_bank_name ?? 'Bank';
@@ -201,7 +241,7 @@ class ContractTemplateService
             'projectDescription', 'forceMajeureExtended', 'terminationDays', 'penaltyClause',
             'agencyBankName', 'agencyBankAccount', 'agencyBankAccountName',
             'lampiranTitle', 'lampiranDescription', 'tableATitle', 'tableBTitle', 'tableBDescription', 'tableAColumns', 'tableBColumns',
-            'headerSrc', 'footerSrc'
+            'headerSrc', 'footerSrc', 'layout', 'signingCity', 'agencyLegalBasis', 'clientLegalBasis'
         ));
     }
 
@@ -446,7 +486,7 @@ class ContractTemplateService
 
         $html = '
   <div class="title">' . htmlspecialchars($contract->document_title ?: 'Perjanjian Kerja Sama') . '</div>
-  <div class="contract-number">' . htmlspecialchars($data['contractNumber']) . '</div>
+  <div class="contract-number">' . $this->fillText($data['layout']['number_line'], $data) . '</div>
   <div class="rich">' . $this->fillPlaceholders($contract->opening_text ?? '', $data) . '</div>';
 
         $number = 1;
@@ -505,13 +545,26 @@ class ContractTemplateService
             'dp'                    => $formattedDp,
             'cicilan'               => $formattedMonthly,
             'deskripsi_proyek'      => $projectTable,
+            'deskripsi_singkat'     => filled($projectDescription) ? nl2br(htmlspecialchars($projectDescription)) : '..................',
             'tabel_ruang_lingkup'   => $this->buildSowTable($contract),
+            'kota'                  => htmlspecialchars($signingCity),
+            'dasar_hukum_agensi'    => nl2br(htmlspecialchars($agencyLegalBasis)),
+            'dasar_hukum_klien'     => nl2br(htmlspecialchars($clientLegalBasis)),
+            'durasi_terbilang'      => Terbilang::withNumber($durationMonths),
+            'jumlah_cicilan'        => (string) $installmentMonths,
+            'duration'              => (string) $durationMonths, // nama lama di keterangan lampiran
         ];
 
         return strtr(Str::sanitizeHtml($html), array_combine(
             array_map(fn (string $key) => '{' . $key . '}', array_keys($values)),
             $values,
         ));
+    }
+
+    /** Teks biasa (judul, catatan, baris nomor) dengan penanda isian. */
+    private function fillText(?string $text, array $data): string
+    {
+        return $this->fillPlaceholders(nl2br(htmlspecialchars((string) $text)), $data);
     }
 
     /**
@@ -614,6 +667,8 @@ class ContractTemplateService
         // kontrak yang belum pernah diedit, supaya PDF lamanya tidak berubah.
         $custom = is_array($contract->articles);
         $body = $custom ? $this->customBody($data) : $this->legacyBody($data);
+        // Ruang lingkup sebagai halaman Lampiran 1 (format PKS), hanya untuk isi yang diedit di form.
+        $scopeAppendix = $custom && $layout['scope_appendix'] ? $this->buildScopeAppendix($data) : '';
         $closing = $custom
             ? '<div class="rich" style="margin-top: 0.8cm;">' . $this->fillPlaceholders($contract->closing_text ?? '', $data) . '</div>'
             : '<p style="margin-top: 0.8cm;">Perjanjian ini dibuat dalam rangkap 2 (dua) asli yang masing-masing dibubuhi materai secukupnya dan ditandatangani sebagaimana mestinya oleh Para Pihak, dan masing-masing mempunyai kekuatan hukum yang sama.</p>';
@@ -832,6 +887,20 @@ table th {
     page-break-before: always;
 }
 
+.lampiran-continue {
+    page-break-before: auto;
+    margin-top: 0.8cm;
+}
+
+.scope-heading {
+    font-weight: bold;
+    margin: 0.35cm 0 0.1cm;
+}
+
+.scope-note {
+    margin: 0 0 0.15cm;
+}
+
 .lampiran-title {
     font-size: 12pt;
     font-weight: bold;
@@ -922,29 +991,19 @@ table th {
 
     <table style="width: 100%; border: none; margin-top: 0.8cm;">
       <tr>
-        <td style="width: 50%; border: none; vertical-align: top; padding-right: 20px;">
-          <p style="margin-bottom: 0.3cm;"><strong>Pihak Pertama,</strong></p>
-          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($agencyName) . '</p>
-          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($agencySignName) . '</p>
-          <div style="margin-top: 1.2cm; padding-bottom: 0.05cm; border-bottom: 1px solid #000; display: inline-block; min-width: 4cm;"></div>
-        </td>
-        <td style="width: 50%; border: none; vertical-align: top; padding-left: 20px;">
-          <p style="margin-bottom: 0.3cm;"><strong>Pihak Kedua,</strong></p>
-          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($clientName) . '</p>
-          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($clientSignName) . '</p>
-          <div style="margin-top: 1.2cm; padding-bottom: 0.05cm; border-bottom: 1px solid #000; display: inline-block; min-width: 4cm;"></div>
-        </td>
+        ' . $this->signatureCell($layout['signature_first_label'], $agencyName, $agencySignName, $agencySignTitle, $layout['signature_show_title'], 'padding-right: 20px;') . '
+        ' . $this->signatureCell($layout['signature_second_label'], $clientName, $clientSignName, $clientSignTitle, $layout['signature_show_title'], 'padding-left: 20px;') . '
       </tr>
     </table>
   </div>
 </div>
+' . $scopeAppendix . '
+<!-- LAMPIRAN (page baru; menyambung Lampiran 1 bila ruang lingkup jadi lampiran) -->
+<div class="lampiran' . ($scopeAppendix !== '' ? ' lampiran-continue' : '') . '">
+  <div class="lampiran-title">' . $this->fillText($lampiranTitle, $data) . '</div>
 
-<!-- LAMPIRAN (page baru) -->
-<div class="lampiran">
-  <div class="lampiran-title">' . htmlspecialchars($lampiranTitle) . '</div>
-
-  <div class="table-a-title">' . htmlspecialchars($tableATitle) . '</div>
-  <div class="note">' . htmlspecialchars($lampiranDescription) . '</div>
+  <div class="table-a-title">' . $this->fillText($tableATitle, $data) . '</div>
+  ' . ($layout['table_a_show_description'] ? '<div class="note">' . $this->fillText($lampiranDescription, $data) . '</div>' : '') . '
 
   <table>
     <thead>
@@ -959,13 +1018,14 @@ table th {
     <tbody>
       ' . $this->buildFeeTableFromItems($contract) . '
     </tbody>
-  </table>';
+  </table>' . (filled($layout['table_a_note']) ? '
+  <div class="note">' . $this->fillText($layout['table_a_note'], $data) . '</div>' : '');
 
         // Table a (Third Party) - only show if has_third_party is true
         if ($contract->has_third_party) {
             $html .= '
-  <div class="table-b-title">' . htmlspecialchars($tableBTitle) . '</div>
-  <div class="note">' . htmlspecialchars($tableBDescription) . '</div>
+  <div class="table-b-title">' . $this->fillText($tableBTitle, $data) . '</div>
+  <div class="note">' . $this->fillText($tableBDescription, $data) . '</div>
 
   <table>
     <thead>
@@ -1100,6 +1160,98 @@ table th {
         return $day . ' ' . $month . ' ' . $year;
     }
 
+    /**
+     * Satu kolom tanda tangan. Tanpa jabatan: label, perusahaan, nama, garis
+     * (tampilan lama). Dengan jabatan (format PKS): label, perusahaan, ruang
+     * tanda tangan, lalu nama tebal dan jabatannya.
+     */
+    private function signatureCell(string $label, string $company, string $name, string $title, bool $showTitle, string $padding): string
+    {
+        $line = '<div style="margin-top: 1.2cm; padding-bottom: 0.05cm; border-bottom: 1px solid #000; display: inline-block; min-width: 4cm;"></div>';
+
+        return '<td style="width: 50%; border: none; vertical-align: top; ' . $padding . '">
+          <p style="margin-bottom: 0.3cm;"><strong>' . htmlspecialchars($label) . '</strong></p>
+          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($company) . '</p>'
+            . ($showTitle
+                ? '
+          ' . $line . '
+          <p style="margin: 0.15cm 0 0;"><strong>' . htmlspecialchars($name) . '</strong></p>
+          <p style="margin: 0;">' . htmlspecialchars($title) . '</p>'
+                : '
+          <p style="margin-bottom: 0.05cm;">' . htmlspecialchars($name) . '</p>
+          ' . $line) . '
+        </td>';
+    }
+
+    /**
+     * Lampiran ruang lingkup di halaman sendiri: judul, pembuka, lalu tiap
+     * kategori bernomor (1., 2., ...) dengan catatan kategori dan tabel
+     * sub-item (1.1, 1.2, ...), lalu penutup (mis. pengecualian).
+     */
+    private function buildScopeAppendix(array $data): string
+    {
+        $contract   = $data['contract'];
+        $layout     = $data['layout'];
+        $columns    = $layout['scope_columns'];
+        $categories = ($contract->sowCategories ?? collect())->values();
+
+        $html = '
+<div class="lampiran">
+  <div class="lampiran-title">' . $this->fillText($layout['scope_title'], $data) . '</div>';
+
+        if (filled(trim(strip_tags((string) $layout['scope_intro'])))) {
+            $html .= '
+  <div class="rich">' . $this->fillPlaceholders($layout['scope_intro'], $data) . '</div>';
+        }
+
+        $table = function (iterable $rows, string $prefix) use ($columns): string {
+            $html = '
+  <table class="contract-table">
+    <thead><tr><th style="width: 40px;">' . htmlspecialchars($columns['no']) . '</th><th style="width: 32%;">' . htmlspecialchars($columns['item']) . '</th><th>' . htmlspecialchars($columns['detail']) . '</th></tr></thead>
+    <tbody>';
+
+            foreach ($rows as $index => $row) {
+                $html .= '
+      <tr><td style="text-align: center;">' . $prefix . ($index + 1) . '</td><td>' . htmlspecialchars((string) $row->item) . '</td><td>' . nl2br(htmlspecialchars((string) ($row->description ?? ''))) . '</td></tr>';
+            }
+
+            return $html . '
+    </tbody>
+  </table>';
+        };
+
+        foreach ($categories as $index => $category) {
+            $number   = $index + 1;
+            $children = ($category->children ?? collect())->values();
+
+            $html .= '
+  <div class="scope-heading">' . $number . '. ' . htmlspecialchars((string) $category->item) . '</div>';
+
+            if (filled($category->description)) {
+                $html .= '
+  <div class="scope-note">' . nl2br(htmlspecialchars((string) $category->description)) . '</div>';
+            }
+
+            if ($children->isNotEmpty()) {
+                $html .= $table($children, $number . '.');
+            }
+        }
+
+        // Kontrak lama tanpa kategori: daftar item datar.
+        $flat = ($contract->sowItems ?? collect())->values();
+        if ($categories->isEmpty() && $flat->isNotEmpty()) {
+            $html .= $table($flat, '');
+        }
+
+        if (filled(trim(strip_tags((string) $layout['scope_outro'])))) {
+            $html .= '
+  <div class="rich" style="margin-top: 0.3cm;">' . $this->fillPlaceholders($layout['scope_outro'], $data) . '</div>';
+        }
+
+        return $html . '
+</div>';
+    }
+
     private function buildSowTable(Contract $contract): string
     {
         // Get hierarchical SOW categories with children
@@ -1141,7 +1293,7 @@ table th {
         <tr style="background-color: #f0f0f0;">
           <td style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top; font-weight: bold;">' . $rowNum . '</td>
           <td colspan="2" style="border:1px solid #000; padding:6px; font-weight:bold; vertical-align:top;">
-            ' . $categoryName . '
+            ' . $categoryName . (filled($category->description) ? '<div style="font-weight: normal; font-size: 9pt;">' . nl2br(htmlspecialchars((string) $category->description)) . '</div>' : '') . '
         </td>
         </tr>';
 

@@ -31,7 +31,8 @@ final class ContractLampiran
             ->collapsed()
             ->schema([
                 TextInput::make('lampiran_title')
-                    ->label('Judul lampiran')
+                    ->label('Judul lampiran biaya')
+                    ->helperText('Penanda isian seperti {durasi} juga bisa dipakai di judul, keterangan, dan catatan.')
                     ->placeholder('Lampiran 2 — Rincian Biaya Jasa')
                     ->maxLength(255),
 
@@ -42,11 +43,18 @@ final class ContractLampiran
                             ->label('Judul tabel')
                             ->placeholder('Tabel A')
                             ->maxLength(255),
+                        Toggle::make('layout.table_a_show_description')
+                            ->label('Tampilkan keterangan di bawah judul')
+                            ->default(true)
+                            // Kontrak lama belum punya pilihan ini: keterangan tetap tampil.
+                            ->afterStateHydrated(fn (Toggle $component, $state) => $state === null ? $component->state(true) : null)
+                            ->live(),
                         Textarea::make('lampiran_description')
                             ->label('Keterangan di bawah judul')
                             ->placeholder(ContractTemplateService::TABLE_A_DESCRIPTION)
                             ->helperText('{durasi} diganti jumlah bulan kontrak.')
-                            ->rows(2),
+                            ->rows(2)
+                            ->visible(fn (Get $get): bool => (bool) $get('layout.table_a_show_description')),
                         self::columnLabels('table_a_columns', ContractTemplateService::TABLE_A_COLUMNS),
                         Repeater::make('fee_items')
                             ->label('Baris')
@@ -82,6 +90,10 @@ final class ContractLampiran
                             ->placeholder(ContractTemplateService::TOTAL_LABEL)
                             ->helperText('Nilainya Total Nilai Kontrak di bagian Pembayaran.')
                             ->maxLength(255),
+                        Textarea::make('layout.table_a_note')
+                            ->label('Catatan di bawah tabel')
+                            ->placeholder('mis. Catatan: Jumlah di atas belum termasuk PPN.')
+                            ->rows(1),
                     ]),
 
                 Toggle::make('has_third_party')
