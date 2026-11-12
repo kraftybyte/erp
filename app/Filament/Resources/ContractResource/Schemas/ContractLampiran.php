@@ -30,11 +30,11 @@ final class ContractLampiran
             ->description('Semua teks lampiran bisa diubah. Isian yang dikosongkan memakai teks bawaan yang tampil samar.')
             ->collapsed()
             ->schema([
-                TextInput::make('lampiran_title')
+                Textarea::make('lampiran_title')
                     ->label('Judul lampiran biaya')
-                    ->helperText('Penanda isian seperti {durasi} juga bisa dipakai di judul, keterangan, dan catatan.')
+                    ->helperText('Enter untuk baris baru. Penanda isian seperti {durasi} juga bisa dipakai di judul, keterangan, dan catatan.')
                     ->placeholder('Lampiran 2 — Rincian Biaya Jasa')
-                    ->maxLength(255),
+                    ->rows(2),
 
                 Fieldset::make('Tabel A — biaya jasa')
                     ->columns(1)
@@ -85,6 +85,19 @@ final class ContractLampiran
                             ->addActionLabel('Tambah baris')
                             ->helperText('Tanpa baris: tabel diisi otomatis dari bagian Pembayaran. Klik "Isi otomatis dari Pembayaran" untuk menyalinnya ke sini lalu mengubahnya.')
                             ->hintAction(self::fillFromPaymentAction()),
+                        Fieldset::make('Baris otomatis dari Pembayaran')
+                            ->columns(['default' => 1, 'md' => 2])
+                            ->schema([
+                                TextInput::make('layout.fee_monthly_label')
+                                    ->label('Nama baris cicilan per bulan')
+                                    ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['fee_monthly_label'])
+                                    ->helperText('Diikuti jumlah cicilan, mis. "(12x)".')
+                                    ->maxLength(255),
+                                TextInput::make('layout.fee_due_text')
+                                    ->label('Teks jatuh tempo cicilan')
+                                    ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['fee_due_text'])
+                                    ->maxLength(255),
+                            ]),
                         TextInput::make('table_a_total_label')
                             ->label('Label baris total')
                             ->placeholder(ContractTemplateService::TOTAL_LABEL)
@@ -172,6 +185,7 @@ final class ContractLampiran
                     'installment_months'   => is_numeric($get('installment_months')) ? (int) $get('installment_months') : null,
                     'duration_months'      => is_numeric($get('duration_months')) ? (int) $get('duration_months') : null,
                     'effective_date'       => $get('effective_date') ?: null,
+                    'layout'               => is_array($get('layout')) ? $get('layout') : null,
                 ]);
 
                 $rows = [];

@@ -91,6 +91,19 @@ trait HasContractPreview
                         ->label('Penutup (di atas tanda tangan)')
                         ->toolbarButtons($toolbar)
                         ->default($default('closing_text')),
+                    Fieldset::make('Penulisan tanggal dan uang')
+                        ->columns(['default' => 1, 'md' => 2])
+                        ->schema([
+                            // Kontrak lama belum punya pilihan ini: tetap "01 November" dan "Rp 5.500.000".
+                            Toggle::make('layout.date_leading_zero')
+                                ->label('Tanggal dengan nol di depan (01 November 2026)')
+                                ->default(true)
+                                ->afterStateHydrated(fn (Toggle $component, $state) => $state === null ? $component->state(true) : null),
+                            Toggle::make('layout.rupiah_space')
+                                ->label('Spasi setelah Rp (Rp 5.500.000)')
+                                ->default(true)
+                                ->afterStateHydrated(fn (Toggle $component, $state) => $state === null ? $component->state(true) : null),
+                        ]),
                     Fieldset::make('Kolom tanda tangan')
                         ->columns(['default' => 1, 'md' => 3])
                         ->schema([

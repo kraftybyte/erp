@@ -84,10 +84,11 @@ final class ContractScope
                     ->columns(1)
                     ->visible(fn (Get $get): bool => (bool) $get('layout.scope_appendix'))
                     ->schema([
-                        TextInput::make('layout.scope_title')
+                        Textarea::make('layout.scope_title')
                             ->label('Judul lampiran')
                             ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['scope_title'])
-                            ->maxLength(255),
+                            ->helperText('Enter untuk baris baru.')
+                            ->rows(2),
                         RichEditor::make('layout.scope_intro')
                             ->label('Pembuka (di bawah judul)')
                             ->toolbarButtons(self::TOOLBAR),
@@ -102,6 +103,7 @@ final class ContractScope
                                 ->all()),
                         RichEditor::make('layout.scope_outro')
                             ->label('Penutup (mis. pengecualian)')
+                            ->helperText('{nomor_berikut} = nomor sesudah kategori terakhir, mis. "3. Pengecualian".')
                             ->toolbarButtons(self::TOOLBAR),
                     ]),
             ]);
