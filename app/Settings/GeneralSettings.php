@@ -92,6 +92,12 @@ class GeneralSettings extends Settings
 
     // Kop dan kaki surat kontrak (path di disk public).
     public mixed $contract_header = null;
+
+    // Format kontrak (Settings → Contract Template)
+    public mixed $contract_default_format = 'standar';
+    public mixed $contract_number_format = '{no}/SPK/{bulan}{tahun2}';
+    public mixed $contract_city = '';
+    public mixed $contract_agency_legal_basis = '';
     public mixed $contract_footer = null;
 
     // ID Prefix Settings
@@ -191,6 +197,10 @@ class GeneralSettings extends Settings
             'contract_bank_account_name' => '',
             'contract_signature_name' => '',
             'contract_signature_title' => '',
+            'contract_default_format' => 'standar',
+            'contract_number_format' => '{no}/SPK/{bulan}{tahun2}',
+            'contract_city' => '',
+            'contract_agency_legal_basis' => '',
             'contract_signature_image' => null,
             'contract_font_size' => '11pt',
             'contract_line_height' => '1.6',

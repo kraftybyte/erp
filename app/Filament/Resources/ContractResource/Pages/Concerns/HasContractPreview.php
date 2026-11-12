@@ -5,8 +5,16 @@ namespace App\Filament\Resources\ContractResource\Pages\Concerns;
 use App\Models\Contract;
 use App\Models\ContractItem;
 use App\Services\ContractDefaultBody;
+use App\Services\ContractFormats;
 use App\Services\ContractTemplateService;
+use Filament\Forms\Components\Actions\Action;
+use Filament\Forms\Components\Fieldset;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Set;
+use Illuminate\Support\Str;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
@@ -31,7 +39,8 @@ trait HasContractPreview
      */
     protected static function contractBodySections(): array
     {
-        $default = fn (string $key) => fn () => ContractDefaultBody::make()[$key];
+        // Kontrak baru: isi dari format bawaan di Settings → Contract Template.
+        $default = fn (string $key) => fn () => ContractFormats::forNewContract()[$key];
         $toolbar = ['bold', 'italic', 'underline', 'strike', 'orderedList', 'bulletList', 'h3', 'blockquote', 'undo', 'redo'];
 
         $placeholders = collect(ContractDefaultBody::PLACEHOLDERS)
@@ -45,8 +54,14 @@ trait HasContractPreview
                 ->collapsible()
                 ->schema([
                     TextInput::make('document_title')
+                        ->hintAction(static::applyFormatAction())
                         ->label('Judul dokumen')
                         ->default($default('document_title'))
+                        ->maxLength(255),
+                    TextInput::make('layout.number_line')
+                        ->label('Baris nomor di bawah judul')
+                        ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['number_line'])
+                        ->helperText('Mis. "Nomor: {nomor_kontrak}".')
                         ->maxLength(255),
                     RichEditor::make('opening_text')
                         ->label('Pembukaan dan para pihak')
@@ -76,6 +91,21 @@ trait HasContractPreview
                         ->label('Penutup (di atas tanda tangan)')
                         ->toolbarButtons($toolbar)
                         ->default($default('closing_text')),
+                    Fieldset::make('Kolom tanda tangan')
+                        ->columns(['default' => 1, 'md' => 3])
+                        ->schema([
+                            TextInput::make('layout.signature_first_label')
+                                ->label('Label Pihak Pertama')
+                                ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['signature_first_label'])
+                                ->maxLength(60),
+                            TextInput::make('layout.signature_second_label')
+                                ->label('Label Pihak Kedua')
+                                ->placeholder(ContractTemplateService::LAYOUT_DEFAULTS['signature_second_label'])
+                                ->maxLength(60),
+                            Toggle::make('layout.signature_show_title')
+                                ->label('Nama tebal dan jabatan di bawah tanda tangan')
+                                ->inline(false),
+                        ]),
                     Placeholder::make('placeholder_list')
                         ->label('Penanda isian otomatis')
                         ->content(new HtmlString('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .25rem 1rem; font-size: .8125rem;">' . $placeholders . '</div>')),
@@ -125,6 +155,59 @@ trait HasContractPreview
                     ->placeholder($default['title'])
                     ->maxLength(255),
             ]);
+    }
+
+    /**
+     * Ganti judul, pembukaan, pasal, penutup, tampilan, dan teks lampiran
+     * dengan sebuah format (ContractFormats). Data client, nilai, dan baris
+     * ruang lingkup/biaya tidak berubah.
+     */
+    protected static function applyFormatAction(): Action
+    {
+        return Action::make('applyContractFormat')
+            ->label('Pakai format')
+            ->icon('heroicon-m-document-text')
+            ->modalHeading('Pakai format kontrak')
+            ->modalDescription('Judul, pembukaan, pasal, penutup, kolom tanda tangan, dan teks lampiran diganti dengan format yang dipilih. Data client, nilai, ruang lingkup, dan baris biaya tidak berubah.')
+            ->modalSubmitActionLabel('Pakai')
+            ->form([
+                Select::make('format')
+                    ->label('Format')
+                    ->options(ContractFormats::OPTIONS)
+                    ->required(),
+            ])
+            ->action(function (array $data, Set $set, $livewire): void {
+                $record = $livewire->record ?? null;
+
+                foreach (ContractFormats::make($data['format'], $record instanceof Contract ? $record : null) as $key => $value) {
+                    // Repeater pasal memakai kunci unik per baris.
+                    $set($key, $key === 'articles'
+                        ? collect($value)->mapWithKeys(fn (array $article) => [(string) Str::uuid() => $article])->all()
+                        : $value);
+                }
+            });
+    }
+
+    /** Kota tempat perjanjian dibuat ({kota}); kosong = Settings → Contract Template. */
+    protected static function signingCityInput(): TextInput
+    {
+        $default = (string) (app(\App\Settings\GeneralSettings::class)->contract_city ?? '');
+
+        return TextInput::make('signing_city')
+            ->label('Kota penandatanganan')
+            ->placeholder($default !== '' ? $default : 'mis. Tangerang')
+            ->helperText('Dipakai penanda {kota}. Kosong = kota di Settings → Contract Template.')
+            ->maxLength(255);
+    }
+
+    /** Dasar kewenangan Pihak Kedua ({dasar_hukum_klien}). */
+    protected static function clientLegalBasisInput(): Textarea
+    {
+        return Textarea::make('client_legal_basis')
+            ->label('Dasar kewenangan client')
+            ->placeholder('mis. Akta Pendirian No. ... dan SK Kemenkumham No. ...')
+            ->helperText('Dipakai penanda {dasar_hukum_klien} di pembukaan kontrak.')
+            ->rows(2);
     }
 
     public function getMaxContentWidth(): MaxWidth
@@ -184,6 +267,7 @@ trait HasContractPreview
         $categories = $this->filledRows($data['sow_categories'] ?? [])->map(fn (array $category, int $i) => $this->previewItem([
             'item'               => $category['item'],
             'type'               => 'sow',
+            'description'        => $category['description'] ?? null,
             'is_category_header' => true,
             'sort_order'         => $i + 1,
         ])->setRelation('children', $this->filledRows($category['children'] ?? [])->map(fn (array $child, int $j) => $this->previewItem([

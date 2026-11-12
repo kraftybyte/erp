@@ -35,6 +35,12 @@ class ContractDefaultBody
         'dp'                    => 'Nilai DP (Rp)',
         'cicilan'               => 'Nilai cicilan per bulan (Rp)',
         'deskripsi_proyek'      => 'Tabel deskripsi project (kosong bila tidak diisi)',
+        'deskripsi_singkat'     => 'Deskripsi project sebagai teks biasa',
+        'kota'                  => 'Kota tempat perjanjian dibuat',
+        'dasar_hukum_agensi'    => 'Dasar kewenangan Pihak Pertama (akta/SK, di Settings)',
+        'dasar_hukum_klien'     => 'Dasar kewenangan client (akta/SK)',
+        'durasi_terbilang'      => 'Durasi dengan terbilang, mis. 12 (dua belas)',
+        'jumlah_cicilan'        => 'Jumlah cicilan (angka)',
         'tabel_ruang_lingkup'   => 'Tabel ruang lingkup pekerjaan',
     ];
 

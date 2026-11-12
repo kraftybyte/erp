@@ -52,7 +52,7 @@ final class DuplicateContract
             ->modalSubmitActionLabel('Duplikat')
             ->modalWidth('lg')
             ->fillForm(fn (Contract $record): array => [
-                'contract_number'     => Contract::generateContractNumber(),
+                'contract_number'     => Contract::generateContractNumber($record->client_name_full),
                 'deal_id'             => $record->deal_id,
                 'client_name_full'    => $record->client_name_full,
                 'copy_client_details' => true,
@@ -70,17 +70,20 @@ final class DuplicateContract
                     ->placeholder('Tanpa deal')
                     ->helperText('Pilih deal client lain untuk mengisi nama, alamat, telepon, email, dan PIC dari deal itu.')
                     ->live()
-                    ->afterStateUpdated(function (?string $state, Set $set) use ($record): void {
+                    ->afterStateUpdated(function (?string $state, Get $get, Set $set) use ($record): void {
                         $deal = filled($state) ? Deal::find($state) : null;
 
                         if ($deal && (int) $deal->getKey() !== (int) $record->deal_id) {
+                            self::refreshNumber($get('client_name_full'), $deal->nama_perusahaan, $get, $set);
                             $set('client_name_full', $deal->nama_perusahaan);
                         }
                     }),
                 TextInput::make('client_name_full')
                     ->label('Nama perusahaan client')
                     ->required()
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn (?string $state, ?string $old, Get $get, Set $set) => self::refreshNumber($old, $state, $get, $set)),
                 Toggle::make('copy_client_details')
                     ->label('Salin juga alamat, telepon, email, dan penanda tangan client')
                     ->helperText('Matikan bila kontrak ini untuk client lain, lalu isi datanya di halaman edit.')
@@ -107,6 +110,14 @@ final class DuplicateContract
 
                 $livewire->redirect(ContractResource::getUrl('edit', ['record' => $copy]));
             });
+    }
+
+    /** Format nomor dengan {kode_klien}: nomor otomatis yang belum diubah ikut nama client. */
+    private static function refreshNumber(?string $oldClient, ?string $newClient, Get $get, Set $set): void
+    {
+        if ($get('contract_number') === Contract::generateContractNumber($oldClient)) {
+            $set('contract_number', Contract::generateContractNumber($newClient));
+        }
     }
 
     private static function dealChanged(mixed $dealId, Contract $record): bool

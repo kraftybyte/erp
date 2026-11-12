@@ -3,6 +3,11 @@
 namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource\Schemas\ContractLampiran;
+use App\Filament\Resources\ContractResource\Schemas\ContractScope;
+use App\Models\Contract;
+use App\Services\ContractFormats;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use App\Filament\Resources\ContractResource;
 use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
@@ -57,14 +62,14 @@ class CreateContract extends CreateRecord
                             ->relationship('deal', 'nama_perusahaan')
                             ->searchable()
                             ->preload()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                if ($state) {
-                                    $deal = \App\Models\Deal::find($state);
-                                    if ($deal) {
-                                        $set('client_name_full', $deal->nama_perusahaan);
-                                    }
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                $deal = $state ? \App\Models\Deal::find($state) : null;
+                                if ($deal) {
+                                    static::refreshNumberForClient($get('client_name_full'), $deal->nama_perusahaan, $get, $set);
+                                    $set('client_name_full', $deal->nama_perusahaan);
                                 }
                             }),
+                        static::signingCityInput(),
                     ]),
 
                 // Section 2: Client Info
@@ -74,7 +79,9 @@ class CreateContract extends CreateRecord
                     ->schema([
                         TextInput::make('client_name_full')
                             ->label('Nama Perusahaan (Full)')
-                            ->required(),
+                            ->required()
+                            // Format nomor dengan {kode_klien}: nomor otomatis ikut nama client.
+                            ->afterStateUpdated(fn ($state, $old, Get $get, Set $set) => static::refreshNumberForClient($old, $state, $get, $set)),
                         Textarea::make('client_address')
                             ->label('Alamat')
                             ->rows(2),
@@ -92,6 +99,7 @@ class CreateContract extends CreateRecord
                                 TextInput::make('client_signatory_title')
                                     ->label('Jabatan Penanda Tangan'),
                             ]),
+                        static::clientLegalBasisInput(),
                     ]),
 
                 static::agencySignatorySection(prefill: true),
@@ -109,44 +117,8 @@ class CreateContract extends CreateRecord
                             ->columnSpanFull(),
                     ]),
 
-                // Section 4: SOW Categories
-                Section::make('Ruang Lingkup Pekerjaan')
-                    ->icon('heroicon-o-sparkles')
-                    ->description('Tabel rincian ruang lingkup pekerjaan dengan kategori dan sub-item')
-                    ->schema([
-                        Repeater::make('sow_categories')
-                            ->label('Kategori Ruang Lingkup')
-                            ->defaultItems(0)
-                            ->collapsible()
-                            ->collapsed(false)
-                            ->schema([
-                                TextInput::make('item')
-                                    ->label('Nama Kategori')
-                                    ->placeholder('Contoh: Social Media Management, Digital Ads, SEO, dll')
-                                    ->required()
-                                    ->columnSpanFull(),
-
-                                Repeater::make('children')
-                                    ->label('Sub-Item')
-                                    ->defaultItems(0)
-                                    ->collapsible()
-                                    ->collapsed(false)
-                                    ->schema([
-                                        TextInput::make('item')
-                                            ->label('Nama Item')
-                                            ->placeholder('Contoh: Produksi 20 materi/bulan')
-                                            ->required()
-                                            ->columnSpanFull(),
-
-                                        Textarea::make('description')
-                                            ->label('Deskripsi / Rincian')
-                                            ->rows(2)
-                                            ->columnSpanFull(),
-                                    ])
-                                    ->columns(1),
-                            ])
-                            ->columns(1),
-                    ]),
+                // Section 4: Ruang lingkup (kategori, catatan, Lampiran 1)
+                ContractScope::section(),
 
                 // Section 5: Details
                 Section::make('Detail Kontrak')
@@ -220,6 +192,27 @@ class CreateContract extends CreateRecord
             ]);
     }
 
+    /**
+     * Kontrak baru memakai format bawaan dari Settings → Contract Template:
+     * layout dan teks lampiran di sini; judul, pembukaan, pasal, dan penutup
+     * lewat default isiannya (repeater pasal tidak boleh diisi ulang: Filament
+     * menggabungkan lagi isi bawaannya).
+     */
+    protected function afterFill(): void
+    {
+        $format = \Illuminate\Support\Arr::except(ContractFormats::forNewContract(), ['document_title', 'opening_text', 'articles', 'closing_text']);
+
+        $this->form->fill(array_merge($this->form->getRawState(), $format));
+    }
+
+    /** Nomor otomatis yang belum diubah tangan ikut berganti saat nama client berganti. */
+    protected static function refreshNumberForClient(?string $oldClient, ?string $newClient, Get $get, Set $set): void
+    {
+        if ($get('contract_number') === Contract::generateContractNumber($oldClient)) {
+            $set('contract_number', Contract::generateContractNumber($newClient));
+        }
+    }
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         // Extract SOW categories before record creation
@@ -235,49 +228,9 @@ class CreateContract extends CreateRecord
     {
         // Save SOW categories after contract is created
         if (!empty($this->sowCategoriesData)) {
-            $this->saveSowCategories($this->record, $this->sowCategoriesData);
+            ContractScope::save($this->record, $this->sowCategoriesData);
             unset($this->sowCategoriesData);
         }
     }
 
-    private function saveSowCategories(Model $contract, array $categories): void
-    {
-        $sortOrder = 0;
-        foreach ($categories as $categoryData) {
-            $sortOrder++;
-
-            if (empty($categoryData['item'])) {
-                continue;
-            }
-
-            $category = ContractItem::create([
-                'contract_id' => $contract->id,
-                'item' => $categoryData['item'] ?? 'Layanan',
-                'type' => 'sow',
-                'sort_order' => $sortOrder,
-                'is_category_header' => true,
-            ]);
-
-            if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
-                $childSortOrder = 0;
-                foreach ($categoryData['children'] as $childData) {
-                    $childSortOrder++;
-
-                    if (empty($childData['item'])) {
-                        continue;
-                    }
-
-                    ContractItem::create([
-                        'contract_id' => $contract->id,
-                        'parent_id' => $category->id,
-                        'item' => $childData['item'] ?? '',
-                        'description' => $childData['description'] ?? '',
-                        'type' => 'sow',
-                        'sort_order' => $childSortOrder,
-                        'is_category_header' => false,
-                    ]);
-                }
-            }
-        }
-    }
 }

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ContractResource\Pages;
 
 use App\Filament\Resources\ContractResource\Schemas\ContractLampiran;
+use App\Filament\Resources\ContractResource\Schemas\ContractScope;
 use App\Filament\Resources\ContractResource;
 use App\Filament\Resources\ContractResource\Pages\Concerns\HasContractPreview;
 use App\Models\ContractItem;
@@ -50,19 +51,6 @@ class EditContract extends EditRecord
             'deal',
         ]);
 
-        // Get SOW categories data
-        $sowCategoriesData = $this->record->sowCategories->map(function ($category) {
-            return [
-                'item' => $category->item,
-                'children' => $category->children->map(function ($child) {
-                    return [
-                        'item' => $child->item,
-                        'description' => $child->description ?? '',
-                    ];
-                })->toArray(),
-            ];
-        })->toArray();
-
         return $form
             // Setiap perubahan isian memperbarui pratinjau kontrak di samping form.
             ->live(debounce: 600)
@@ -90,6 +78,7 @@ class EditContract extends EditRecord
                                     ->searchable()
                                     ->preload(),
                             ]),
+                        static::signingCityInput(),
                     ]),
 
                 // Section 2: Client Info
@@ -117,6 +106,7 @@ class EditContract extends EditRecord
                                 TextInput::make('client_signatory_title')
                                     ->label('Jabatan Penanda Tangan'),
                             ]),
+                        static::clientLegalBasisInput(),
                     ]),
 
                 static::agencySignatorySection(prefill: false),
@@ -134,50 +124,8 @@ class EditContract extends EditRecord
                             ->columnSpanFull(),
                     ]),
 
-                // Section 4: SOW Categories
-                Section::make('Ruang Lingkup Pekerjaan')
-                    ->icon('heroicon-o-sparkles')
-                    ->description('Tabel rincian ruang lingkup pekerjaan dengan kategori dan sub-item')
-                    ->schema([
-                        // Main SOW Categories Repeater
-                        Repeater::make('sow_categories')
-                            ->label('Kategori Ruang Lingkup')
-                            ->defaultItems(count($sowCategoriesData))
-                            ->schema([
-                                TextInput::make('item')
-                                    ->label('Nama Kategori')
-                                    ->placeholder('Contoh: Social Media Management, Digital Ads, SEO, dll')
-                                    ->required()
-                                    ->columnSpanFull(),
-
-                                Repeater::make('children')
-                                    ->label('Sub-Item')
-                                    ->defaultItems(0)
-                                    ->collapsible()
-                                    ->collapsed(false)
-                                    ->schema([
-                                        TextInput::make('item')
-                                            ->label('Nama Item')
-                                            ->placeholder('Contoh: Produksi 20 materi/bulan')
-                                            ->required()
-                                            ->columnSpanFull(),
-
-                                        Textarea::make('description')
-                                            ->label('Deskripsi / Rincian')
-                                            ->rows(2)
-                                            ->columnSpanFull(),
-                                    ])
-                                    ->columns(1),
-                            ])
-                            ->columns(1)
-                            ->defaultItems(0)
-                            ->statePath('sow_categories')
-                            ->afterStateHydrated(function ($component, $state) use ($sowCategoriesData) {
-                                if (empty($state) && !empty($sowCategoriesData)) {
-                                    $component->state($sowCategoriesData);
-                                }
-                            }),
-                    ]),
+                // Section 4: Ruang lingkup (kategori, catatan, Lampiran 1)
+                ContractScope::section(ContractScope::existing($this->record)),
 
                 // Section 5: Details
                 Section::make('Detail Kontrak')
@@ -291,51 +239,11 @@ class EditContract extends EditRecord
                 ->delete();
 
             // Re-save all
-            $this->saveSowCategories($this->record, $this->sowCategoriesData);
+            ContractScope::save($this->record, $this->sowCategoriesData);
             unset($this->sowCategoriesData);
         }
     }
 
-    private function saveSowCategories(Model $contract, array $categories): void
-    {
-        $sortOrder = 0;
-        foreach ($categories as $categoryData) {
-            $sortOrder++;
-
-            if (empty($categoryData['item'])) {
-                continue;
-            }
-
-            $category = ContractItem::create([
-                'contract_id' => $contract->id,
-                'item' => $categoryData['item'] ?? 'Layanan',
-                'type' => 'sow',
-                'sort_order' => $sortOrder,
-                'is_category_header' => true,
-            ]);
-
-            if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
-                $childSortOrder = 0;
-                foreach ($categoryData['children'] as $childData) {
-                    $childSortOrder++;
-
-                    if (empty($childData['item'])) {
-                        continue;
-                    }
-
-                    ContractItem::create([
-                        'contract_id' => $contract->id,
-                        'parent_id' => $category->id,
-                        'item' => $childData['item'] ?? '',
-                        'description' => $childData['description'] ?? '',
-                        'type' => 'sow',
-                        'sort_order' => $childSortOrder,
-                        'is_category_header' => false,
-                    ]);
-                }
-            }
-        }
-    }
 
     private function recalculateTotals(callable $set, callable $get): void
     {

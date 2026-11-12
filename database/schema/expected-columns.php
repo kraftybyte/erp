@@ -5,8 +5,8 @@
  * migrasi dijalankan. Acuan untuk migrasi 2026_11_11_150000 (menambah kolom
  * yang hilang di database lama) dan `migrate-cwp.sh check`.
  *
- * Dibuat ulang dari database yang sudah menjalankan semua migrasi; jangan
- * diubah manual.
+ * Dibuat ulang dengan `php artisan schema:snapshot` dari database yang sudah
+ * menjalankan semua migrasi; jangan diubah manual.
  */
 
 return array (
@@ -1356,6 +1356,21 @@ return array (
     'table_b_columns' => 
     array (
       'type' => 'json',
+      'nullable' => true,
+    ),
+    'layout' => 
+    array (
+      'type' => 'json',
+      'nullable' => true,
+    ),
+    'signing_city' => 
+    array (
+      'type' => 'varchar(255)',
+      'nullable' => true,
+    ),
+    'client_legal_basis' => 
+    array (
+      'type' => 'text',
       'nullable' => true,
     ),
   ),
