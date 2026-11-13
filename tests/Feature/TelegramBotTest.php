@@ -687,18 +687,16 @@ class TelegramBotTest extends TestCase
         $this->fakeApis(gemini: $this->receiptRead());
 
         $this->send($this->photoUpdate('nota-2'));
-        $this->assertSame(
-            ['💰 Expense baru — sudah bayar sendiri', '💸 Advance baru — minta dana', '❌ Batal'],
-            $this->lastButtons(),
-            'Tanpa advance terbuka, tidak ada pilihan realisasi.'
-        );
 
+        // Tanpa advance terbuka, struk lunas langsung jadi draft expense: tinggal pilih project.
+        $this->assertStringContainsString('Untuk project apa?', $this->lastText());
         $draft = Draft::load($this->chatId);
-        $this->send($this->tap("{$draft->id}:to:expense"));
+        $this->assertSame('expense', $draft->type);
         $this->send($this->tap("{$draft->id}:project:{$project->id}"));
 
         // Tanggal & kategori dari struk; tinggal Kirim.
         $this->assertStringContainsString('Draft Expense', $this->lastText());
+        $this->assertStringContainsString('Jadikan Advance</b>', $this->lastText(), 'Cara mengganti jenisnya disebut.');
         $this->assertStringContainsString('Kabel HDMI — 2 × Rp 125.000', $this->lastText());
         $this->send($this->tap("{$draft->id}:submit:"));
 
@@ -734,6 +732,51 @@ class TelegramBotTest extends TestCase
         );
     }
 
+    public function test_tagihan_vendor_langsung_jadi_draft_advance(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: ['document' => 'invoice'] + $this->receiptRead(amount: 265_000));
+
+        $this->send($this->photoUpdate('invoice-belum-bayar'));
+
+        $this->assertSame('advance', Draft::load($this->chatId)->type);
+        $this->assertStringContainsString('Untuk project apa?', $this->lastText());
+    }
+
+    public function test_rincian_tetap_dipakai_dengan_baris_selisih(): void
+    {
+        $this->user();
+        // Total 300 rb: PB1 & service 35 rb tidak terbaca sebagai baris; satu baris gratis.
+        $this->fakeApis(gemini: $this->receiptRead(amount: 300_000, items: [
+            ['name' => 'Kabel HDMI', 'qty' => 2, 'price' => 125_000],
+            ['name' => 'Lakban', 'qty' => 1, 'price' => 15_000],
+            ['name' => 'Kantong plastik', 'qty' => 1, 'price' => 0],
+        ]));
+
+        $this->send($this->photoUpdate('nota-pajak'));
+
+        $this->assertSame([
+            ['name' => 'Kabel HDMI', 'qty' => 2, 'price' => 125_000],
+            ['name' => 'Lakban', 'qty' => 1, 'price' => 15_000],
+            ['name' => \App\Services\Telegram\SubmissionParser::GAP_ITEM, 'qty' => 1, 'price' => 35_000],
+        ], Draft::load($this->chatId)->attachment['items']);
+    }
+
+    public function test_project_terakhir_pengirim_di_atas_daftar(): void
+    {
+        $user  = $this->user();
+        $baru  = $this->project('PT Proyek Terbaru', 'Paling Baru');
+        $biasa = $this->project('PT Langganan Budi', 'Konten Bulanan');
+        $baru->touch();
+        Expense::create(['user_id' => $user->id, 'project_id' => $biasa->id, 'submission_date' => today(), 'category' => 'Transport', 'keterangan_expense' => 'Grab', 'amount' => 50_000, 'paid' => 0, 'status' => 'Pending']);
+        $this->fakeApis(gemini: $this->receiptRead());
+
+        $this->send($this->photoUpdate('nota-langganan'));
+
+        $this->assertStringStartsWith('⭐ ', $this->lastButtons()[0]);
+        $this->assertStringContainsString('Langganan Budi', $this->lastButtons()[0]);
+    }
+
     public function test_rincian_yang_tidak_cocok_dengan_total_tidak_dipakai(): void
     {
         $this->user();
@@ -745,7 +788,7 @@ class TelegramBotTest extends TestCase
         $this->assertSame([], $draft->attachment['items']);
         $this->assertSame(400_000, $draft->amount, 'Total struk tetap dipakai.');
         $this->assertStringNotContainsString('Kabel HDMI —', $this->lastText());
-        $this->assertStringContainsString('Masukkan ke mana?', $this->lastText());
+        $this->assertStringContainsString('Untuk project apa?', $this->lastText());
     }
 
     public function test_album_tanpa_keterangan_dibaca_per_struk(): void
@@ -758,12 +801,12 @@ class TelegramBotTest extends TestCase
         $this->send($this->photoUpdate('a1', album: 'g8'));
         $this->send($this->photoUpdate('a2', album: 'g8'));
 
-        $this->assertStringContainsString('2 struk terbaca', $this->lastText());
-        $this->assertStringContainsString('Total: <b>Rp 530.000</b>', $this->lastText());
-
+        // Tanpa advance terbuka: langsung expense, satu per struk; tinggal pilih project.
         $draft = Draft::load($this->chatId);
-        $this->send($this->tap("{$draft->id}:to:expense"));
+        $this->assertSame('expense', $draft->type);
         $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+        $this->assertStringContainsString('Draft Expense — 2 struk', $this->lastText());
+        $this->assertStringContainsString('Total: <b>Rp 530.000</b>', $this->lastText());
         $this->send($this->tap("{$draft->id}:submit:"));
 
         $expenses = Expense::where('user_id', $user->id)->withCount('itemExpenses')->get();
