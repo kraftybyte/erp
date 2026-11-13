@@ -242,8 +242,8 @@ trait HasContractPreview
 
                 foreach (ContractFormats::make($data['format'], $record instanceof Contract ? $record : null) as $key => $value) {
                     // Isian Ketentuan PKS milik kontrak ini tetap.
-                    if ($key === 'layout' && is_array($value) && is_array($terms)) {
-                        $value['terms'] = $terms;
+                    if ($key === 'layout' && is_array($terms)) {
+                        $value = array_merge($value ?? [], ['terms' => $terms]);
                     }
 
                     // Repeater pasal memakai kunci unik per baris.

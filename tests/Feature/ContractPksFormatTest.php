@@ -81,6 +81,7 @@ class ContractPksFormatTest extends TestCase
             'Biaya Jasa Belum termasuk PPN. PPN [11%/sesuai ketentuan yang berlaku] ditambahkan pada Invoice.',
             'Para Pihak menempuh mediasi lembaga mediasi yang disepakati',
             'diselesaikan melalui (A) Pengadilan Negeri Kota Contoh / (B) arbitrase BANI di Jakarta',
+            'Alternatif Penyelesaian Sengketa. Putusan arbitrase bersifat final dan mengikat.',
             'Pasal 12 Pemberitahuan dan Komunikasi Komunikasi operasional sehari-hari',
             'Bank: Bank Contoh; No. Rekening: 000 111 222; Atas nama: PT Kreasi Nusa Contoh',
             'Pasal 13 Ketentuan Lain-lain',
@@ -177,7 +178,7 @@ class ContractPksFormatTest extends TestCase
             'PPN 11% (sebelas persen) ditambahkan pada Invoice',
             'denda sebesar 0,1% (nol koma satu persen) per hari',
             'dibatasi paling banyak sebesar Biaya Jasa 3 (tiga) bulan terakhir.',
-            'diselesaikan melalui Pengadilan Negeri Kota Contoh. Putusan',
+            'diselesaikan melalui Pengadilan Negeri Kota Contoh.',
             'dalam rangkap 3 (tiga), masing-masing bermeterai cukup (<b>Rp10.000</b>)',
             'Kuota yang tidak terpakai pada suatu Bulan Layanan hangus, kecuali',
             'paling lambat 5 (lima) Hari Kalender sebelum tanggal jatuh tempo',
@@ -185,7 +186,7 @@ class ContractPksFormatTest extends TestCase
             $this->assertStringContainsString($expected, $text);
         }
 
-        $this->assertStringNotContainsString('arbitrase BANI', $text);
+        $this->assertStringNotContainsString('Putusan arbitrase', $text, 'Forum pengadilan: tanpa kalimat putusan arbitrase.');
         $this->assertStringNotContainsString('<b>Rp10.000</b>', $html, 'Isian ditulis sebagai teks, bukan HTML.');
         $this->assertSame(0, preg_match('/\{[a-z_]+\}/', $html), 'Semua penanda terisi.');
     }
@@ -200,7 +201,8 @@ class ContractPksFormatTest extends TestCase
             ->set('data.layout.terms.forum_sengketa', 'Pengadilan Negeri Jakarta Selatan')
             ->call('save')
             ->assertHasNoFormErrors()
-            // "Pakai format" mengganti teks, isian ketentuan tetap.
+            // "Pakai format" mengganti teks, isian ketentuan tetap (juga lewat Standar lalu PKS lagi).
+            ->callFormComponentAction('document_title', 'applyContractFormat', data: ['format' => 'standar'])
             ->callFormComponentAction('document_title', 'applyContractFormat', data: ['format' => 'pks'])
             ->assertSet('data.layout.terms.hari_laporan', '10')
             ->set('data.layout.terms.hari_invoice', 'abc')

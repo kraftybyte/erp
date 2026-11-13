@@ -44,6 +44,7 @@ class ContractDefaultBody
         'tanggal_jatuh_tempo'   => 'Tanggal jatuh tempo bulanan (angka, mis. 25)',
         'hari_pengakhiran_terbilang' => 'Hari pemberitahuan pengakhiran dengan terbilang, mis. 30 (tiga puluh)',
         'tabel_ruang_lingkup'   => 'Tabel ruang lingkup pekerjaan',
+        'kalimat_arbitrase'     => 'Kalimat "Putusan arbitrase bersifat final dan mengikat." bila forum sengketa memuat kata arbitrase',
     ];
 
     /**
