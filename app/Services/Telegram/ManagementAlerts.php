@@ -12,6 +12,7 @@ use App\Services\RealisasiService;
 use App\Services\SubmissionDecision;
 use Closure;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -153,12 +154,26 @@ class ManagementAlerts
      */
     private function recipients(?int $except): Collection
     {
-        return User::role(SubmissionDecision::ROLES)
+        return self::managers()
             ->where('is_active', true)
             ->whereNotNull('telegram_chat_id')
             ->when($except, fn ($query) => $query->whereKeyNot($except))
             ->get();
     }
+
+    /**
+     * Pengelola keuangan menurut izin Shield (tombol Setujui/Bayar advance dan
+     * expense), bukan nama peran; super_admin selalu ikut.
+     */
+    public static function managers(): Builder
+    {
+        return User::query()->where(fn (Builder $query) => $query
+            ->whereHas('permissions', fn (Builder $q) => $q->whereIn('name', self::MANAGER_PERMISSIONS))
+            ->orWhereHas('roles', fn (Builder $q) => $q->where('name', 'super_admin')
+                ->orWhereHas('permissions', fn (Builder $p) => $p->whereIn('name', self::MANAGER_PERMISSIONS))));
+    }
+
+    private const MANAGER_PERMISSIONS = ['restore_expense', 'restore_advance'];
 
     public function deliver(User $user, string $html, array $actions, string $url): void
     {

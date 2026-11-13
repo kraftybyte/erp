@@ -84,6 +84,38 @@ class StatementReader
             $statement = $this->fromAi(['file' => ['mime' => $type === 'pdf' ? 'application/pdf' : $type, 'data' => $data]]);
         }
 
+        return $this->result($statement);
+    }
+
+    /**
+     * Beberapa screenshot mutasi satu rekening (album Telegram) dibaca dalam
+     * satu panggilan AI dan digabung jadi satu mutasi.
+     *
+     * @param  array<int, string>  $images  isi file gambar, urut seperti dikirim
+     * @return array{statement?: array, error?: string}
+     */
+    public function readImages(array $images): array
+    {
+        $files = [];
+
+        foreach ($images as $data) {
+            $type = self::type($data);
+
+            if ($type === null || ! str_starts_with($type, 'image/')) {
+                return ['error' => 'Album hanya bisa berisi foto/screenshot mutasi. PDF dan CSV/Excel dikirim satu per satu.'];
+            }
+
+            $files[] = ['mime' => $type, 'data' => $data];
+        }
+
+        return $this->result($files ? $this->fromAi(['files' => $files]) : null);
+    }
+
+    /**
+     * @return array{statement?: array, error?: string}
+     */
+    private function result(?array $statement): array
+    {
         if ($statement === null) {
             $reason = GeminiService::lastError();
 
@@ -353,7 +385,12 @@ class StatementReader
         }
 
         $today  = today()->toDateString();
-        $source = isset($input['text']) ? "Isi tabel mutasi (kolom dipisah |):\n\"\"\"\n{$input['text']}\n\"\"\"" : 'Terlampir file mutasi / rekening koran.';
+        $files  = isset($input['file']) ? [$input['file']] : ($input['files'] ?? []);
+        $source = match (true) {
+            isset($input['text']) => "Isi tabel mutasi (kolom dipisah |):\n\"\"\"\n{$input['text']}\n\"\"\"",
+            count($files) > 1     => 'Terlampir ' . count($files) . ' screenshot mutasi berurutan dari rekening yang sama. Gabungkan jadi SATU daftar transaksi urut tanggal; transaksi yang terlihat di dua screenshot (layar yang tumpang tindih) dicatat sekali saja.',
+            default               => 'Terlampir file mutasi / rekening koran.',
+        };
 
         $result = $this->gemini->extractJson(<<<PROMPT
             Kamu membaca mutasi rekening bank (rekening koran, e-statement, export internet banking, atau screenshot m-banking). Hari ini {$today}.
@@ -404,7 +441,7 @@ class StatementReader
                 ],
             ],
             'required' => ['bank', 'account_number', 'period_start', 'period_end', 'opening_balance', 'closing_balance', 'rows'],
-        ], isset($input['file']) ? [$input['file']] : [], timeout: 150);
+        ], $files, timeout: 150);
 
         if (! is_array($result) || ! is_array($result['rows'] ?? null)) {
             return null;

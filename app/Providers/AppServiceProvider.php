@@ -154,6 +154,11 @@ class AppServiceProvider extends ServiceProvider
             PanelsRenderHook::USER_MENU_BEFORE,
             fn (): View => view('filament.components.button-website'),
         );
+        // Cron schedule:run tidak berjalan: pengingat dan slip gaji otomatis tidak terkirim.
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::PAGE_START,
+            fn () => \App\Support\SchedulerHeartbeat::warning(),
+        );
     }
 
     private function getDarkModeStyles(bool $enabled): string

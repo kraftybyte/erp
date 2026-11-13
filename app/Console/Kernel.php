@@ -29,6 +29,9 @@ class Kernel extends ConsoleKernel
 
         // Slip gaji: dicek setiap hari, bekerja pada tanggal di Settings → General → Gaji.
         $schedule->command('gaji:buat')->dailyAt('07:00');
+
+        // Tanda cron berjalan (Settings → Integrasi, peringatan bila berhenti).
+        $schedule->call(fn () => \App\Support\SchedulerHeartbeat::beat())->everyMinute()->name('heartbeat');
     }
 
     /**

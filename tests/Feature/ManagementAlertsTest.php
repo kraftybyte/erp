@@ -74,6 +74,21 @@ class ManagementAlertsTest extends TestCase
         $this->assertStringContainsString("apv:no:expense:{$expense->id}", json_encode($message['reply_markup']));
     }
 
+    public function test_penerima_mengikuti_izin_shield_bukan_nama_peran(): void
+    {
+        // Peran baru dengan izin setujui expense ikut menerima; peran tanpa izin itu tidak.
+        $accounting = \Spatie\Permission\Models\Role::findOrCreate('Tes Accounting ' . Str::random(4), 'web');
+        $accounting->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('restore_expense', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->manager($accounting->name);
+
+        $expense = $this->expense($this->employee(), 'Pending');
+        $this->assertStringContainsString("Expense baru #{$expense->id}", (string) ($this->financeMessages()->last()['text'] ?? ''));
+
+        $viewer = $this->employee()->assignRole(\Spatie\Permission\Models\Role::findOrCreate('Tes Lihat ' . Str::random(4), 'web'));
+        $this->assertFalse(\App\Services\Telegram\ManagementAlerts::managers()->whereKey($viewer->id)->exists());
+    }
+
     public function test_pengaju_tidak_menerima_notifikasi_pengajuannya_sendiri(): void
     {
         $finance = $this->manager('Finance');
