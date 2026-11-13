@@ -85,11 +85,15 @@ class BankStatementFlow
             return;
         }
 
+        $since = (int) ($message['message_id'] ?? 0);
+
+        // File terbaru di chat ini; yang lebih lama dan selesai dibaca belakangan (album) dilewati.
+        Cache::put($this->latestKey($chatId), max($since, (int) Cache::get($this->latestKey($chatId), 0)), now()->addMinutes(self::TTL_MINUTES));
+
         $this->forget($chatId);
         $this->telegram->sendMessage($chatId, '⏳ Membaca mutasi rekening… File panjang bisa butuh 1–2 menit.');
 
         $name  = (string) ($message['document']['file_name'] ?? 'mutasi.jpg');
-        $since = (int) ($message['message_id'] ?? 0);
         $done  = false;
 
         app()->terminating(function () use (&$done, $chatId, $data, $name, $user, $since) {
@@ -119,6 +123,10 @@ class BankStatementFlow
     {
         $result = $this->reader->read($data, $name);
 
+        if ($this->superseded($chatId, $since, $name)) {
+            return;
+        }
+
         if (isset($result['error'])) {
             $this->telegram->sendMessage($chatId, '⚠️ ' . e($result['error']));
 
@@ -129,6 +137,7 @@ class BankStatementFlow
         $state     = [
             'upload'    => (string) Str::uuid(),
             'since'     => $since,
+            'name'      => $name,
             'user_id'   => $user->id,
             'statement' => array_diff_key($statement, ['rows' => true]),
             'rows'      => $statement['rows'],
@@ -263,6 +272,10 @@ class BankStatementFlow
             $review            = $this->ai->review($state['rows'], $state['results']);
             $state['results']  = $review['results'];
             $state['ai']       = ['summary' => $review['summary'], 'error' => $review['error']];
+        }
+
+        if ($this->superseded($chatId, (int) ($state['since'] ?? 0), $state['name'] ?? null)) {
+            return;
         }
 
         $this->save($chatId, $state);
@@ -1472,6 +1485,27 @@ class BankStatementFlow
     private function forget(int|string $chatId): void
     {
         Cache::forget($this->key($chatId));
+    }
+
+    /**
+     * Ada file mutasi yang lebih baru di chat ini (mis. foto album yang lain):
+     * hasil file ini tidak disimpan, supaya tombol di ringkasannya tidak
+     * mencatat data file lain.
+     */
+    private function superseded(int|string $chatId, int $since, ?string $name): bool
+    {
+        if ($since >= (int) Cache::get($this->latestKey($chatId), 0)) {
+            return false;
+        }
+
+        $this->telegram->sendMessage($chatId, '⏭️ ' . ($name ? '<b>' . e($name) . '</b> ' : 'File ini ') . 'dilewati karena ada file mutasi yang lebih baru. Kirim satu file mutasi per kali.');
+
+        return true;
+    }
+
+    private function latestKey(int|string $chatId): string
+    {
+        return "telegram:finance-mutasi-latest:{$chatId}";
     }
 
     private function key(int|string $chatId): string
