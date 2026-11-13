@@ -238,6 +238,18 @@ class TelegramBotTest extends TestCase
         $this->assertSame($project->id, $advance->project_id);
     }
 
+    public function test_ucapan_terima_kasih_tidak_membuka_draft(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: $this->aiResult(type: 'expense', amount: 150_000, description: 'Grab', category: 'Transport'));
+
+        $this->send($this->textUpdate('Makasih pak 🙏'));
+
+        $this->assertNull(Draft::load($this->chatId));
+        $this->assertFalse(collect(Http::recorded())->contains(fn ($pair) => str_contains($pair[0]->url(), 'generativelanguage')), 'Tanpa panggilan AI.');
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'sendMessage') && str_contains((string) $request['text'], '/bantuan'));
+    }
+
     public function test_hasil_ai_yang_tidak_valid_diabaikan(): void
     {
         $this->user();

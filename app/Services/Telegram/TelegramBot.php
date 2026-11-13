@@ -198,8 +198,31 @@ class TelegramBot
             return;
         }
 
+        // Obrolan singkat tanpa nominal ("makasih", "halo", "ok siap") bukan pengajuan:
+        // tidak membuka draft dan tidak memanggil AI.
+        if ($this->isSmallTalk($text)) {
+            $this->telegram->sendMessage($chatId, 'Untuk mengajukan, tulis keperluan dan nominalnya, misalnya <i>expense 150rb grab ke kantor klien</i>, atau kirim foto struk. Cara lengkap: /bantuan');
+
+            return;
+        }
+
         // Pesan baru tanpa draft yang sedang ditanyakan dianggap pengajuan baru.
         $this->startDraft($chatId, $user, $text, null);
+    }
+
+    /** Sapaan, terima kasih, dan jawaban singkat yang bukan pengajuan. */
+    private const SMALL_TALK = [
+        'halo', 'hallo', 'hai', 'hi', 'hello', 'selamat', 'pagi', 'siang', 'sore', 'malam', 'met',
+        'makasih', 'makasi', 'trims', 'terima', 'kasih', 'thanks', 'thank', 'you', 'thx', 'tq', 'ty',
+        'ok', 'oke', 'okay', 'okey', 'siap', 'sip', 'mantap', 'baik', 'noted', 'ya', 'iya', 'yap', 'good', 'nice', 'pak', 'bu', 'kak', 'mas', 'mbak', 'bos',
+    ];
+
+    /** Seluruh kata pesan ada di SMALL_TALK, atau isinya hanya emoji/tanda baca. */
+    private function isSmallTalk(string $text): bool
+    {
+        $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+
+        return array_diff($words, self::SMALL_TALK) === [];
     }
 
     /**

@@ -865,6 +865,62 @@ class BankStatementTest extends TestCase
         $this->assertSame(['unpaid', 'paid'], [$oktober->fresh()->status, $november->fresh()->status]);
     }
 
+    public function test_album_screenshot_digabung_jadi_satu_mutasi(): void
+    {
+        IntegrationSettings::fake([
+            'gemini_api_key'          => 'kunci-tes',
+            'gemini_model'            => 'gemini-3.5-flash-lite',
+            'telegram_bot_token'      => '111:PENGAJUAN',
+            'telegram_webhook_secret' => 'rahasia-bot-pengajuan',
+            'finance_bot_token'       => '222:FINANCE',
+            'finance_webhook_secret'  => self::SECRET,
+        ]);
+        $user    = $this->user('Finance');
+        $invoice = $this->invoice(15_437_233);
+        $this->gemini = [
+            'bank' => 'BCA', 'account_number' => $this->accountNumber, 'period_start' => null, 'period_end' => null,
+            'opening_balance' => null, 'closing_balance' => null,
+            'rows' => [['date' => today()->toDateString(), 'description' => 'TRSF E-BANKING CR ' . strtoupper($this->client), 'amount' => 15_437_233, 'direction' => 'in', 'balance' => null]],
+        ];
+        // PNG 1×1: dua screenshot di album yang sama.
+        $this->csv = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+
+        $flow = app(\App\Services\Telegram\BankStatementFlow::class);
+        foreach ([501, 502] as $id) {
+            $flow->receive($this->chatId, [
+                'message_id'     => $id,
+                'media_group_id' => 'album-mutasi',
+                'chat'           => ['id' => $this->chatId, 'type' => 'private'],
+                'photo'          => [['file_id' => "p{$id}", 'file_unique_id' => "u{$id}", 'file_size' => strlen($this->csv)]],
+            ], $user);
+        }
+        app()->terminate();
+
+        // Satu panggilan baca gambar membawa kedua screenshot (panggilan lain: pemeriksa AI).
+        $reads = collect(Http::recorded())->map(fn ($pair) => $pair[0])
+            ->filter(fn (Request $request) => str_contains($request->url(), 'generativelanguage') && str_contains(json_encode($request->data()), 'inlineData'))
+            ->values();
+        $this->assertCount(1, $reads);
+        $this->assertCount(2, collect($reads[0]->data()['contents'][0]['parts'])->filter(fn ($part) => isset($part['inlineData'])));
+
+        $this->send($this->tap('mut:ok', 600));
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_alasan_tolak_tidak_terbaca_sebagai_pencarian_mutasi(): void
+    {
+        $this->user('Finance');
+        $this->sendDocument($this->klikBca([['03/11', 'TRSF E-BANKING CR TANPA PASANGAN', 777_000, 'CR']], opening: 0));
+        $this->send($this->tap('mut:find:0')); // menunggu kata kunci invoice
+
+        // Notifikasi expense baru masuk, Finance menolak dan menulis alasannya.
+        $expense = Expense::create(['user_id' => User::value('id'), 'submission_date' => today(), 'category' => 'Transport', 'keterangan_expense' => 'Grab', 'amount' => 50_000, 'paid' => 0, 'status' => 'Pending']);
+        $this->send($this->tap("apv:no:expense:{$expense->id}"));
+        $this->send($this->text('Nota tidak lengkap'));
+
+        $this->assertSame('Nota tidak lengkap', $expense->fresh()->rejection_reason);
+    }
+
     public function test_karyawan_tidak_bisa_mengunggah_mutasi(): void
     {
         $this->user(null);

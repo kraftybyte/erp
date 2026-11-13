@@ -264,6 +264,13 @@ class FinanceBot
         }
 
         if (str_starts_with($data, 'apv:') || str_starts_with($data, 'rlz:')) {
+            // ❌ Tolak menunggu alasan: teks berikutnya bukan kata kunci /mutasi atau isian /bayar.
+            if (str_starts_with($data, 'apv:no:')) {
+                $this->statements->stopFinding($chatId);
+                $this->payment->forget($chatId);
+                Cache::forget($this->periodAwaitKey($chatId));
+            }
+
             $this->approvals->handleCallback($callback, $user);
 
             return;

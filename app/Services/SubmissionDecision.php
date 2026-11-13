@@ -20,9 +20,6 @@ use Illuminate\Support\Facades\DB;
  */
 class SubmissionDecision
 {
-    // Penerima notifikasi pengajuan (ManagementAlerts). Hak memutuskan lewat izin Shield, lihat decide().
-    public const ROLES = ['Director', 'Finance', 'super_admin'];
-
     /**
      * @throws DecisionException
      */

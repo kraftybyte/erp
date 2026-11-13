@@ -123,6 +123,18 @@ class ManageIntegrations extends SettingsPage
                     'heroicon-o-chart-bar',
                     IntegrationSettings::financeBotToken(),
                 ),
+
+                Forms\Components\Section::make('Jadwal otomatis')
+                    ->description('Ringkasan pagi, antrean Finance, pengingat realisasi, laporan mingguan, analisa keuangan, dan slip gaji otomatis hanya terkirim bila cron server menjalankan jadwal setiap menit.')
+                    ->icon('heroicon-o-clock')
+                    ->schema([
+                        Forms\Components\Placeholder::make('scheduler_status')
+                            ->label('Status')
+                            ->content(fn () => \App\Support\SchedulerHeartbeat::status()),
+                        Forms\Components\Placeholder::make('scheduler_cron')
+                            ->label('Baris cron di server')
+                            ->content(fn () => new \Illuminate\Support\HtmlString('<code style="word-break:break-all">' . e(\App\Support\SchedulerHeartbeat::cronLine()) . '</code>')),
+                    ]),
             ])
             ->statePath('data');
     }

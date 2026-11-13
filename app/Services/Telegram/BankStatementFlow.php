@@ -16,6 +16,7 @@ use App\Services\BankStatement\StatementReader;
 use App\Services\InvoicePayment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -31,6 +32,9 @@ use Throwable;
 class BankStatementFlow
 {
     private const TTL_MINUTES = 120;
+
+    /** Jeda sebelum membaca album: foto berikutnya di album yang sama masih berdatangan. */
+    private const ALBUM_WAIT_SECONDS = 4;
 
     private const LIST_PAGE = 20;
 
@@ -53,7 +57,7 @@ class BankStatementFlow
             'Kirim file mutasi ke chat ini:',
             '• <b>CSV / Excel</b> dari internet banking (KlikBCA, Livin\', BRImo, …), dibaca tanpa AI',
             '• <b>PDF</b> rekening koran / e-statement',
-            '• <b>Foto / screenshot</b> mutasi m-banking',
+            '• <b>Foto / screenshot</b> mutasi m-banking. Mutasi panjang: kirim beberapa screenshot sekaligus sebagai satu album, digabung jadi satu mutasi',
             '',
             'Bot mencocokkan setiap baris:',
             '⬇️ uang masuk → invoice yang belum lunas (nominal, nomor invoice, nama klien di berita transfer)',
@@ -90,11 +94,19 @@ class BankStatementFlow
         // File terbaru di chat ini; yang lebih lama dan selesai dibaca belakangan (album) dilewati.
         Cache::put($this->latestKey($chatId), max($since, (int) Cache::get($this->latestKey($chatId), 0)), now()->addMinutes(self::TTL_MINUTES));
 
+        $name = (string) ($message['document']['file_name'] ?? 'mutasi.jpg');
+
+        // Album screenshot (mutasi panjang = beberapa layar): disimpan dulu, lalu dibaca sekaligus.
+        if (($group = $message['media_group_id'] ?? null) && str_starts_with((string) StatementReader::type($data, $name), 'image/')) {
+            $this->receiveAlbumPhoto($chatId, (string) $group, $data, $since, $user);
+
+            return;
+        }
+
         $this->forget($chatId);
         $this->telegram->sendMessage($chatId, '⏳ Membaca mutasi rekening… File panjang bisa butuh 1–2 menit.');
 
-        $name  = (string) ($message['document']['file_name'] ?? 'mutasi.jpg');
-        $done  = false;
+        $done = false;
 
         app()->terminating(function () use (&$done, $chatId, $data, $name, $user, $since) {
             // Callback terminating tetap terdaftar di proses yang melayani beberapa request (tes).
@@ -116,13 +128,77 @@ class BankStatementFlow
         });
     }
 
+    private function receiveAlbumPhoto(int|string $chatId, string $group, string $data, int $messageId, User $user): void
+    {
+        $dir   = $this->albumDir($chatId, $group);
+        $first = ! is_dir($dir);
+
+        File::ensureDirectoryExists($dir);
+        File::put("{$dir}/{$messageId}", $data);
+
+        if ($first) {
+            $this->forget($chatId);
+            $this->telegram->sendMessage($chatId, '⏳ Membaca screenshot mutasi… Semua foto di album ini digabung jadi satu mutasi.');
+        }
+
+        $done = false;
+
+        app()->terminating(function () use (&$done, $chatId, $group, $user, $messageId) {
+            if ($done) {
+                return;
+            }
+
+            $done = true;
+            @set_time_limit(300);
+            ignore_user_abort(true);
+
+            try {
+                $this->processAlbum($chatId, $group, $user, $messageId);
+            } catch (Throwable $e) {
+                report($e);
+                AdminAlerts::exception($e, 'mutasi rekening (album)');
+                $this->telegram->sendMessage($chatId, '⚠️ Screenshot mutasi gagal diproses. Coba kirim ulang albumnya.');
+            }
+        });
+    }
+
+    /**
+     * Foto-foto album datang sebagai pesan terpisah dalam hitungan detik.
+     * Setelah menunggu sebentar, hanya foto terakhir yang membaca semuanya,
+     * sehingga satu album = satu ringkasan dengan satu tombol Catat.
+     */
+    public function processAlbum(int|string $chatId, string $group, User $user, int $messageId): void
+    {
+        if (! app()->runningUnitTests()) {
+            sleep(self::ALBUM_WAIT_SECONDS);
+        }
+
+        $dir = $this->albumDir($chatId, $group);
+        $ids = collect(File::files($dir))->map(fn ($file) => (int) $file->getFilename())->sort()->values();
+
+        if ($ids->isEmpty() || $messageId !== $ids->last()) {
+            return;
+        }
+
+        $images = $ids->map(fn (int $id) => File::get("{$dir}/{$id}"))->all();
+        File::deleteDirectory($dir);
+
+        $this->afterRead($chatId, $this->reader->readImages($images), count($images) . ' screenshot mutasi', $user, $messageId);
+    }
+
     /**
      * @param  int  $since  message_id file mutasinya; tombol di pesan yang lebih lama milik unggahan sebelumnya
      */
     public function process(int|string $chatId, string $data, string $name, User $user, int $since = 0): void
     {
-        $result = $this->reader->read($data, $name);
+        $this->afterRead($chatId, $this->reader->read($data, $name), $name, $user, $since);
+    }
 
+    /**
+     * @param  array{statement?: array, error?: string}  $result
+     */
+    private function afterRead(int|string $chatId, array $result, string $name, User $user, int $since): void
+    {
         if ($this->superseded($chatId, $since, $name)) {
             return;
         }
@@ -1501,6 +1577,11 @@ class BankStatementFlow
         $this->telegram->sendMessage($chatId, '⏭️ ' . ($name ? '<b>' . e($name) . '</b> ' : 'File ini ') . 'dilewati karena ada file mutasi yang lebih baru. Kirim satu file mutasi per kali.');
 
         return true;
+    }
+
+    private function albumDir(int|string $chatId, string $group): string
+    {
+        return storage_path('app/mutasi-album/' . preg_replace('/\W/', '', (string) $chatId) . '-' . md5($group));
     }
 
     private function latestKey(int|string $chatId): string

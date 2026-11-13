@@ -8,7 +8,6 @@ use App\Models\Contract;
 use App\Models\Invoice;
 use App\Models\Task;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -22,8 +21,6 @@ use Illuminate\Support\Collection;
  */
 class MorningBrief
 {
-    public const ROLES = ['Director', 'Finance', 'super_admin'];
-
     public const CONTRACT_DAYS = 30;
 
     public const DUE_SOON_DAYS = 7;
@@ -40,10 +37,7 @@ class MorningBrief
      */
     public function recipients(): Collection
     {
-        return User::query()
-            ->where('is_active', true)
-            ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', self::ROLES))
-            ->get();
+        return \App\Services\Telegram\ManagementAlerts::managers()->where('is_active', true)->get();
     }
 
     /**

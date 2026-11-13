@@ -151,6 +151,36 @@ class FinanceBotPaymentTest extends TestCase
         $this->assertEquals(12_500_000, $invoice->paid);
     }
 
+    public function test_sisa_kecil_bisa_dicatat_sebagai_potongan_pajak_klien(): void
+    {
+        $this->user('Finance');
+        $invoice = $this->invoice(['grand_total' => 11_100_000]);
+
+        $this->send($this->text('/bayar'));
+        $this->send($this->tap("pay:inv:{$invoice->id}"));
+        $this->send($this->tap("pay:acc:{$this->account->id}"));
+
+        // Klien mentransfer setelah dipotong PPh 23 (2% × DPP 10 jt).
+        $this->send($this->text('10.900.000'));
+        $this->assertStringContainsString('pay:okwh', json_encode($this->lastRequest()?->data()['reply_markup'] ?? []));
+        $this->send($this->tap('pay:okwh'));
+
+        $invoice->refresh();
+        $this->assertSame('paid', $invoice->status);
+        $this->assertEquals(11_100_000, $invoice->paid);
+        $this->assertStringContainsString('Potongan pajak klien: Rp 200.000', $this->lastText());
+        $this->assertEquals(10_900_000, Transaction::where('reference_type', 'invoice')->where('reference_id', $invoice->id)->sum('amount'), 'Potongan bukan uang masuk.');
+        $this->assertSame(['200000.00'], $invoice->invoiceMetas()->where('key', 'withholding')->pluck('value')->map(fn ($v) => number_format((float) $v, 2, '.', ''))->all());
+
+        // Cicilan besar (bukan potongan pajak): tombolnya tidak ditawarkan.
+        $other = $this->invoice(['grand_total' => 30_000_000]);
+        $this->send($this->text('/bayar'));
+        $this->send($this->tap("pay:inv:{$other->id}"));
+        $this->send($this->tap("pay:acc:{$this->account->id}"));
+        $this->send($this->text('12,5jt'));
+        $this->assertStringNotContainsString('pay:okwh', json_encode($this->lastRequest()?->data()['reply_markup'] ?? []));
+    }
+
     public function test_ketukan_ganda_hanya_mencatat_sekali(): void
     {
         $this->user('super_admin');

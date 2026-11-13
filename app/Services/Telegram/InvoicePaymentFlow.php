@@ -28,6 +28,9 @@ class InvoicePaymentFlow
 
     private const TTL_MINUTES = 30;
 
+    /** Sisa yang ditawarkan sebagai potongan pajak klien: paling banyak 12% tagihan (PPN WAPU + PPh 23). */
+    private const TAX_SHARE = 0.12;
+
     public function __construct(private TelegramClient $telegram, private InvoicePayment $payments) {}
 
     /**
@@ -68,7 +71,7 @@ class InvoicePaymentFlow
 
         [$action, $arg] = array_pad(explode(':', Str::after((string) $callback['data'], 'pay:'), 2), 2, null);
 
-        $this->telegram->answerCallback($callback['id'], $action === 'ok' ? 'Menyimpan…' : null);
+        $this->telegram->answerCallback($callback['id'], in_array($action, ['ok', 'okwh'], true) ? 'Menyimpan…' : null);
 
         match ($action) {
             'list'  => $this->start($chatId),
@@ -76,6 +79,7 @@ class InvoicePaymentFlow
             'acc'   => $this->chooseAccount($chatId, (int) $arg),
             'full'  => $this->setAmount($chatId, null),
             'ok'    => $this->confirm($chatId, $messageId, $user),
+            'okwh'  => $this->confirm($chatId, $messageId, $user, withhold: true),
             default => $this->cancel($chatId, $messageId),
         };
     }
@@ -229,6 +233,17 @@ class InvoicePaymentFlow
             ? '<b>Lunas</b>'
             : 'Dibayar sebagian, sisa ' . $this->rupiah($remaining - $amount);
 
+        // Klien membayar setelah dipotong pajak (PPh 23 ±2%, PPN WAPU ±10%): sisanya bukan utang klien.
+        $rest     = round($remaining - $amount, 2);
+        $buttons  = [[
+            ['text' => '✅ Simpan', 'callback_data' => 'pay:ok'],
+            ['text' => '❌ Batal', 'callback_data' => 'pay:cancel'],
+        ]];
+
+        if ($rest > 0 && $rest <= self::TAX_SHARE * $invoice->amountDue()) {
+            $buttons[] = [['text' => '✂️ Simpan, sisa ' . $this->rupiah($rest) . ' dipotong pajak klien', 'callback_data' => 'pay:okwh']];
+        }
+
         $this->telegram->sendMessage($chatId, implode("\n", [
             '💳 <b>Konfirmasi pembayaran</b>',
             '',
@@ -236,16 +251,16 @@ class InvoicePaymentFlow
             '',
             'Diterima: <b>' . $this->rupiah($amount) . '</b> di ' . e($account->name),
             "Setelah ini: {$after}",
-        ]), [[
-            ['text' => '✅ Simpan', 'callback_data' => 'pay:ok'],
-            ['text' => '❌ Batal', 'callback_data' => 'pay:cancel'],
-        ]]);
+        ]), $buttons);
     }
 
-    private function confirm(int|string $chatId, int $messageId, User $user): void
+    /**
+     * @param  bool  $withhold  sisa tagihan setelah pembayaran ini dicatat sebagai potongan pajak klien
+     */
+    private function confirm(int|string $chatId, int $messageId, User $user, bool $withhold = false): void
     {
         // Ketukan ganda atau dua update bersamaan: hanya satu yang mencatat.
-        Cache::lock("telegram:finance-pay-lock:{$chatId}", 30)->block(10, function () use ($chatId, $messageId, $user) {
+        Cache::lock("telegram:finance-pay-lock:{$chatId}", 30)->block(10, function () use ($chatId, $messageId, $user, $withhold) {
             $state   = Cache::pull($this->key($chatId), []);
             $invoice = Invoice::find($state['invoice_id'] ?? 0);
             $account = PaymentAccount::find($state['account_id'] ?? 0);
@@ -264,15 +279,27 @@ class InvoicePaymentFlow
                 return;
             }
 
-            $this->reply($chatId, $messageId, implode("\n", [
+            $taxLine = null;
+
+            if ($withhold && ($rest = InvoicePayment::remaining($invoice)) > 0) {
+                try {
+                    $invoice = $this->payments->withhold($invoice, $rest, $user);
+                    $taxLine = 'Potongan pajak klien: ' . $this->rupiah($rest) . ' (bukti potong menyusul)';
+                } catch (InvoicePaymentException $e) {
+                    $taxLine = '⚠️ Potongan pajak tidak tercatat: ' . e($e->getMessage());
+                }
+            }
+
+            $this->reply($chatId, $messageId, implode("\n", array_filter([
                 '✅ <b>Pembayaran tercatat</b>',
                 '',
                 '📄 ' . e((string) $invoice->uuid),
                 e(ClientLabel::invoice($invoice)),
                 $this->rupiah($state['amount']) . ' diterima di ' . e($account->name),
+                $taxLine,
                 'Status invoice: ' . ($invoice->status === 'paid' ? '<b>Lunas</b>' : 'dibayar sebagian, sisa ' . $this->rupiah(InvoicePayment::remaining($invoice))),
                 'Saldo ' . e($account->name) . ': ' . $this->rupiah($account->fresh()->current_balance),
-            ]), [[
+            ], fn ($line) => $line !== null)), [[
                 ['text' => '💳 Catat pembayaran lain', 'callback_data' => 'pay:list'],
                 ['text' => '⏰ Belum dibayar', 'callback_data' => 'fin:piutang'],
             ]]);
