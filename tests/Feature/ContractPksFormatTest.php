@@ -95,6 +95,13 @@ class ContractPksFormatTest extends TestCase
             '1 Biaya Jasa per Bulan (12x) Rp5.500.000 Setiap tanggal 25, dibayar di muka Rp66.000.000',
             'TOTAL Rp66.000.000',
             'Catatan: Jumlah di atas belum termasuk PPN.',
+            // Ketentuan PKS yang tidak diisi memakai nilai draft.
+            'paling lambat 1 (satu) Hari Kerja setelah seluruh hal berikut terpenuhi',
+            'denda sebesar 0,1% (nol koma satu persen) per hari dari jumlah yang terlambat, maksimal 5% (lima persen) dari jumlah tersebut',
+            'terlambat membayar lebih dari 14 (empat belas) Hari Kalender setelah jatuh tempo dan tidak memperbaikinya dalam 7 (tujuh) Hari Kalender',
+            'dibatasi paling banyak sebesar [___].',
+            'dalam rangkap 2 (dua), masing-masing bermeterai cukup (Rp10.000)',
+            'Kuota yang tidak terpakai pada suatu Bulan Layanan [hangus / dapat dibawa ke bulan berikutnya paling lama 1 bulan], kecuali',
         ] as $expected) {
             $this->assertStringContainsString($expected, $text);
         }
@@ -141,6 +148,72 @@ class ContractPksFormatTest extends TestCase
 
         $this->assertStringNotContainsString('tanggal 25', $text);
         $this->assertStringNotContainsString('Rp4.000.000', $text, 'DP 50% tersimpan tidak memotong cicilan per bulan.');
+    }
+
+    public function test_ketentuan_pks_bisa_diisi_per_kontrak(): void
+    {
+        $format = ContractFormats::make('pks');
+        $format['layout']['terms'] = [
+            'hari_laporan'         => '10',
+            'ppn'                  => '11% (sebelas persen)',
+            'denda_harian'         => '',  // kosong = draft
+            'batas_tanggung_jawab' => 'Biaya Jasa 3 (tiga) bulan terakhir',
+            'forum_sengketa'       => 'Pengadilan Negeri {kota}',
+            'rangkap'              => '3',
+            'kuota_tidak_terpakai' => 'hangus',
+            'meterai'              => '<b>Rp10.000</b>',
+        ];
+
+        $contract = Contract::create($format + [
+            'contract_number' => '003/PKS/TES', 'client_name_full' => 'PT Ketentuan', 'effective_date' => '2026-11-01',
+            'duration_months' => 3, 'payment_type' => 'monthly', 'total_value' => 9_000_000, 'installment_months' => 3,
+        ]);
+
+        $html = app(ContractTemplateService::class)->generate($contract->fresh());
+        $text = preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($html), ENT_QUOTES));
+
+        foreach ([
+            'laporan kinerja bulanan paling lambat 10 (sepuluh) Hari Kerja',
+            'PPN 11% (sebelas persen) ditambahkan pada Invoice',
+            'denda sebesar 0,1% (nol koma satu persen) per hari',
+            'dibatasi paling banyak sebesar Biaya Jasa 3 (tiga) bulan terakhir.',
+            'diselesaikan melalui Pengadilan Negeri Kota Contoh. Putusan',
+            'dalam rangkap 3 (tiga), masing-masing bermeterai cukup (<b>Rp10.000</b>)',
+            'Kuota yang tidak terpakai pada suatu Bulan Layanan hangus, kecuali',
+            'paling lambat 5 (lima) Hari Kalender sebelum tanggal jatuh tempo',
+        ] as $expected) {
+            $this->assertStringContainsString($expected, $text);
+        }
+
+        $this->assertStringNotContainsString('arbitrase BANI', $text);
+        $this->assertStringNotContainsString('<b>Rp10.000</b>', $html, 'Isian ditulis sebagai teks, bukan HTML.');
+        $this->assertSame(0, preg_match('/\{[a-z_]+\}/', $html), 'Semua penanda terisi.');
+    }
+
+    public function test_form_ketentuan_pks(): void
+    {
+        $contract = Contract::create(ContractFormats::make('pks') + ['contract_number' => 'TES/' . Str::random(6), 'client_name_full' => 'PT Form Ketentuan', 'effective_date' => now()]);
+
+        Livewire::test(EditContract::class, ['record' => $contract->getRouteKey()])
+            ->assertFormFieldIsVisible('layout.terms.hari_laporan')
+            ->set('data.layout.terms.hari_laporan', '10')
+            ->set('data.layout.terms.forum_sengketa', 'Pengadilan Negeri Jakarta Selatan')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            // "Pakai format" mengganti teks, isian ketentuan tetap.
+            ->callFormComponentAction('document_title', 'applyContractFormat', data: ['format' => 'pks'])
+            ->assertSet('data.layout.terms.hari_laporan', '10')
+            ->set('data.layout.terms.hari_invoice', 'abc')
+            ->call('save')
+            ->assertHasFormErrors(['layout.terms.hari_invoice']);
+
+        $this->assertSame('10', (string) $contract->fresh()->layout['terms']['hari_laporan']);
+        $this->assertSame('Pengadilan Negeri Jakarta Selatan', $contract->fresh()->layout['terms']['forum_sengketa']);
+
+        // Format standar tidak memakai penanda ketentuan: bagiannya tidak tampil.
+        $standar = Contract::create(['contract_number' => 'TES/' . Str::random(6), 'client_name_full' => 'PT Standar', 'effective_date' => now()]);
+        Livewire::test(EditContract::class, ['record' => $standar->getRouteKey()])
+            ->assertFormFieldIsHidden('layout.terms.hari_laporan');
     }
 
     public function test_peringatan_bila_baris_biaya_tidak_sama_dengan_total(): void
