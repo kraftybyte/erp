@@ -754,6 +754,30 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Masukkan ke mana?', $this->lastText(), 'Jenis tetap ditanyakan.');
     }
 
+    public function test_struk_mata_uang_asing_menanyakan_nominal_rupiah(): void
+    {
+        $this->user();
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        // Invoice langganan software dalam dolar: jangan dibaca Rp 20 atau dikonversi dengan kurs tebakan.
+        $this->fakeApis(gemini: ['currency' => 'USD', 'amount' => 19.99, 'description' => 'Langganan Canva Pro'] + $this->receiptRead());
+
+        $this->send($this->photoUpdate('invoice-canva'));
+        $this->assertStringContainsString('USD 19,99</b> (nominal rupiahnya ditanyakan nanti)', $this->lastText());
+
+        $draft = Draft::load($this->chatId);
+        $this->assertNull($draft->amount);
+        $this->assertSame([], $draft->attachment['items'], 'Harga rincian bukan rupiah.');
+        $this->assertSame(today()->subDays(2)->toDateString(), $draft->date, 'Tanggal tetap dari struk.');
+
+        $this->send($this->tap("{$draft->id}:to:expense"));
+        $this->send($this->tap("{$draft->id}:project:{$project->id}"));
+        $this->assertStringContainsString('Struk dalam <b>USD 19,99</b>. Berapa rupiah yang terpotong', $this->lastText());
+
+        $this->send($this->textUpdate('325rb'));
+        $this->assertSame(325_000, Draft::load($this->chatId)->amount);
+        $this->assertStringContainsString('Draft Expense', $this->lastText());
+    }
+
     public function test_rincian_yang_tidak_cocok_dengan_total_tidak_dipakai(): void
     {
         $this->user();
