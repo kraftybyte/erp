@@ -118,6 +118,27 @@ class ReceiptScannerTest extends TestCase
         $this->assertGreaterThan(50, $gap - $stroke, 'Celah antar garis jelas lebih terang, huruf tidak menyatu.');
     }
 
+    public function test_bayangan_abu_abu_di_pinggir_kertas_hilang_tulisan_tetap(): void
+    {
+        $image = imagecreatetruecolor(900, 1400);
+        imagefill($image, 0, 0, imagecolorallocate($image, 60, 50, 45));
+        $quad = [[200, 100], [700, 100], [700, 1300], [200, 1300]];
+        imagefilledpolygon($image, array_merge(...$quad), imagecolorallocate($image, 236, 234, 228));
+        $this->text($image, $quad);
+
+        // Garis bayangan tepi jari (tipis, abu-abu, bukan warna kulit) melengkung dari tepi kanan kertas.
+        imagesetthickness($image, 3);
+        imagearc($image, 700, 400, 120, 120, 90, 270, imagecolorallocate($image, 150, 148, 146));
+        imagesetthickness($image, 1);
+
+        $out = $this->scan($this->jpeg($image));
+        $at  = fn (float $x, float $y) => $this->gray($out, (int) round(($x - 200) / 500 * (imagesx($out) - 1)), (int) round(($y - 100) / 1200 * (imagesy($out) - 1)));
+
+        $arc = array_map(fn ($deg) => $at(700 + 60 * cos(deg2rad($deg)), 400 + 60 * sin(deg2rad($deg))), [120, 150, 180, 210, 240]);
+        $this->assertGreaterThan(245, min($arc), 'Garis bayangan yang menempel ke pinggir jadi putih.');
+        $this->assertGreaterThan(0.03, $this->darkShare($out), 'Tulisan tetap ada.');
+    }
+
     public function test_dokumen_berwarna_hanya_dipotong_dan_kontrasnya_naik(): void
     {
         // Invoice berwarna difoto miring di meja, agak redup: kop biru selebar
