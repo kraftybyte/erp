@@ -26,6 +26,7 @@ class ListDeals extends ListRecords
                     return Excel::download(new SampleExport(), 'sample_deals.xlsx');
                 }),
             Actions\Action::make('import_excel')
+                ->authorize(fn () => auth()->user()?->can('create_deal'))
                 ->label('Import Excel')
                 ->color('info')
                 ->icon('heroicon-m-clipboard')

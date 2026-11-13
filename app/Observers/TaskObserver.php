@@ -50,7 +50,7 @@ class TaskObserver
         $klien       = $project?->nama_perusahaan ?? 'N/A';
         $selesaiTask = Carbon::parse($task->selesai_task);
         $mulaiTask   = Carbon::parse($task->mulai_task);
-        $durasiHari  = max(1, $mulaiTask->diffInDays($selesaiTask));
+        $durasiHari  = max(1, (int) $mulaiTask->diffInDays($selesaiTask));
         $isDone      = $task->status === 'done';
         $statusLabel = ucfirst((string) $task->status);
         $url         = '/admin/task-kanban-board';

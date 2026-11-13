@@ -39,7 +39,12 @@ class AbsencePolicy
      */
     public function update(User $user, Absence $absence): bool
     {
-        return $user->can('update_absence');
+        // Pemilik hanya selama masih pending; selain itu hanya penyetuju
+        // (peran yang sama dengan cakupan tabel di AbsenceResource).
+        return $user->can('update_absence') && (
+            ((int) $absence->user_id === (int) $user->id && $absence->approval_status === 'pending')
+            || $user->hasRole(['Director', 'Finance', 'Head'])
+        );
     }
 
     /**

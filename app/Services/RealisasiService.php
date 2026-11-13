@@ -573,15 +573,12 @@ class RealisasiService
             return $this->evaluateStatus($advance)['status'] === 'exact_match';
         }
 
-        // If overrun was approved, it's ready
-        if ($advance->overrun_approved_by) {
-            return true;
-        }
+        $remaining = (float) $advance->paid - $this->getTotalRealisasi($advance);
 
-        // If exact match (within tolerance)
-        $totalRealisasi = $this->getTotalRealisasi($advance);
-        $remaining = (float) $advance->paid - $totalRealisasi;
-        return abs($remaining) < self::EXACT_MATCH_TOLERANCE;
+        // Pas, atau kelebihan pakai yang sudah disetujui. Persetujuan lama tidak
+        // berlaku lagi bila realisasi kemudian turun dan karyawan masih berutang.
+        return abs($remaining) < self::EXACT_MATCH_TOLERANCE
+            || ($advance->overrun_approved_by && $remaining < 0);
     }
 
     /**

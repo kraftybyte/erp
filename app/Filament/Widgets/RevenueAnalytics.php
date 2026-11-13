@@ -22,7 +22,7 @@ class RevenueAnalytics extends BaseWidget
     {
         $currentYear = Carbon::now()->startOfYear();
         $currentMonth = Carbon::now()->startOfMonth();
-        $lastMonth = Carbon::now()->subMonth()->startOfMonth();
+        $lastMonth = Carbon::now()->subMonthNoOverflow()->startOfMonth();
 
         // All time paid revenue
         $allTimeRevenue = Invoice::where('status', 'paid')->sum('grand_total');

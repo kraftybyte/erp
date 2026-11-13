@@ -88,8 +88,8 @@ class ExpenseResource extends Resource
         ->modifyQueryUsing(function (Builder $query) {
             $user = auth()->user();
 
-            // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
-            if ($user->hasRole(['Director','Finance', 'super_admin'])) {
+            // Pengelola keuangan (izin restore_expense, sama dengan ExpensePolicy) melihat semua data
+            if ($user->can('restore_expense')) {
                 return $query->with(['user', 'paidBy', 'project', 'paymentAccount']);
             }
 

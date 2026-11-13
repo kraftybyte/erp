@@ -152,6 +152,9 @@ class UserResource extends Resource
                             ->schema([
                                 Select::make('roles')
                                     ->hiddenLabel()
+                                    // Tanpa izin update_role hanya bisa melihat: field disabled tidak disimpan,
+                                    // supaya pengelola user tidak bisa memberi dirinya/orang lain role Director.
+                                    ->disabled(fn () => ! auth()->user()?->can('update_role'))
                                     // Role super_admin hanya bisa diberikan oleh super_admin. Pilihannya
                                     // disembunyikan, dan aturan di bawah menolaknya di server karena
                                     // relasi menyimpan ID apa pun yang dikirim.

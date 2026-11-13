@@ -267,6 +267,11 @@ restore_backup() { # restore_backup BACKUP_DIR
     if [ -d "$backup/vendor.old" ]; then rm -rf "$SITE/vendor"; mv "$backup/vendor.old" "$SITE/vendor"; fi
     [ -f "$backup/composer.lock" ] && cp "$backup/composer.lock" "$SITE/composer.lock"
 
+    # Data yang masuk sejak upgrade ikut hilang saat dipulihkan: simpan dulu.
+    local now="$backup/database-sebelum-rollback-$(date +%Y%m%d-%H%M%S).sql.gz"
+    site_mysql mysqldump --single-transaction --quick --no-tablespaces | gzip > "$now"
+    info "Database saat ini disimpan di $now"
+
     # Database persis seperti sebelum upgrade: tabel baru (mis. dari migrasi) ikut dihapus.
     { echo 'SET FOREIGN_KEY_CHECKS=0;'
       site_mysql mysql -N -e 'SHOW TABLES' | while read -r table; do echo "DROP TABLE IF EXISTS \`$table\`;"; done
@@ -533,7 +538,12 @@ fi
 MYSQL_PWD="$DB_PASS" mysql -h localhost -u "$DB_USER" -e "SELECT 1" "$DB_NAME" >/dev/null 2>&1 || die "Tidak bisa masuk ke database $DB_NAME dengan user $DB_USER."
 
 yes_no MOVE_BOTS "Pindahkan bot Telegram ke website baru sekarang? Pilih y hanya bila DNS & SSL domain baru sudah aktif; bot berhenti menjawab di website lama" n
-yes_no ENABLE_CRON "Aktifkan jadwal otomatis (cron schedule:run tiap menit: ringkasan pagi, slip gaji, dll.)" n
+if [ "$MOVE_BOTS" = y ]; then
+    yes_no ENABLE_CRON "Aktifkan jadwal otomatis (cron schedule:run tiap menit: ringkasan pagi, slip gaji, dll.). Matikan cron di server lama" n
+else
+    # Website lama masih jalan dengan data dan bot yang sama: dua cron = pengingat dan slip gaji terkirim dua kali.
+    ENABLE_CRON=n
+fi
 
 mkdir -p "$SITE"
 sync_code
@@ -626,6 +636,6 @@ cat <<DONE
    - DNS $DOMAIN → server ini, lalu SSL di CWP (AutoSSL). Login dengan akun yang sama seperti di website lama.
    - PHP domain di CWP: 8.3 atau lebih baru.
 $( [ "$MOVE_BOTS" = y ] && echo "   - Bot Telegram sudah diarahkan ke website baru." || echo "   - Bot Telegram masih ke website lama. Untuk memindahkan: Settings → Integrasi → Daftarkan ulang webhook (di website baru)." )
-$( [ "$ENABLE_CRON" = y ] && echo "   - Jadwal otomatis aktif." || echo "   - Jadwal otomatis belum aktif (jalankan lagi dengan ENABLE_CRON=y bila perlu)." )
+$( [ "$ENABLE_CRON" = y ] && echo "   - Jadwal otomatis aktif." || echo "   - Jadwal otomatis belum aktif. Aktifkan setelah cron di server lama dimatikan (jalankan lagi dengan MOVE_BOTS=y ENABLE_CRON=y)." )
    - Memperbarui kode nanti: bash migrate-cwp.sh update $SITE
 DONE

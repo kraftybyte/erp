@@ -12,8 +12,6 @@ class VerifyCsrfToken extends Middleware
      * @var array<int, string>
      */
     protected $except = [
-        'send-whatsapp',
-            'livewire/*',
-
+        // Kosong: Livewire mengirim token CSRF sendiri (_token).
     ];
 }

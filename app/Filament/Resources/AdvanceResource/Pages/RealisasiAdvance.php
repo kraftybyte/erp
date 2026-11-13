@@ -82,7 +82,7 @@ class RealisasiAdvance extends Page
 
     private function isFinance(): bool
     {
-        return (bool) auth()->user()?->hasRole(['Finance', 'Director', 'super_admin']);
+        return (bool) auth()->user()?->can('restore_advance');
     }
 
     /**

@@ -328,6 +328,10 @@ class EmployeeImport
 
             $data['lastname'] ??= '';
 
+            if ($roleNames && ! $by->can('update_role')) {
+                return $skip('Mengisi peran butuh izin Update Role di Settings → Roles (sama dengan form user).');
+            }
+
             return ['action' => 'create', 'data' => $data, 'roles' => $roleNames, 'changes' => ['Karyawan baru']] + $row;
         }
 
@@ -358,6 +362,11 @@ class EmployeeImport
 
         $currentRoles = $person->getRoleNames()->sort()->values()->all();
         if ($roleNames && $currentRoles !== collect($roleNames)->sort()->values()->all()) {
+            // Tanpa Update Role, peran tidak bisa diubah lewat import (HR menjadikan dirinya Director).
+            if (! $by->can('update_role')) {
+                return $skip('Mengubah peran butuh izin Update Role di Settings → Roles (sama dengan form user).');
+            }
+
             $changes[] = 'Peran: ' . (implode(', ', $currentRoles) ?: '—') . ' → ' . implode(', ', $roleNames);
         } else {
             $roleNames = [];

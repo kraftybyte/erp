@@ -11,7 +11,7 @@ class QuotationPdfController extends Controller
 {
     public function show(Request $request, Quotation $quotation)
     {
-        if (!$this->userCanAccess($request->user(), $quotation)) {
+        if (! $request->user()?->can('view', $quotation)) {
             abort(403, 'Unauthorized access to quotation');
         }
 
@@ -28,7 +28,7 @@ class QuotationPdfController extends Controller
 
     public function download(Request $request, Quotation $quotation)
     {
-        if (!$this->userCanAccess($request->user(), $quotation)) {
+        if (! $request->user()?->can('view', $quotation)) {
             abort(403, 'Unauthorized access to quotation');
         }
 
@@ -43,18 +43,5 @@ class QuotationPdfController extends Controller
         ]);
 
         return $pdf->download("Quotation-" . str_replace(['#', '/'], ['','-'], $quotation->uuid) . ".pdf");
-    }
-
-    private function userCanAccess($user, Quotation $quotation): bool
-    {
-        if (!$user) {
-            return false;
-        }
-
-        if ($user->hasRole(['super_admin', 'Director', 'Finance','Team'])) {
-            return true;
-        }
-
-        return $quotation->user_id === $user->id;
     }
 }

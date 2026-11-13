@@ -60,3 +60,29 @@ resources/views/filament/resources/social-account/view-social-account.blade.php
 # 2026-10-30 Pengingat invoice & kontrak yang tidak pernah jalan, diganti ringkasan:pagi
 app/Console/Commands/CheckOverdueInvoices.php
 app/Console/Commands/CheckContractExpiration.php
+
+# 2026-11-13 Endpoint tanpa pemakai: kirim WhatsApp lewat URL (siapa pun yang login bisa
+# mengirim dari nomor kantor) dan cetak thermal lama (Packing Slip mencetak di browser).
+app/Http/Controllers/WablasController.php
+app/Http/Controllers/ThermalPrintController.php
+resources/views/pdf/thermal-print.blade.php
+
+# 2026-11-13 Audit: kode yang tidak dipakai lagi atau berbahaya.
+# - InvoiceObserver: mencatat pembayaran invoice dua kali (InvoicePayment sudah mencatatnya).
+# - db:clean, sync:invoice-transactions, invoices:generate-transactions: menghapus data
+#   atau membuat transaksi uang masuk dari kolom paid (termasuk potongan pajak).
+# - Paket yang dihapus dari composer.json (tinyeditor) dan tampilan kanban lama.
+app/Observers/InvoiceObserver.php
+app/Console/Commands/CleanDatabase.php
+app/Console/Commands/SyncInvoiceTransactions.php
+app/Console/Commands/GenerateInvoiceTransactions.php
+config/filament-tinyeditor.php
+resources/views/vendor/filament-kanban-OLD/components/edit-record-modal.blade.php
+resources/views/vendor/filament-kanban-OLD/custom-task-card.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-board.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-header.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-record.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-scripts.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-status.blade.php
+resources/views/vendor/filament-kanban-OLD/kanban-view.blade.php
+resources/views/vendor/filament-tinyeditor/tiny-editor.blade.php

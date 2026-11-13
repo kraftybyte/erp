@@ -199,24 +199,4 @@ class QuotationsRelationManager extends RelationManager
                 ]),
             ]);
     }
-
-    public function canViewAny(): bool
-    {
-        return true;
-    }
-
-    public function canCreate(): bool
-    {
-        return true;
-    }
-
-    public function canEdit($record): bool
-    {
-        return true;
-    }
-
-    public function canDelete($record): bool
-    {
-        return true;
-    }
 }

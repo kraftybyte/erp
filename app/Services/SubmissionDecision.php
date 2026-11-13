@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
  */
 class SubmissionDecision
 {
+    // Penerima notifikasi pengajuan (ManagementAlerts). Hak memutuskan lewat izin Shield, lihat decide().
     public const ROLES = ['Director', 'Finance', 'super_admin'];
 
     /**
@@ -59,15 +60,16 @@ class SubmissionDecision
 
     private function decide(string $type, int $id, User $by, array $changes): Expense|Advance
     {
-        if (! $by->hasRole(self::ROLES)) {
-            throw new DecisionException('Hanya Director dan Finance yang bisa menyetujui atau menolak pengajuan.');
-        }
-
         $model = match ($type) {
             'expense' => Expense::class,
             'advance' => Advance::class,
             default   => throw new DecisionException('Jenis pengajuan tidak dikenal.'),
         };
+
+        // Izin yang sama dengan tombol Approve/Reject di ERP.
+        if (! $by->can("restore_{$type}")) {
+            throw new DecisionException('Kamu tidak punya izin menyetujui atau menolak pengajuan ini.');
+        }
 
         return DB::transaction(function () use ($model, $id, $changes) {
             $record = $model::lockForUpdate()->find($id);

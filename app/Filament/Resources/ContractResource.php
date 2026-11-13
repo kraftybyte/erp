@@ -226,7 +226,7 @@ class ContractResource extends Resource
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         if ($state && $get('effective_date')) {
                                             $start = \Carbon\Carbon::parse($get('effective_date'));
-                                            $set('expiration_date', $start->addMonths((int)$state)->format('Y-m-d'));
+                                            $set('expiration_date', $start->addMonthsNoOverflow((int)$state)->format('Y-m-d'));
                                         }
                                     }),
                             ]),
@@ -246,7 +246,7 @@ class ContractResource extends Resource
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         if ($state && $get('duration_months')) {
                                             $start = \Carbon\Carbon::parse($state);
-                                            $set('expiration_date', $start->addMonths((int)$get('duration_months'))->format('Y-m-d'));
+                                            $set('expiration_date', $start->addMonthsNoOverflow((int)$get('duration_months'))->format('Y-m-d'));
                                         }
                                     }),
 

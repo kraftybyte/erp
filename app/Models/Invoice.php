@@ -195,7 +195,7 @@ class Invoice extends BaseInvoice
         if ($this->parent_invoice_id && ($dp = $this->parentInvoice)) {
             $full    = (float) $dp->grand_total ?: (float) $this->grand_total;
             $percent = $dp->dpPercentage();
-            $amount  = $percent !== null ? $full * $percent / 100 : (float) $dp->paid;
+            $amount  = $percent !== null ? round($full * $percent / 100, $dp->isRupiah() ? 0 : 2) : (float) $dp->paid;
 
             if ($percent === null && $amount <= 0) {
                 return null;
@@ -228,14 +228,29 @@ class Invoice extends BaseInvoice
     public function amountDue(): float
     {
         if (($persen = $this->dpPercentage()) !== null) {
-            return (float) $this->grand_total * ($persen / 100);
+            $due = (float) $this->grand_total * ($persen / 100);
+        } elseif ($dp = $this->settledDp()) {
+            $due = max(0, $dp['full'] - $dp['amount']);
+        } else {
+            $due = (float) $this->grand_total;
         }
 
-        if ($dp = $this->settledDp()) {
-            return max(0, $dp['full'] - $dp['amount']);
+        // Rupiah ditagih bulat seperti di PDF, jadi transfer sesuai PDF pas dengan sisa tagihan.
+        return round($due, $this->isRupiah() ? 0 : 2);
+    }
+
+    /** Invoice dalam rupiah (tanpa mata uang dianggap rupiah). */
+    public function isRupiah(): bool
+    {
+        static $iso = [];
+
+        if (! $this->currency_id) {
+            return true;
         }
 
-        return (float) $this->grand_total;
+        $iso[$this->currency_id] ??= strtoupper((string) DB::table('currencies')->where('id', $this->currency_id)->value('iso'));
+
+        return in_array($iso[$this->currency_id], ['', 'IDR'], true);
     }
 
     /**

@@ -2,7 +2,6 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\WablasController;
 use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\FinanceWebhookController;
 use App\Http\Controllers\TelegramWebhookController;
@@ -21,7 +20,6 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 */
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/send-message', [WablasController::class, 'sendMessage']);
 
     // Push Notifications
     Route::get('/push/vapid-public-key', [PushNotificationController::class, 'getVapidPublicKey']);

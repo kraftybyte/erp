@@ -41,7 +41,7 @@ class ViewHrReport extends Page
         $allTimeStart = Carbon::createFromDate(2000, 1, 1)->startOfDay();
         return match($this->period) {
             'this_month'   => [now()->copy()->startOfMonth(), now()->copy()->endOfMonth()],
-            'last_month'   => [now()->copy()->subMonth()->startOfMonth(), now()->copy()->subMonth()->endOfMonth()],
+            'last_month'   => [now()->copy()->subMonthNoOverflow()->startOfMonth(), now()->copy()->subMonthNoOverflow()->endOfMonth()],
             'this_quarter' => [now()->copy()->startOfQuarter(), now()->copy()->endOfQuarter()],
             'this_year'    => [now()->copy()->startOfYear(), now()->copy()->endOfYear()],
             'last_year'    => [now()->copy()->subYear()->startOfYear(), now()->copy()->subYear()->endOfYear()],
@@ -153,7 +153,7 @@ class ViewHrReport extends Page
         $labels = $taskDone = $taskTotal = $attendance = [];
 
         for ($i = 5; $i >= 1; $i--) {
-            $month = now()->copy()->subMonths($i);
+            $month = now()->copy()->subMonthsNoOverflow($i);
             $start = $month->copy()->startOfMonth();
             $end   = $month->copy()->endOfMonth();
 

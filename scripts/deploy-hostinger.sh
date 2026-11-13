@@ -289,8 +289,14 @@ rollback() {
 
     if [ "$with_db" = 1 ]; then
         echo "== Pulihkan database"
-        local port
+        local port now
         port=$(env_value DB_PORT)
+        # Data yang masuk sejak deploy ikut hilang saat dipulihkan: simpan dulu.
+        now="$BACKUP/database-sebelum-rollback-$(date +%Y%m%d-%H%M%S).sql.gz"
+        MYSQL_PWD=$(env_value DB_PASSWORD) mysqldump --single-transaction --quick --no-tablespaces \
+            -h "$(env_value DB_HOST)" -P "${port:-3306}" -u "$(env_value DB_USERNAME)" "$(env_value DB_DATABASE)" \
+            | gzip > "$now"
+        echo "   Database saat ini disimpan di $now"
         gunzip -c "$BACKUP/database.sql.gz" | MYSQL_PWD=$(env_value DB_PASSWORD) mysql \
             -h "$(env_value DB_HOST)" -P "${port:-3306}" -u "$(env_value DB_USERNAME)" "$(env_value DB_DATABASE)"
     fi

@@ -66,6 +66,8 @@ class BankStatementTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Izin Shield Director/Finance untuk bot, seperti instalasi yang sudah dimigrasi.
+        (require database_path('migrations/2026_11_13_130000_grant_finance_bot_permissions.php'))->up();
         Cache::forget("telegram:finance-mutasi:{$this->chatId}");
 
         $this->fakeTelegram();
@@ -823,6 +825,24 @@ class BankStatementTest extends TestCase
         $this->assertStringNotContainsString('mut:ok', json_encode($this->lastRequest()?->data()['reply_markup'] ?? []));
     }
 
+    public function test_tombol_ringkasan_unggahan_lama_tidak_mencatat_unggahan_baru(): void
+    {
+        $this->user('Finance');
+        $oktober  = $this->invoice(15_437_233);
+        $november = $this->invoice(15_437_237);
+
+        $this->sendDocument($this->klikBca([['03/10', 'TRSF E-BANKING CR ' . strtoupper($this->client), 15_437_233, 'CR']], opening: 0));
+        $ringkasanOktober = 10 + $this->updateId;
+        $this->sendDocument($this->klikBca([['03/11', 'TRSF E-BANKING CR ' . strtoupper($this->client), 15_437_237, 'CR']], opening: 0));
+
+        $this->send($this->tap('mut:ok', $ringkasanOktober));
+        $this->assertStringContainsString('sudah tidak berlaku', $this->lastText());
+        $this->assertSame(['unpaid', 'unpaid'], [$oktober->fresh()->status, $november->fresh()->status]);
+
+        $this->send($this->tap('mut:ok'));
+        $this->assertSame('paid', $november->fresh()->status);
+    }
+
     public function test_karyawan_tidak_bisa_mengunggah_mutasi(): void
     {
         $this->user(null);
@@ -1210,14 +1230,17 @@ class BankStatementTest extends TestCase
         ];
     }
 
-    private function tap(string $data): array
+    /**
+     * @param  int|null  $messageId  pesan yang tombolnya ditekan; default pesan bot terbaru (setelah file terakhir)
+     */
+    private function tap(string $data, ?int $messageId = null): array
     {
         return [
             'update_id'      => 820_000_000 + ++$this->updateId,
             'callback_query' => [
                 'id'      => 'cb-' . $this->updateId,
                 'data'    => $data,
-                'message' => ['message_id' => 1, 'chat' => ['id' => $this->chatId, 'type' => 'private']],
+                'message' => ['message_id' => $messageId ?? 10 + $this->updateId, 'chat' => ['id' => $this->chatId, 'type' => 'private']],
             ],
         ];
     }

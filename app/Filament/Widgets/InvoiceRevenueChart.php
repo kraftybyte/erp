@@ -114,9 +114,9 @@ class InvoiceRevenueChart extends ChartWidget
         $now = Carbon::now();
 
         return match ($filter) {
-            '6months' => [$now->copy()->subMonths(5)->startOfMonth(), 6],
+            '6months' => [$now->copy()->subMonthsNoOverflow(5)->startOfMonth(), 6],
             'year'    => [$now->copy()->startOfYear(), 12],
-            default   => [$now->copy()->subMonths(11)->startOfMonth(), 12],
+            default   => [$now->copy()->subMonthsNoOverflow(11)->startOfMonth(), 12],
         };
     }
 

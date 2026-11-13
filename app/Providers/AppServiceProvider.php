@@ -41,7 +41,6 @@ use App\Policies\ProjectTimelineBoardPolicy;
 use App\Filament\Pages\ProjectTimelineBoard;
 use App\Observers\ContractObserver;
 use App\Observers\DealObserver;
-use App\Observers\InvoiceObserver;
 use App\Observers\PaymentAccountObserver;
 use Filament\Tables\Table;
 use Filament\Support\Facades\FilamentView;
@@ -96,7 +95,8 @@ class AppServiceProvider extends ServiceProvider
         Deal::observe(DealObserver::class);
         // Task, Announcement, Advance, Expense, dan Absence mendaftarkan observer-nya
         // sendiri di model; mendaftarkannya lagi di sini membuat notifikasi terkirim dobel.
-        Invoice::observe(InvoiceObserver::class);
+        // InvoiceObserver dihapus: InvoicePayment mencatat transaksinya sendiri, observer
+        // lama membuat transaksi kedua (dan mencatat potongan PPh sebagai uang masuk).
 
         // Dark Mode Configuration
         try {

@@ -127,7 +127,7 @@ class PaymentDashboard extends Page
         // Monthly stats (last 6 months) - juga dari Expense model
         $this->monthlyStats = collect();
         for ($i = 5; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i);
+            $month = Carbon::now()->subMonthsNoOverflow($i);
             $start = $month->copy()->startOfMonth();
             $end = $month->copy()->endOfMonth();
 

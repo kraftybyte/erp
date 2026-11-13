@@ -31,7 +31,7 @@ class InvoiceStatsOverview extends BaseWidget
                 SUM(CASE WHEN status = 'pending' AND due_date < ? THEN grand_total ELSE 0 END) as overdue_total
             ", [
                 $now->month, $now->year,
-                $now->copy()->subMonth()->month, $now->copy()->subMonth()->year,
+                $now->copy()->subMonthNoOverflow()->month, $now->copy()->subMonthNoOverflow()->year,
                 $now->toDateString(), $now->toDateString()
             ])
             ->first();

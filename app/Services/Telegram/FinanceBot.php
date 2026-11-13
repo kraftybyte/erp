@@ -19,14 +19,18 @@ use Illuminate\Support\Str;
 /**
  * Bot laporan keuangan: invoice masuk, expense, dan advance — seluruh waktu
  * atau per periode yang dipilih (📅 Periode / /periode). Bot terpisah dari bot
- * pengajuan (token & webhook sendiri) dan hanya melayani role Director,
- * Finance, dan super_admin — diperiksa ulang di setiap pesan maupun tombol.
+ * pengajuan (token & webhook sendiri) dan hanya melayani pemegang izin Shield
+ * (lihat PERMISSION) — diperiksa ulang di setiap pesan maupun tombol.
  * Satu-satunya yang mengubah data: mencatat pembayaran invoice (/bayar, lihat
  * InvoicePaymentFlow).
  */
 class FinanceBot
 {
-    public const ROLES = ['Director', 'Finance', 'super_admin'];
+    // Izin Shield (Settings → Roles): laporan = halaman Financial Analytics;
+    // /bayar dan /mutasi mencatat uang masuk/keluar = Bank Mutation → Create.
+    private const PERMISSION = 'page_AnalyticsDashboard';
+
+    private const RECORD_PERMISSION = 'create_bank::mutation';
 
     private const SECTIONS = ['ringkasan', 'invoice', 'expense', 'advance', 'piutang', 'pending'];
 
@@ -95,6 +99,11 @@ class FinanceBot
 
         // File atau foto: mutasi rekening untuk dicocokkan dan dicatat.
         if (isset($message['document']) || isset($message['photo'])) {
+            if ($this->cannotRecord($chatId, $user)) {
+                return;
+            }
+
+            $this->approvals->forget($chatId);
             $this->payment->forget($chatId);
             Cache::forget($this->periodAwaitKey($chatId));
             $this->statements->receive($chatId, $message, $user);
@@ -107,6 +116,11 @@ class FinanceBot
         $command = Str::lower($match[1] ?? 'ringkasan');
         $args    = $match ? trim(Str::after($text, $match[0])) : '';
 
+        // Perintah apa pun menutup isian alasan penolakan: teks berikutnya bukan alasannya lagi.
+        if ($match) {
+            $this->approvals->forget($chatId);
+        }
+
         if (in_array($command, ['persetujuan', 'approval'], true)) {
             $this->forgetInputs($chatId);
             $this->approvals->pendingList($chatId);
@@ -118,6 +132,10 @@ class FinanceBot
             $this->forgetInputs($chatId);
             $this->approvals->verificationList($chatId);
 
+            return;
+        }
+
+        if (in_array($command, ['mutasi', 'bayar'], true) && $this->cannotRecord($chatId, $user)) {
             return;
         }
 
@@ -221,6 +239,17 @@ class FinanceBot
             return;
         }
 
+        // Tombol selain Setujui/Tolak menutup isian alasan penolakan.
+        if (! str_starts_with($data, 'apv:')) {
+            $this->approvals->forget($chatId);
+        }
+
+        if ((str_starts_with($data, 'pay:') || str_starts_with($data, 'mut:')) && ! $user->can(self::RECORD_PERMISSION)) {
+            $this->telegram->answerCallback($callback['id'], 'Tidak punya izin mencatat.');
+
+            return;
+        }
+
         if (str_starts_with($data, 'pay:')) {
             Cache::forget($this->periodAwaitKey($chatId));
             $this->payment->handleCallback($callback, $user);
@@ -293,11 +322,25 @@ class FinanceBot
             return "Akun Telegram ini belum terhubung ke ERP.\n\nBuka ERP → <b>Profil</b> → <b>Hubungkan Telegram</b>, lalu tekan <b>Start</b> di bot pengajuan. Setelah itu bot ini otomatis mengenali akunmu.";
         }
 
-        if (! $user->hasRole(self::ROLES)) {
+        if (! $user->can(self::PERMISSION)) {
             return 'Bot ini khusus untuk Finance dan Director.';
         }
 
         return null;
+    }
+
+    /**
+     * /bayar dan /mutasi mengubah data: butuh izin mencatat, bukan hanya melihat laporan.
+     */
+    private function cannotRecord(int|string $chatId, User $user): bool
+    {
+        if ($user->can(self::RECORD_PERMISSION)) {
+            return false;
+        }
+
+        $this->telegram->sendMessage($chatId, 'Mencatat pembayaran dan mutasi rekening butuh izin <b>Bank Mutation → Create</b> (Settings → Roles).');
+
+        return true;
     }
 
     private function userFor(int|string $chatId): ?User

@@ -55,6 +55,8 @@ class TelegramBotTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Izin Shield Director/Finance untuk bot, seperti instalasi yang sudah dimigrasi.
+        (require database_path('migrations/2026_11_13_130000_grant_finance_bot_permissions.php'))->up();
 
         // Salinan sementara struk (TelegramBot::receiptData) tidak boleh menumpuk di storage asli.
         Storage::fake('local');
@@ -76,6 +78,18 @@ class TelegramBotTest extends TestCase
             ->assertForbidden();
 
         Http::assertNothingSent();
+    }
+
+    public function test_koneksi_putus_tidak_membocorkan_token_bot(): void
+    {
+        // cURL selain gagal konek (mis. error 56) lolos dari Laravel sebagai TransferException berisi URL bertoken.
+        Http::fake(fn () => throw new \GuzzleHttp\Exception\TransferException('cURL error 56: Recv failure (see https://api.telegram.org/bot123456:TES/sendMessage)'));
+        \Illuminate\Support\Facades\Log::spy();
+
+        $this->assertNull((new \App\Services\Telegram\TelegramClient())->sendMessage($this->chatId, 'tes'));
+
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
+            ->withArgs(fn ($message, $context) => ! str_contains($context['error'], '123456:TES'));
     }
 
     public function test_link_start_menghubungkan_akun_dan_hanya_sekali_pakai(): void
@@ -486,6 +500,24 @@ class TelegramBotTest extends TestCase
         $draft = Draft::load($this->chatId);
         $this->assertSame(['album-1', 'album-2'], array_column($draft->receipts, 'file_id'));
         $this->assertStringContainsString('2 struk diterima', $this->lastText());
+    }
+
+    public function test_foto_yang_kehabisan_antrean_diminta_dikirim_ulang(): void
+    {
+        $this->user();
+        $this->fakeApis(gemini: null);
+
+        // Pesan sebelumnya di chat ini belum selesai sampai batas tunggu habis;
+        // jeda tunggu dipalsukan supaya tes tidak menunggu 60 detik.
+        \Illuminate\Support\Facades\Cache::lock("telegram:chat:{$this->chatId}", 120)->get();
+        \Illuminate\Support\Sleep::fake(syncWithCarbon: true);
+
+        $photo = $this->photoUpdate('album-3', album: 'grup-10');
+        $this->send($photo);
+
+        $this->assertNull(Draft::load($this->chatId));
+        $this->assertStringContainsString('belum diproses', $this->lastText());
+        $this->assertLastQuestionRepliesTo($photo);
     }
 
     public function test_format_atau_ukuran_file_yang_tidak_didukung_ditolak(): void

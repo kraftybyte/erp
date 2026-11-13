@@ -14,6 +14,14 @@ class CreateAbsence extends CreateRecord
 
     // Head, Director, dan super_admin diberi tahu oleh AbsenceObserver::created.
 
+    // Pengaju selalu yang sedang login; user_id dari browser tidak dipercaya.
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['user_id'] = auth()->id();
+
+        return $data;
+    }
+
     protected function getCreatedNotification(): ?Notification
     {
         // Ini yang tampil ke user yang bikin record

@@ -52,6 +52,13 @@ final class AmountParser
      */
     private static function candidates(string $text): array
     {
+        // "1jt 250rb" / "1 juta 250 ribu" satu nominal: digabung jadi "1250rb".
+        $text = preg_replace_callback(
+            '/(?<![\p{L}\d])(\d+(?:[.,]\d+)?)\s*(?:jt|juta)\s+(\d{1,3})\s*(?:rb|ribu|k)(?![\p{L}\d])/iu',
+            fn (array $m) => (round(self::number($m[1]) * 1_000) + (int) $m[2]) . 'rb',
+            $text
+        );
+
         preg_match_all(self::PATTERN, $text, $matches, PREG_SET_ORDER);
 
         return array_map(function (array $match) {

@@ -47,6 +47,8 @@ class ManagementAlertsTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Izin Shield Director/Finance untuk bot, seperti instalasi yang sudah dimigrasi.
+        (require database_path('migrations/2026_11_13_130000_grant_finance_bot_permissions.php'))->up();
         Cache::forget("telegram:finance-approval:{$this->chatId}");
 
         Http::fake(function (Request $request) {
@@ -140,6 +142,24 @@ class ManagementAlertsTest extends TestCase
             $this->messagesVia('111:PENGAJUAN')->contains(fn ($message) => $message['chat_id'] == $budi->telegram_chat_id && str_contains($message['text'], 'ditolak')),
             'Pengaju menerima penolakan beserta alasannya lewat bot pengajuan.'
         );
+    }
+
+    public function test_perintah_atau_tombol_lain_setelah_tolak_bukan_alasan_penolakan(): void
+    {
+        $this->manager('Director');
+        $expense = $this->expense($this->employee(), 'Pending');
+
+        // Tolak, lalu beralih ke /bayar dan mengetik kata kunci invoice.
+        $this->send($this->tap("apv:no:expense:{$expense->id}"));
+        $this->send($this->text('/bayar'));
+        $this->send($this->text('nestory kilau'));
+        $this->assertSame('Pending', $expense->fresh()->status);
+
+        // Tolak, lalu tombol laporan.
+        $this->send($this->tap("apv:no:expense:{$expense->id}"));
+        $this->send($this->tap('fin:ringkasan'));
+        $this->send($this->text('Belum ada penawaran vendor'));
+        $this->assertSame('Pending', $expense->fresh()->status);
     }
 
     public function test_karyawan_tidak_bisa_menyetujui_lewat_tombol(): void

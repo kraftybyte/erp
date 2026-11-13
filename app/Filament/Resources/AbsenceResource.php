@@ -116,9 +116,6 @@ class AbsenceResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Hidden::make('user_id')
-                ->default(auth()->id()),
-
             Forms\Components\Select::make('category')
                 ->label('Kategori Ketidakhadiran')
                 ->options([

@@ -125,6 +125,7 @@ class TransactionsRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\Action::make('add_deposit')
+                    ->authorize(fn (RelationManager $livewire) => auth()->user()?->can('update', $livewire->getOwnerRecord()))
                     ->label('Setoran')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
@@ -180,6 +181,7 @@ class TransactionsRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\Action::make('add_withdrawal')
+                    ->authorize(fn (RelationManager $livewire) => auth()->user()?->can('update', $livewire->getOwnerRecord()))
                     ->label('Penarikan')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('danger')

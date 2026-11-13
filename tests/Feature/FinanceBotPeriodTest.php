@@ -46,6 +46,8 @@ class FinanceBotPeriodTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Izin Shield Director/Finance untuk bot, seperti instalasi yang sudah dimigrasi.
+        (require database_path('migrations/2026_11_13_130000_grant_finance_bot_permissions.php'))->up();
 
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]])]);
 

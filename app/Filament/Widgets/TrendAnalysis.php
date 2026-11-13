@@ -23,7 +23,7 @@ class TrendAnalysis extends BaseWidget
     protected function getCards(): array
     {
         $currentMonth = Carbon::now()->startOfMonth();
-        $lastMonth = Carbon::now()->subMonth()->startOfMonth();
+        $lastMonth = Carbon::now()->subMonthNoOverflow()->startOfMonth();
         $currentYear = Carbon::now()->startOfYear();
 
         // Total data (all time)

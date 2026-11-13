@@ -23,6 +23,9 @@ class FinanceWebhookController extends Controller
             403
         );
 
+        // Header request ikut tercatat di laporan error; secret-nya jangan.
+        $request->headers->remove('X-Telegram-Bot-Api-Secret-Token');
+
         try {
             $bot->handle($request->json()->all());
         } catch (Throwable $e) {

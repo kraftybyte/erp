@@ -144,8 +144,8 @@ class AdvanceResource extends Resource
             /** @var User|null $currentUser */
             $currentUser = Auth::user();
 
-            // Jika user memiliki role 'director finance' atau 'super_admin', tampilkan semua data
-            if ($currentUser?->hasRole(['Director','Finance', 'super_admin'])) {
+            // Pengelola keuangan (izin restore_advance, sama dengan AdvancePolicy) melihat semua data
+            if ($currentUser?->can('restore_advance')) {
                 return $query->with(['user', 'paidBy', 'project', 'project.deal', 'paymentAccount', 'realizasis.items']);
             }
 
