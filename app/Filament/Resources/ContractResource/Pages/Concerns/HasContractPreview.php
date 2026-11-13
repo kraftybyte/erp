@@ -13,6 +13,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Illuminate\Support\Str;
 use Filament\Forms\Components\Placeholder;
@@ -44,6 +45,7 @@ trait HasContractPreview
         $toolbar = ['bold', 'italic', 'underline', 'strike', 'orderedList', 'bulletList', 'h3', 'blockquote', 'undo', 'redo'];
 
         $placeholders = collect(ContractDefaultBody::PLACEHOLDERS)
+            ->merge(collect(ContractFormats::TERMS)->map(fn (array $term) => $term['label'] . ' (Ketentuan PKS)'))
             ->map(fn (string $label, string $key) => '<div><code>{' . e($key) . '}</code> ' . e($label) . '</div>')
             ->implode('');
 
@@ -124,6 +126,8 @@ trait HasContractPreview
                         ->content(new HtmlString('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .25rem 1rem; font-size: .8125rem;">' . $placeholders . '</div>')),
                 ]),
 
+            static::contractTermsSection(),
+
             Section::make('Kop & Kaki Surat')
                 ->icon('heroicon-o-photo')
                 ->description('Kosongkan untuk memakai kop dan kaki surat dari Pengaturan → Contract Template.')
@@ -140,6 +144,49 @@ trait HasContractPreview
                         ->directory('contracts/letterhead'),
                 ]),
         ];
+    }
+
+    /**
+     * Angka dan pilihan di pasal PKS (ContractFormats::TERMS) yang berbeda per
+     * kontrak. Kosong = nilai draft, yang tampil samar di kolomnya. Hanya
+     * muncul bila teks kontrak memakai penandanya (format PKS).
+     */
+    protected static function contractTermsSection(): Section
+    {
+        $fieldsets = collect(ContractFormats::TERMS)
+            ->groupBy('group', preserveKeys: true)
+            ->map(fn (Collection $terms, string $group) => Fieldset::make($group)
+                ->columns(['default' => 1, 'md' => 2])
+                ->schema($terms->map(function (array $term, string $key) {
+                    $default = (string) $term['default'];
+
+                    if (is_int($term['default'])) {
+                        return TextInput::make("layout.terms.{$key}")
+                            ->label($term['label'])
+                            ->integer()
+                            ->minValue(0)
+                            ->maxValue(999)
+                            ->placeholder($default)
+                            ->suffix($term['unit'] ?? null);
+                    }
+
+                    return mb_strlen($default) > 60
+                        ? Textarea::make("layout.terms.{$key}")->label($term['label'])->placeholder($default)->rows(3)->maxLength(1000)->columnSpanFull()
+                        : TextInput::make("layout.terms.{$key}")->label($term['label'])->placeholder($default)->maxLength(255);
+                })->values()->all()))
+            ->values()
+            ->all();
+
+        return Section::make('Ketentuan PKS')
+            ->icon('heroicon-o-adjustments-horizontal')
+            ->description('Angka dan pilihan di pasal yang bisa berbeda per kontrak. Kosongkan untuk memakai nilai draft (tampil samar). Angka ditulis dengan terbilang, mis. 7 → "7 (tujuh)". Masa perbaikan pelanggaran di Pasal 10 ayat 2 mengikuti Hari Pengakhiran Kontrak di Detail Kontrak.')
+            ->collapsed()
+            ->visible(fn (Get $get): bool => ContractFormats::usesTerms(
+                $get('opening_text'), $get('articles'), $get('closing_text'),
+                Arr::except(is_array($get('layout')) ? $get('layout') : [], 'terms'),
+                $get('lampiran_title'), $get('lampiran_description'), $get('table_a_title'),
+            ))
+            ->schema($fieldsets);
     }
 
     /**
@@ -189,10 +236,16 @@ trait HasContractPreview
                     ->options(ContractFormats::OPTIONS)
                     ->required(),
             ])
-            ->action(function (array $data, Set $set, $livewire): void {
+            ->action(function (array $data, Get $get, Set $set, $livewire): void {
                 $record = $livewire->record ?? null;
+                $terms  = $get('layout.terms');
 
                 foreach (ContractFormats::make($data['format'], $record instanceof Contract ? $record : null) as $key => $value) {
+                    // Isian Ketentuan PKS milik kontrak ini tetap.
+                    if ($key === 'layout' && is_array($value) && is_array($terms)) {
+                        $value['terms'] = $terms;
+                    }
+
                     // Repeater pasal memakai kunci unik per baris.
                     $set($key, $key === 'articles'
                         ? collect($value)->mapWithKeys(fn (array $article) => [(string) Str::uuid() => $article])->all()

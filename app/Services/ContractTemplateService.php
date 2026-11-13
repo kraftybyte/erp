@@ -48,6 +48,8 @@ class ContractTemplateService
         // Teks baris Tabel A yang dibuat otomatis dari Pembayaran (cicilan per bulan).
         'fee_monthly_label'        => 'Pembayaran per Bulan',
         'fee_due_text'             => 'Setiap tanggal 15',
+        // Isian Ketentuan PKS (ContractFormats::TERMS); kosong = nilai draft.
+        'terms'                    => [],
     ];
 
     /** Gaya penulisan kontrak yang sedang dibuat (dari layout-nya). */
@@ -67,6 +69,7 @@ class ContractTemplateService
         $layout['table_a_show_description'] = (bool) $layout['table_a_show_description'];
         $layout['date_leading_zero']        = (bool) $layout['date_leading_zero'];
         $layout['rupiah_space']             = (bool) $layout['rupiah_space'];
+        $layout['terms']                    = is_array($layout['terms']) ? $layout['terms'] : [];
 
         return $layout;
     }
@@ -591,10 +594,14 @@ class ContractTemplateService
             'duration'              => (string) $durationMonths, // nama lama di keterangan lampiran
         ];
 
-        return strtr(Str::sanitizeHtml($html), array_combine(
-            array_map(fn (string $key) => '{' . $key . '}', array_keys($values)),
-            $values,
-        ));
+        $values = array_combine(array_map(fn (string $key) => '{' . $key . '}', array_keys($values)), $values);
+
+        // Ketentuan PKS (batas hari, PPN, denda, ...); teksnya boleh memuat penanda di atas.
+        foreach (ContractFormats::termValues($layout['terms'], $values) as $key => $value) {
+            $values['{' . $key . '}'] = $value;
+        }
+
+        return strtr(Str::sanitizeHtml($html), $values);
     }
 
     /** Teks biasa (judul, catatan, baris nomor) dengan penanda isian. */
