@@ -67,6 +67,9 @@ class ReceiptScanner
     // foto struk 0,02–0,05; foto produk paling tinggi 0,25.
     private const DIGITAL_TOP_COLORS = 0.40;
 
+    // Rentang terang latar (persentil 25–95) di bawah ini: gambar digital, bukan foto.
+    private const FLAT_RANGE = 12;
+
     public function __construct(private GeminiService $gemini) {}
 
     /**
@@ -147,7 +150,9 @@ class ReceiptScanner
 
         $paper = $this->findPaper($image) ?? $this->askCorners($image);
 
-        if ($paper === null) {
+        // Invoice/dokumen digital (JPG terkompresi): kertas memenuhi gambar dan terangnya
+        // rata, tanpa bayangan kamera. Hanya foto yang diolah seperti scan.
+        if ($paper === null || ($paper === 'full' && $this->isFlatDocument($image))) {
             return null;
         }
 
@@ -203,6 +208,46 @@ class ReceiptScanner
         rsort($counts);
 
         return $total > 0 && array_sum(array_slice($counts, 0, 3)) / $total >= self::DIGITAL_TOP_COLORS;
+    }
+
+    /**
+     * Terang kertas rata di seluruh gambar: rentang terang latar (tulisan
+     * dihapus dengan filter maksimum) antara persentil 25 dan 95 kecil.
+     * Foto kamera selalu punya bayangan atau vinyet; gambar digital tidak.
+     * Kop atau tabel berwarna menempati sebagian kecil, jadi tidak mengganggu.
+     */
+    private function isFlatDocument(GdImage $image): bool
+    {
+        $small = $this->fit($image, 64, always: true);
+        $w     = imagesx($small);
+        $h     = imagesy($small);
+        $level = [];
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $rgb = imagecolorat($small, $x, $y);
+                $level[$y][$x] = max(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF);
+            }
+        }
+
+        $values = [];
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $max = 0;
+                for ($dy = -1; $dy <= 1; $dy++) {
+                    for ($dx = -1; $dx <= 1; $dx++) {
+                        $max = max($max, $level[$y + $dy][$x + $dx] ?? 0);
+                    }
+                }
+                $values[] = $max;
+            }
+        }
+
+        sort($values);
+        $at = fn (float $q) => $values[(int) floor($q * (count($values) - 1))];
+
+        return $at(0.95) - $at(0.25) < self::FLAT_RANGE;
     }
 
     private function workingCopy(GdImage $image): GdImage
