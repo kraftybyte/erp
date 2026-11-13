@@ -270,11 +270,12 @@ class SubmissionParser
         Hari ini {$today} (WIB).
 
         Aturan pengisian:
-        - type: "expense" bila uangnya sudah dikeluarkan dan minta diganti (reimburse); "advance" bila minta uang dulu sebelum belanja (uang muka, kasbon); "realisasi" bila melaporkan pemakaian dana advance yang sudah diterima. null bila tidak jelas.
+        - Pesan sering sangat singkat, disingkat, atau salah ketik (mis. "exp nest grab", "adv scn 2jt", "reali lighting"). Tetap pahami maksudnya.
+        - type: "expense" bila uangnya sudah dikeluarkan dan minta diganti (reimburse; juga ditulis exp, expen, rembes, klaim); "advance" bila minta uang dulu sebelum belanja (uang muka, kasbon; juga ditulis adv, advence); "realisasi" bila melaporkan pemakaian dana advance yang sudah diterima (juga ditulis reali, real, lpj). null bila tidak jelas.
         - amount: nominal rupiah sebagai bilangan bulat. "150rb" = 150000, "1,5jt" = 1500000. null bila tidak disebut.
         - description: keperluannya, singkat dan jelas, maksimal 100 karakter, tanpa nominal dan tanpa kata expense/advance.
         - category: salah satu dari daftar kategori persis seperti tertulis, atau null bila tidak ada yang cocok. Contoh: grab/gojek/bensin/tol/parkir = Transport.
-        - project_id: id dari daftar project HANYA bila pesan jelas menyebut klien atau project itu (boleh beda huruf besar-kecil atau salah ketik sedikit). Selain itu null.
+        - project_id: id dari daftar project bila pesan menyebut klien atau project itu, termasuk potongan nama ("nest" = Nestory), singkatan huruf depan ("scn" = Sinergi Citra Nusantara), nama PIC, nama project, atau salah ketik. null bila tidak disebut atau cocok dengan lebih dari satu project.
         - date: tanggal transaksi YYYY-MM-DD. "kemarin" = {$yesterday}. Bila tidak disebut, {$today}.
         {$receiptRules}
 
@@ -337,6 +338,12 @@ class SubmissionParser
     {
         $type = collect(self::TYPE_PATTERNS)->keys()->first(fn ($key) => preg_match(self::TYPE_PATTERNS[$key], $text));
 
+        // Disingkat atau salah ketik ("exp nestory", "advence belamy", "reali lighting").
+        $typeWord = null;
+        if ($type === null) {
+            [$type, $typeWord] = self::fuzzyType($text);
+        }
+
         // Nama kategori yang ditulis langsung ("kategori transport") lebih kuat
         // daripada tebakan dari kata kunci.
         $category = collect(FinanceCategory::cases())
@@ -358,6 +365,7 @@ class SubmissionParser
         // Sisa teks setelah nominal, jenis, nama kategori, dan kata waktu dibuang
         // dianggap keterangan. Nama klien sengaja tidak dibuang: ikut menjelaskan.
         $description = AmountParser::strip($text);
+        $description = $typeWord ? preg_replace('/(?<![\p{L}])' . preg_quote($typeWord, '/') . '(?![\p{L}])/iu', ' ', $description) : $description;
         $description = preg_replace([...array_values(self::TYPE_PATTERNS), '/\b(kemarin|hari ini|kategori|masukkan|masukan|masukin|kepake|kepakai|terpakai)\b/iu'], ' ', $description);
         $description = $category ? str_ireplace($category, ' ', $description) : $description;
         $description = trim(preg_replace('/\s+/u', ' ', $description), " \t\n\r\0\x0B,.-:");
@@ -373,6 +381,39 @@ class SubmissionParser
             'date'               => preg_match('/\bkemarin\b/iu', $text) ? today()->subDay()->toDateString() : null,
         ];
     }
+
+    /**
+     * Kata jenis pengajuan yang disingkat atau salah ketik: awal kata dasarnya
+     * ("exp", "adv", "reali") atau paling banyak 2 huruf berbeda untuk kata
+     * 6+ huruf ("expens", "advence", "relaisasi").
+     *
+     * @return array{0: ?string, 1: ?string} jenis dan kata yang dikenali
+     */
+    public static function fuzzyType(string $text): array
+    {
+        $words = preg_split('/[^\p{L}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+
+        foreach (self::TYPE_ROOTS as $type => $roots) {
+            foreach ($words as $word) {
+                $length = mb_strlen($word);
+
+                foreach ($roots as $root => $minPrefix) {
+                    if (($length >= $minPrefix && str_starts_with($root, $word)) || ($length >= 6 && levenshtein($word, $root) <= 2)) {
+                        return [$type, $word];
+                    }
+                }
+            }
+        }
+
+        return [null, null];
+    }
+
+    /** Kata dasar per jenis => huruf awal paling sedikit yang dianggap singkatan ("kas" = kas, bukan kasbon). */
+    private const TYPE_ROOTS = [
+        'realisasi' => ['realisasi' => 4],
+        'advance'   => ['advance' => 3, 'kasbon' => 6],
+        'expense'   => ['expense' => 3, 'reimburse' => 5, 'rembes' => 6, 'rimbes' => 6],
+    ];
 
     private function sanitize(array $parsed): array
     {

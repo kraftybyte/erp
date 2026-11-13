@@ -99,28 +99,79 @@ class OpenAdvances
      *
      * @return array{advance_id: ?int, candidates: array<int, int>}
      */
-    public function match(User $user, ?int $projectId): array
+    public function match(User $user, ?int $projectId, ?string $text = null): array
     {
         $open = $this->realizableBy($user);
+        $pool = $projectId ? $open->where('project_id', $projectId) : collect();
 
-        if ($projectId) {
-            $sameProject = $open->where('project_id', $projectId);
+        if ($pool->count() === 1) {
+            return ['advance_id' => $pool->first()->id, 'candidates' => []];
+        }
 
-            if ($sameProject->count() === 1) {
-                return ['advance_id' => $sameProject->first()->id, 'candidates' => []];
-            }
-
-            if ($sameProject->isNotEmpty()) {
-                return ['advance_id' => null, 'candidates' => $sameProject->pluck('id')->values()->all()];
-            }
+        if ($pool->isNotEmpty()) {
+            // Beberapa advance di project ini: keterangan di pesan yang menentukan.
+            return $this->byText($pool, $text) ?? ['advance_id' => null, 'candidates' => $pool->pluck('id')->values()->all()];
         }
 
         if ($open->count() === 1) {
             return ['advance_id' => $open->first()->id, 'candidates' => []];
         }
 
-        return ['advance_id' => null, 'candidates' => []];
+        // "reali lighting", "realisasi budi": keterangan, barang, atau pengaju advance-nya.
+        return $this->byText($open, $text) ?? ['advance_id' => null, 'candidates' => []];
     }
+
+    /**
+     * Advance yang keterangan, barang, pengaju, atau klien/project-nya paling
+     * cocok dengan $text (singkatan dan salah ketik seperti ProjectMatcher).
+     * Satu yang paling cocok dipilih; beberapa yang sama cocok jadi pilihan.
+     *
+     * @param  Collection<int, Advance>  $advances
+     * @return array{advance_id: ?int, candidates: array<int, int>}|null
+     */
+    private function byText(Collection $advances, ?string $text): ?array
+    {
+        $words = self::words((string) $text);
+
+        if (! $words) {
+            return null;
+        }
+
+        $scored = $advances->map(function (Advance $advance) use ($words) {
+            $tokens = collect(self::words(implode(' ', [
+                $advance->keterangan_advance,
+                $advance->user?->firstname,
+                $advance->user?->lastname,
+                ClientLabel::project($advance->project),
+                $advance->itemAdvance?->pluck('name')->implode(' '),
+            ])))->unique();
+
+            return ['id' => $advance->id, 'score' => $tokens->sum(fn ($token) => collect($words)->max(fn ($word) => ProjectMatcher::similarity($token, $word)))];
+        })->where('score', '>=', 2);
+
+        if ($scored->isEmpty()) {
+            return null;
+        }
+
+        $best = $scored->where('score', $scored->max('score'));
+
+        return $best->count() === 1
+            ? ['advance_id' => $best->first()['id'], 'candidates' => []]
+            : ['advance_id' => null, 'candidates' => $best->pluck('id')->take(6)->values()->all()];
+    }
+
+    /** Kata pembeda (3+ huruf), tanpa kata jenis pengajuan dan kata sambung. */
+    private static function words(string $text): array
+    {
+        $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+
+        return array_values(array_filter($words, fn ($word) => mb_strlen($word) >= 3 && ! ctype_digit($word) && ! in_array($word, self::STOP_WORDS, true)));
+    }
+
+    private const STOP_WORDS = [
+        'advance', 'adv', 'realisasi', 'expense', 'kasbon', 'untuk', 'buat', 'dan', 'yang', 'dengan', 'dari', 'pakai',
+        'pake', 'ini', 'itu', 'sudah', 'udah', 'mau', 'tolong', 'dana', 'uang', 'project', 'proyek', 'klien',
+    ];
 
     /**
      * Alasan realisasi advance ini belum bisa ditambah (kelebihan yang belum

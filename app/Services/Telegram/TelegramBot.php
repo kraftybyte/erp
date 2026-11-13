@@ -1525,7 +1525,7 @@ class TelegramBot
         }
 
         if (! $draft->advanceId && ! $draft->advanceCandidates) {
-            $match = $this->advances->match($user, $draft->projectId);
+            $match = $this->advances->match($user, $draft->projectId, $draft->description);
             $draft->advanceId         = $match['advance_id'];
             $draft->advanceCandidates = $match['candidates'];
         }
