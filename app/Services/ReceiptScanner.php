@@ -46,6 +46,10 @@ class ReceiptScanner
     private const PAPER_LEVEL = 225;
     private const INK_SPREAD  = 0.1;
     private const INK_MAX     = 190;
+
+    // Bayangan di pinggir hasil: abu-abu di antara tinta pekat dan putih kertas.
+    private const SMUDGE_MIN = 90;
+    private const SMUDGE_MAX = 250;
     private const MAX_GAIN    = 2.3;
 
     // Ukuran kerja untuk mencari kertas: cukup kecil supaya tulisan melebur.
@@ -753,6 +757,7 @@ class ReceiptScanner
         if (! $color) {
             $this->blackWhite($out, $hist);
             $this->whitenFingers($out, $grid);
+            $this->whitenEdgeSmudges($out);
         }
 
         return $out;
@@ -827,6 +832,7 @@ class ReceiptScanner
 
         $this->blackWhite($out, $hist);
         $this->whitenFingers($out, $grid);
+        $this->whitenEdgeSmudges($out);
 
         return $out;
     }
@@ -955,6 +961,34 @@ class ReceiptScanner
         $white = 0xFFFFFF;
         foreach ($seen as [$x, $y]) {
             imagefilledrectangle($out, ($x - 2) * 4, ($y - 2) * 4, ($x + 3) * 4 - 1, ($y + 3) * 4 - 1, $white);
+        }
+    }
+
+    /**
+     * Bayangan abu-abu muda yang menempel ke pinggir gambar (tepi jari yang
+     * tidak berwarna kulit, bayangan tepi kertas) dijadikan putih. Tulisan
+     * pekat menghentikannya, jadi isi struk tidak ikut terhapus.
+     */
+    private function whitenEdgeSmudges(GdImage $out): void
+    {
+        $w    = imagesx($out);
+        $h    = imagesy($out);
+        $grid = [];
+
+        for ($cy = 0; $cy * 4 < $h; $cy++) {
+            for ($cx = 0; $cx * 4 < $w; $cx++) {
+                $min = 255;
+
+                foreach ([[0, 0], [2, 0], [0, 2], [2, 2], [1, 1], [3, 3]] as [$dx, $dy]) {
+                    $min = min($min, imagecolorat($out, min($w - 1, $cx * 4 + $dx), min($h - 1, $cy * 4 + $dy)) & 0xFF);
+                }
+
+                $grid[$cy][$cx] = $min < self::SMUDGE_MAX && $min > self::SMUDGE_MIN;
+            }
+        }
+
+        foreach ($this->borderConnected($grid) as [$x, $y]) {
+            imagefilledrectangle($out, $x * 4, $y * 4, $x * 4 + 3, $y * 4 + 3, 0xFFFFFF);
         }
     }
 
