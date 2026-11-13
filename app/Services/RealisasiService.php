@@ -435,11 +435,12 @@ class RealisasiService
      *
      * @return bool
      */
+    // Ketiganya: pengelola advance = izin Shield restore_advance (sama dengan halaman Realisasi dan AdvancePolicy).
     public function canUserProcessReturn(): bool
     {
         /** @var User|null $user */
         $user = Auth::user();
-        return $user && $user->hasRole(['Finance', 'Director', 'super_admin']);
+        return $user && $user->can('restore_advance');
     }
 
     /**
@@ -451,7 +452,7 @@ class RealisasiService
     {
         /** @var User|null $user */
         $user = Auth::user();
-        return $user && $user->hasRole(['Finance', 'Director', 'super_admin']);
+        return $user && $user->can('restore_advance');
     }
 
     /**
@@ -463,7 +464,7 @@ class RealisasiService
     {
         /** @var User|null $user */
         $user = Auth::user();
-        return $user && $user->hasRole(['Finance', 'Director', 'super_admin']);
+        return $user && $user->can('restore_advance');
     }
 
     /**

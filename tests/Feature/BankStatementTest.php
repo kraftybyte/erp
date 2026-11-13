@@ -843,6 +843,28 @@ class BankStatementTest extends TestCase
         $this->assertSame('paid', $november->fresh()->status);
     }
 
+    public function test_file_album_yang_selesai_dibaca_belakangan_dilewati(): void
+    {
+        $user     = $this->user('Finance');
+        $oktober  = $this->invoice(15_437_233);
+        $november = $this->invoice(15_437_237);
+
+        // Album dua foto: foto kedua (November) selesai dibaca lebih dulu, foto pertama menyusul.
+        $this->sendDocument($this->klikBca([['03/11', 'TRSF E-BANKING CR ' . strtoupper($this->client), 15_437_237, 'CR']], opening: 0));
+        app(\App\Services\Telegram\BankStatementFlow::class)->process(
+            $this->chatId,
+            $this->klikBca([['03/10', 'TRSF E-BANKING CR ' . strtoupper($this->client), 15_437_233, 'CR']], opening: 0),
+            'oktober.csv',
+            $user,
+            since: 1,
+        );
+        $this->assertStringContainsString('oktober.csv dilewati', strip_tags($this->lastText()));
+
+        // Ringkasan yang aktif tetap milik November.
+        $this->send($this->tap('mut:ok'));
+        $this->assertSame(['unpaid', 'paid'], [$oktober->fresh()->status, $november->fresh()->status]);
+    }
+
     public function test_karyawan_tidak_bisa_mengunggah_mutasi(): void
     {
         $this->user(null);
