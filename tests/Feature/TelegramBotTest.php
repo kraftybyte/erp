@@ -824,6 +824,46 @@ class TelegramBotTest extends TestCase
         $this->assertStringContainsString('Draft Advance', $this->lastText());
     }
 
+    public function test_ketikan_singkat_jenis_dan_project_tetap_dikenali(): void
+    {
+        $this->user();
+        $nestory  = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $sinergi  = $this->project('PT Sinergi Citra Nusantara', 'Konten Bulanan');
+        $this->project('Belinda Store', 'Katalog');
+        $this->fakeApis(); // tanpa Gemini: pembaca lokal
+
+        foreach ([
+            'adv nest 2jt sewa lighting'     => ['advance', $nestory->id],
+            'exp scn 150rb grab'             => ['expense', $sinergi->id],
+            'expens nusntra 80rb parkir'     => ['expense', $sinergi->id],
+            'rembes nestori 45rb tol'        => ['expense', $nestory->id],
+            'beli kabel 50rb'                => ['expense', null],
+        ] as $text => [$type, $projectId]) {
+            Draft::forget($this->chatId);
+            $this->send($this->textUpdate($text));
+
+            $draft = Draft::load($this->chatId);
+            $this->assertSame($type, $draft->type, $text);
+            $this->assertSame($projectId, $draft->projectId, $text);
+        }
+    }
+
+    public function test_realisasi_memilih_advance_dari_keterangan_singkat(): void
+    {
+        $user     = $this->user();
+        $booth    = $this->openAdvance($user, $this->project('PT Belamy Indonesia', 'Booth Pameran'));
+        $lighting = $this->openAdvance($user, $this->project('PT Nestory Indonesia', 'Video Profile'));
+        $lighting->update(['keterangan_advance' => 'Sewa lighting dan stand']);
+        $this->fakeApis();
+
+        $this->send($this->textUpdate('reali lighting 300rb'));
+
+        $draft = Draft::load($this->chatId);
+        $this->assertSame('realisasi', $draft->type);
+        $this->assertSame($lighting->id, $draft->advanceId, 'Advance dipilih dari keterangannya.');
+        $this->assertNotSame($booth->id, $draft->advanceId);
+    }
+
     public function test_struk_advance_tersimpan_tanpa_item(): void
     {
         Storage::fake('public');
