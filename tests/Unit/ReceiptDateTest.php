@@ -35,4 +35,20 @@ class ReceiptDateTest extends TestCase
             'jam bukan tanggal'                         => ['14.22.01', '2026-11-03', '2026-11-03'],
         ];
     }
+
+    #[DataProvider('urutan')]
+    public function test_urutan_dari_jenis_struk_didahulukan(string $tercetak, ?string $urutan, string $harapan): void
+    {
+        $this->assertSame($harapan, ReceiptDate::resolve($tercetak, null, Carbon::create(2026, 11, 3), $urutan));
+    }
+
+    public static function urutan(): array
+    {
+        return [
+            'struk restoran hari/bulan, bukan tafsiran terbaru' => ['10/09/26', 'dmy', '2026-09-10'],
+            'slip EDC bulan/hari'                               => ['10/09/26', 'mdy', '2026-10-09'],
+            'tanpa urutan: tafsiran terbaru'                     => ['10/09/26', null, '2026-10-09'],
+            'urutan menghasilkan masa depan: aturan lama'       => ['10/11/26', 'dmy', '2026-10-11'],
+        ];
+    }
 }
