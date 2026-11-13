@@ -40,10 +40,12 @@ class ReceiptScanner
     // tulisannya tidak kotak-kotak saat dibuka di layar.
     private const MAX_UPSCALE = 2.5;
 
-    // Hitam-putih (setelah bayangan diangkat): di bawah INK_LEVEL hitam pekat,
-    // di atas PAPER_LEVEL putih bersih, di antaranya landai (tepi huruf halus).
-    private const INK_LEVEL   = 140;
+    // Hitam-putih (setelah bayangan diangkat): di atas PAPER_LEVEL putih bersih;
+    // hitam penuh mulai INK_SPREAD jarak dari tinta foto itu ke kertas (paling
+    // terang INK_MAX); di antaranya landai, jadi tepi huruf halus.
     private const PAPER_LEVEL = 225;
+    private const INK_SPREAD  = 0.1;
+    private const INK_MAX     = 190;
     private const MAX_GAIN    = 2.3;
 
     // Ukuran kerja untuk mencari kertas: cukup kecil supaya tulisan melebur.
@@ -700,12 +702,13 @@ class ReceiptScanner
         $color      = $this->isColorDocument($small);
         $levels     = $color ? $this->contrastTable($small) : [];
         $background = $color ? null : $this->background($small, $w, $h);
-        $lut        = $color ? [] : $this->toneTable();
+        $lift       = $color ? [] : $this->liftTable();
 
         // Homografi dari titik hasil (u, v) ke titik di foto (x, y).
         $m    = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
         $out  = imagecreatetruecolor($w, $h);
         $grid = [];
+        $hist = array_fill(0, 256, 0);
 
         // Interpolasi bilinear: titik terdekat membuat tepi huruf bergerigi.
         for ($v = 0; $v < $h; $v++) {
@@ -737,7 +740,9 @@ class ReceiptScanner
                     continue;
                 }
 
-                imagesetpixel($out, $u, $v, $lut[imagecolorat($background, $u, $v) & 0xFF][$this->inkLevel($r, $g, $b)] * 0x010101);
+                $lifted = $lift[imagecolorat($background, $u, $v) & 0xFF][$this->inkLevel($r, $g, $b)];
+                $hist[$lifted]++;
+                imagesetpixel($out, $u, $v, $lifted * 0x010101);
 
                 if (($u & 3) === 0 && ($v & 3) === 0) {
                     $grid[$v >> 2][$u >> 2] = $this->isColored($r, $g, $b);
@@ -746,6 +751,7 @@ class ReceiptScanner
         }
 
         if (! $color) {
+            $this->blackWhite($out, $hist);
             $this->whitenFingers($out, $grid);
         }
 
@@ -800,15 +806,18 @@ class ReceiptScanner
         }
 
         $background = $this->background($small, $w, $h);
-        $lut        = $this->toneTable();
+        $lift       = $this->liftTable();
         $grid       = [];
+        $hist       = array_fill(0, 256, 0);
 
         for ($y = 0; $y < $h; $y++) {
             for ($x = 0; $x < $w; $x++) {
                 $rgb = imagecolorat($image, $x, $y);
                 [$r, $g, $b] = [($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF];
 
-                imagesetpixel($out, $x, $y, $lut[imagecolorat($background, $x, $y) & 0xFF][$this->inkLevel($r, $g, $b)] * 0x010101);
+                $lifted = $lift[imagecolorat($background, $x, $y) & 0xFF][$this->inkLevel($r, $g, $b)];
+                $hist[$lifted]++;
+                imagesetpixel($out, $x, $y, $lifted * 0x010101);
 
                 if (($x & 3) === 0 && ($y & 3) === 0) {
                     $grid[$y >> 2][$x >> 2] = $this->isColored($r, $g, $b);
@@ -816,6 +825,7 @@ class ReceiptScanner
             }
         }
 
+        $this->blackWhite($out, $hist);
         $this->whitenFingers($out, $grid);
 
         return $out;
@@ -1008,14 +1018,12 @@ class ReceiptScanner
     }
 
     /**
-     * Tabel [terang latar][terang piksel] → abu-abu hasil, gaya scan hitam-
-     * putih: piksel dikalikan supaya latar kertas putih (bayangan terangkat),
-     * lalu yang jelas tulisan jadi hitam dan yang jelas kertas jadi putih
-     * bersih. Di antaranya landai, jadi tepi huruf tetap halus (tidak pecah).
+     * Tabel [terang latar][terang piksel] → terang setelah bayangan diangkat:
+     * piksel dikalikan supaya latar kertas di sekitarnya menjadi putih.
      *
      * @return array<int, array<int, int>>
      */
-    private function toneTable(): array
+    private function liftTable(): array
     {
         $table = [];
 
@@ -1023,12 +1031,54 @@ class ReceiptScanner
             $gain = min(self::MAX_GAIN, max(1.0, 245 / max(1, $bg)));
 
             for ($value = 0; $value < 256; $value++) {
-                $lifted = min(255, $value * $gain);
-                $table[$bg][$value] = (int) max(0, min(255, ($lifted - self::INK_LEVEL) * 255 / (self::PAPER_LEVEL - self::INK_LEVEL)));
+                $table[$bg][$value] = (int) min(255, $value * $gain);
             }
         }
 
         return $table;
+    }
+
+    /**
+     * Gaya scan hitam-putih (seperti aplikasi scanner): dipertajam, lalu tinta
+     * jadi hitam dan kertas putih bersih, dengan ambang dari tinta foto itu
+     * sendiri. Tinta pekat tidak menebal (huruf "m" tetap terbuka) dan struk
+     * thermal yang pudar ikut digelapkan. Ketajaman dulu: lingkaran terang di
+     * sekitar huruf terpotong jadi putih kertas, tidak terlihat.
+     *
+     * @param  array<int, int>  $hist  jumlah piksel per terang (0–255) setelah bayangan diangkat
+     */
+    private function blackWhite(GdImage $image, array $hist): void
+    {
+        imageconvolution($image, [[0, -1, 0], [-1, 8, -1], [0, -1, 0]], 4, 0);
+
+        // Tinta = rata-rata 0,5% piksel tergelap: tepi huruf yang abu-abu (banyak di foto
+        // beresolusi rendah) tidak ikut, jadi huruf tidak menebal.
+        $target = max(1, (int) (array_sum($hist) * 0.005));
+        $count  = 0;
+        $sum    = 0;
+
+        for ($v = 0; $v < 256 && $count < $target; $v++) {
+            $take   = min($hist[$v], $target - $count);
+            $sum   += $take * $v;
+            $count += $take;
+        }
+
+        $ink   = $count ? $sum / $count : 0;
+        $black = min(self::INK_MAX, $ink + self::INK_SPREAD * (self::PAPER_LEVEL - $ink));
+        $map   = [];
+
+        for ($v = 0; $v < 256; $v++) {
+            $map[$v] = (int) max(0, min(255, ($v - $black) * 255 / max(1, self::PAPER_LEVEL - $black))) * 0x010101;
+        }
+
+        $w = imagesx($image);
+        $h = imagesy($image);
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                imagesetpixel($image, $x, $y, $map[imagecolorat($image, $x, $y) & 0xFF]);
+            }
+        }
     }
 
     // =================================================================

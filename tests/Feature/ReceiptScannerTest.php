@@ -92,6 +92,32 @@ class ReceiptScannerTest extends TestCase
         $this->assertGreaterThan(230, $at(0.98, (300 - 100) / 1200) & 0xFF, 'Jari di pinggir kertas jadi putih.');
     }
 
+    public function test_tinta_pudar_digelapkan_dan_celah_huruf_tetap_terbuka(): void
+    {
+        // Struk thermal pudar: garis tinta abu-abu muda 5 px dengan celah 3 px (seperti kaki huruf "m").
+        $image = imagecreatetruecolor(900, 1400);
+        imagefill($image, 0, 0, imagecolorallocate($image, 60, 50, 45));
+        $quad = [[200, 100], [700, 100], [700, 1300], [200, 1300]];
+        imagefilledpolygon($image, array_merge(...$quad), imagecolorallocate($image, 236, 234, 228));
+        $ink = imagecolorallocate($image, 170, 170, 172);
+        for ($x = 260; $x < 640; $x += 8) {
+            imagefilledrectangle($image, $x, 600, $x + 4, 700, $ink);
+        }
+
+        $out = $this->scan($this->jpeg($image));
+        $at  = fn (float $x, float $y) => $this->gray($out, (int) round(($x - 200) / 500 * (imagesx($out) - 1)), (int) round(($y - 100) / 1200 * (imagesy($out) - 1)));
+
+        $strokes = array_map(fn ($x) => $at($x + 2, 650), range(300, 600, 8));
+        $gaps    = array_map(fn ($x) => $at($x + 6, 650), range(300, 600, 8));
+
+        $stroke = array_sum($strokes) / count($strokes);
+        $gap    = array_sum($gaps) / count($gaps);
+
+        // Ambang tetap yang lama: tinta pudar hampir hilang (garis 187, celah 219).
+        $this->assertLessThan(110, $stroke, 'Tinta pudar jadi gelap seperti hasil scanner.');
+        $this->assertGreaterThan(50, $gap - $stroke, 'Celah antar garis jelas lebih terang, huruf tidak menyatu.');
+    }
+
     public function test_dokumen_berwarna_hanya_dipotong_dan_kontrasnya_naik(): void
     {
         // Invoice berwarna difoto miring di meja, agak redup: kop biru selebar
