@@ -49,6 +49,9 @@ class ReceiptScanner
 
     // Bayangan di pinggir hasil: abu-abu di antara tinta pekat dan putih kertas.
     private const SMUDGE_MIN = 90;
+
+    // Bagian berwarna di dalam kertas (logo, cap, kop) mulai dari porsi ini: dokumen berwarna.
+    private const COLOR_SHARE = 0.003;
     private const SMUDGE_MAX = 250;
     private const MAX_GAIN    = 2.3;
 
@@ -701,12 +704,13 @@ class ReceiptScanner
             }
         }
 
-        // Dokumen berwarna: hanya dipotong, diluruskan, dan kontrasnya
-        // dinaikkan. Struk biasa: hitam-putih bersih.
+        // Dokumen berwarna: warna tetap, bayangan diangkat, kontras naik, dipertajam
+        // (seperti "Magic Color" aplikasi scanner). Struk biasa: hitam-putih bersih.
         $color      = $this->isColorDocument($small);
         $levels     = $color ? $this->contrastTable($small) : [];
-        $background = $color ? null : $this->background($small, $w, $h);
+        $background = $this->background($small, $w, $h);
         $lift       = $color ? [] : $this->liftTable();
+        $gains      = $color ? $this->gainTable() : [];
 
         // Homografi dari titik hasil (u, v) ke titik di foto (x, y).
         $m    = $this->homography([[0, 0], [$w - 1, 0], [$w - 1, $h - 1], [0, $h - 1]], $quad);
@@ -739,7 +743,12 @@ class ReceiptScanner
                 $b = (int) ((($c00 & 0xFF) * $bx + ($c10 & 0xFF) * $ax) * $by + (($c01 & 0xFF) * $bx + ($c11 & 0xFF) * $ax) * $ay);
 
                 if ($color) {
-                    imagesetpixel($out, $u, $v, ($levels[$r] << 16) | ($levels[$g] << 8) | $levels[$b]);
+                    $k = $gains[imagecolorat($background, $u, $v) & 0xFF];
+                    imagesetpixel($out, $u, $v, ($levels[min(255, (int) ($r * $k))] << 16) | ($levels[min(255, (int) ($g * $k))] << 8) | $levels[min(255, (int) ($b * $k))]);
+
+                    if (($u & 3) === 0 && ($v & 3) === 0) {
+                        $grid[$v >> 2][$u >> 2] = $this->isSkin($r, $g, $b);
+                    }
 
                     continue;
                 }
@@ -754,7 +763,11 @@ class ReceiptScanner
             }
         }
 
-        if (! $color) {
+        if ($color) {
+            $this->sharpen($out);
+            $this->whitenFingers($out, $grid);
+            $this->whitenEdgeSmudges($out);
+        } else {
             $this->blackWhite($out, $hist);
             $this->whitenFingers($out, $grid);
             $this->whitenEdgeSmudges($out);
@@ -794,23 +807,35 @@ class ReceiptScanner
         $small = imagecreatetruecolor(max(4, intdiv($w, 5)), max(4, intdiv($h, 5)));
         imagecopyresampled($small, $image, 0, 0, 0, 0, imagesx($small), imagesy($small), $w, $h);
 
-        $out = imagecreatetruecolor($w, $h);
+        $out        = imagecreatetruecolor($w, $h);
+        $background = $this->background($small, $w, $h);
 
-        // Dokumen berwarna: hanya kontrasnya dinaikkan.
+        // Dokumen berwarna: warna tetap, bayangan diangkat, kontras naik, dipertajam.
         if ($this->isColorDocument($small)) {
             $levels = $this->contrastTable($small);
+            $gains  = $this->gainTable();
+            $skin   = [];
 
             for ($y = 0; $y < $h; $y++) {
                 for ($x = 0; $x < $w; $x++) {
                     $rgb = imagecolorat($image, $x, $y);
-                    imagesetpixel($out, $x, $y, ($levels[($rgb >> 16) & 0xFF] << 16) | ($levels[($rgb >> 8) & 0xFF] << 8) | $levels[$rgb & 0xFF]);
+                    [$r, $g, $b] = [($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF];
+                    $k   = $gains[imagecolorat($background, $x, $y) & 0xFF];
+                    imagesetpixel($out, $x, $y, ($levels[min(255, (int) ($r * $k))] << 16) | ($levels[min(255, (int) ($g * $k))] << 8) | $levels[min(255, (int) ($b * $k))]);
+
+                    if (($x & 3) === 0 && ($y & 3) === 0) {
+                        $skin[$y >> 2][$x >> 2] = $this->isSkin($r, $g, $b);
+                    }
                 }
             }
+
+            $this->sharpen($out);
+            $this->whitenFingers($out, $skin);
+            $this->whitenEdgeSmudges($out);
 
             return $out;
         }
 
-        $background = $this->background($small, $w, $h);
         $lift       = $this->liftTable();
         $grid       = [];
         $hist       = array_fill(0, 256, 0);
@@ -902,7 +927,7 @@ class ReceiptScanner
 
         $edge = count($this->borderConnected($grid));
 
-        return $all - $edge > 0.015 * $w * $h;
+        return $all - $edge > self::COLOR_SHARE * $w * $h;
     }
 
     /**
@@ -939,6 +964,15 @@ class ReceiptScanner
         return $table;
     }
 
+    /**
+     * Warna kulit (jari yang memegang struk), aturan RGB yang umum untuk kulit.
+     * Dipakai di dokumen berwarna: kop dan logo berwarna lain tidak terhapus.
+     */
+    private function isSkin(int $r, int $g, int $b): bool
+    {
+        return $r > 95 && $g > 40 && $b > 20 && $r > $g && $r > $b && $r - min($g, $b) > 15 && $r - $g > 15;
+    }
+
     private function isColored(int $r, int $g, int $b): bool
     {
         $max = max($r, $g, $b);
@@ -965,9 +999,9 @@ class ReceiptScanner
     }
 
     /**
-     * Bayangan abu-abu muda yang menempel ke pinggir gambar (tepi jari yang
-     * tidak berwarna kulit, bayangan tepi kertas) dijadikan putih. Tulisan
-     * pekat menghentikannya, jadi isi struk tidak ikut terhapus.
+     * Bayangan terang yang menempel ke pinggir gambar (tepi jari yang tidak
+     * berwarna kulit, bayangan tepi kertas) dijadikan putih. Tulisan pekat dan
+     * warna tajam (logo, cap) menghentikannya, jadi isi struk tidak terhapus.
      */
     private function whitenEdgeSmudges(GdImage $out): void
     {
@@ -977,13 +1011,23 @@ class ReceiptScanner
 
         for ($cy = 0; $cy * 4 < $h; $cy++) {
             for ($cx = 0; $cx * 4 < $w; $cx++) {
-                $min = 255;
+                $smudge = false;
+                $ink    = false;
 
                 foreach ([[0, 0], [2, 0], [0, 2], [2, 2], [1, 1], [3, 3]] as [$dx, $dy]) {
-                    $min = min($min, imagecolorat($out, min($w - 1, $cx * 4 + $dx), min($h - 1, $cy * 4 + $dy)) & 0xFF);
+                    $rgb  = imagecolorat($out, min($w - 1, $cx * 4 + $dx), min($h - 1, $cy * 4 + $dy));
+                    $high = max(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF);
+                    $low  = min(($rgb >> 16) & 0xFF, ($rgb >> 8) & 0xFF, $rgb & 0xFF);
+
+                    // Tinta pekat atau warna tajam: bukan bayangan, berhenti di sini.
+                    if ($low <= self::SMUDGE_MIN || $high - $low > 0.35 * $high) {
+                        $ink = true;
+                    } elseif ($low < self::SMUDGE_MAX) {
+                        $smudge = true;
+                    }
                 }
 
-                $grid[$cy][$cx] = $min < self::SMUDGE_MAX && $min > self::SMUDGE_MIN;
+                $grid[$cy][$cx] = $smudge && ! $ink;
             }
         }
 
@@ -1073,6 +1117,29 @@ class ReceiptScanner
     }
 
     /**
+     * Pengali per terang latar: latar kertas di sekitar piksel menjadi putih
+     * (bayangan terangkat), dibatasi supaya warna tua tidak pudar.
+     *
+     * @return array<int, float>
+     */
+    private function gainTable(): array
+    {
+        $gains = [];
+
+        for ($bg = 0; $bg < 256; $bg++) {
+            $gains[$bg] = min(self::MAX_GAIN, max(1.0, 245 / max(1, $bg)));
+        }
+
+        return $gains;
+    }
+
+    /** Pertajam ringan (unsharp 3×3): tepi huruf tegas seperti hasil scanner. */
+    private function sharpen(GdImage $image): void
+    {
+        imageconvolution($image, [[0, -1, 0], [-1, 8, -1], [0, -1, 0]], 4, 0);
+    }
+
+    /**
      * Gaya scan hitam-putih (seperti aplikasi scanner): dipertajam, lalu tinta
      * jadi hitam dan kertas putih bersih, dengan ambang dari tinta foto itu
      * sendiri. Tinta pekat tidak menebal (huruf "m" tetap terbuka) dan struk
@@ -1083,7 +1150,7 @@ class ReceiptScanner
      */
     private function blackWhite(GdImage $image, array $hist): void
     {
-        imageconvolution($image, [[0, -1, 0], [-1, 8, -1], [0, -1, 0]], 4, 0);
+        $this->sharpen($image);
 
         // Tinta = rata-rata 0,5% piksel tergelap: tepi huruf yang abu-abu (banyak di foto
         // beresolusi rendah) tidak ikut, jadi huruf tidak menebal.
