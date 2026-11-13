@@ -3,6 +3,7 @@
 namespace App\Services\Telegram;
 
 use App\Settings\IntegrationSettings;
+use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -73,8 +74,9 @@ class TelegramClient
 
         try {
             $response = $this->http()->timeout(10)->post("https://api.telegram.org/bot{$token}/{$method}", $params);
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException|TransferException $e) {
             // Pesan error Guzzle menyertakan URL, dan token bot ada di URL itu.
+            // Selain gagal konek, cURL lain (mis. koneksi putus) lolos sebagai TransferException.
             Log::warning('Telegram API tidak bisa dihubungi', [
                 'method' => $method,
                 'error'  => str_replace($token, '***', $e->getMessage()),
@@ -169,7 +171,7 @@ class TelegramClient
 
         try {
             $response = $this->http()->timeout(30)->get("https://api.telegram.org/file/bot{$token}/{$file['file_path']}");
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException|TransferException $e) {
             Log::warning('Gagal mengunduh file Telegram', ['error' => str_replace($token, '***', $e->getMessage())]);
 
             return null;
@@ -203,7 +205,7 @@ class TelegramClient
                     'caption'    => $caption,
                     'parse_mode' => 'HTML',
                 ]);
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException|TransferException $e) {
             Log::warning('Gagal mengirim file Telegram', ['error' => str_replace($token, '***', $e->getMessage())]);
 
             return false;

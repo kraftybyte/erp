@@ -10,6 +10,7 @@ use App\Models\Event;
 use App\Models\TaskStage;
 use App\Helpers\NotifHelper;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -88,20 +89,27 @@ class TaskKanbanBoard extends KanbanBoard
      */
     protected function records(): Collection
     {
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if (!$user) {
+        if (!Auth::user()) {
             return collect();
         }
 
-        if ($user->hasRole(['super_admin', 'Director'])) {
-            return Task::with(['users', 'project', 'stage'])->get();
+        return $this->getEloquentQuery()->with(['users', 'project', 'stage'])->get();
+    }
+
+    /**
+     * Dipakai juga oleh paket kanban untuk pindah status dan edit modal (ID dari
+     * browser), jadi cakupannya harus sama dengan yang tampil di papan.
+     */
+    protected function getEloquentQuery(): Builder
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user?->hasRole(['super_admin', 'Director'])) {
+            return Task::query();
         }
 
-        return Task::with(['users', 'project', 'stage'])
-            ->whereHas('users', fn ($q) => $q->where('user_id', $user->id))
-            ->get();
+        return Task::query()->whereHas('users', fn ($q) => $q->where('user_id', $user?->id));
     }
 
     /**
@@ -376,7 +384,7 @@ class TaskKanbanBoard extends KanbanBoard
      */
     public function toggleCalendarEvent(string|int $recordId): void
     {
-        $task = Task::with('event')->findOrFail($recordId);
+        $task = $this->getEloquentQuery()->with('event')->findOrFail($recordId);
 
         if ($task->event) {
             $task->event->delete();

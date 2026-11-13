@@ -37,7 +37,7 @@ class ContractObserver
 
         // Check for expiring contracts (within 30 days)
         if ($contract->wasChanged('expiration_date') && $contract->expiration_date) {
-            $daysUntil = Carbon::now()->diffInDays($contract->expiration_date, false);
+            $daysUntil = (int) Carbon::today()->diffInDays($contract->expiration_date, false); // Carbon 3: float bila dari now()
 
             if ($daysUntil > 0 && $daysUntil <= 30) {
                 $recipients = User::role(['Director', 'Finance', 'super_admin'])->get();

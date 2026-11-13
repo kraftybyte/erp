@@ -145,6 +145,7 @@ class LeadsResource extends Resource
 
                 // Tambahkan action untuk replikasi data ke Deals
                 Tables\Actions\Action::make('Convert')
+                    ->authorize(fn () => auth()->user()?->can('create_deal'))
                     ->modalHeading('Convert to Deal')
                     ->color('success')
                     ->tooltip('Convert to Deals')
@@ -195,6 +196,7 @@ class LeadsResource extends Resource
 
                 // Action untuk perubahan status
                 Tables\Actions\Action::make('status_change')
+                    ->authorize('update')
                     ->modalHeading('Change Status')
                     ->color('info')
                     ->tooltip('Change Status')

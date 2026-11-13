@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Models\Deal;
+use App\Models\Invoice;
 use TomatoPHP\FilamentInvoices\Filament\Resources\InvoiceResource\Pages\CreateInvoice as BaseCreateInvoice;
 
 class CreateInvoice extends BaseCreateInvoice
@@ -14,6 +15,9 @@ class CreateInvoice extends BaseCreateInvoice
         // Bawaan paket mengisi user_id (pembuat invoice). Tanpa ini simpan gagal:
         // kolom user_id wajib dan tidak punya nilai default.
         $data = parent::mutateFormDataBeforeCreate($data);
+
+        // Nomor diambil saat simpan, bukan saat form dibuka (field uuid hanya pratinjau).
+        $data['uuid'] = Invoice::generateUuid($data['type'] ?? 'sale');
 
         /*
         | Simpan tautan ke Deal; isi field-nya datang dari form.

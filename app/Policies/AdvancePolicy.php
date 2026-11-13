@@ -7,25 +7,21 @@ use App\Models\Advance;
 
 class AdvancePolicy
 {
-    protected function isAdminOrRole(User $user, array $roles = []): bool
+    // Pengelola keuangan = izin Shield restore_advance, penanda yang sama dengan tombol setujui/bayar.
+    // super_admin lolos lewat Gate::before.
+    protected function isFinanceManager(User $user): bool
     {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-        if (!empty($roles) && $user->hasRole($roles)) {
-            return true;
-        }
-        return false;
+        return $user->can('restore_advance');
     }
 
     public function viewAny(User $user): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']) || $user->can('view_any_advance');
+        return $this->isFinanceManager($user) || $user->can('view_any_advance');
     }
 
     public function view(User $user, Advance $advance): bool
     {
-        if ($this->isAdminOrRole($user, ['Finance', 'Director'])) {
+        if ($this->isFinanceManager($user)) {
             return true;
         }
         return $user->id === $advance->user_id && $user->can('view_advance');
@@ -38,7 +34,7 @@ class AdvancePolicy
 
     public function update(User $user, Advance $advance): bool
     {
-        if ($this->isAdminOrRole($user, ['Finance', 'Director'])) {
+        if ($this->isFinanceManager($user)) {
             return true;
         }
         // Pemilik hanya selama masih Pending: setelah disetujui nominalnya tidak boleh berubah.
@@ -47,41 +43,41 @@ class AdvancePolicy
 
     public function delete(User $user, Advance $advance): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function deleteAny(User $user): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function forceDelete(User $user, Advance $advance): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function forceDeleteAny(User $user): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function restore(User $user, Advance $advance): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function restoreAny(User $user): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function replicate(User $user, Advance $advance): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 
     public function reorder(User $user): bool
     {
-        return $this->isAdminOrRole($user, ['Finance', 'Director']);
+        return $this->isFinanceManager($user);
     }
 }

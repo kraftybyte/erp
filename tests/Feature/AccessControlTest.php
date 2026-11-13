@@ -115,6 +115,23 @@ class AccessControlTest extends TestCase
     // Pengajuan expense / advance
     // =================================================================
 
+    public function test_pengelola_user_tidak_bisa_mengambil_alih_akun_berizin_lebih_tinggi(): void
+    {
+        $hr = Role::findOrCreate('Tes HR ' . Str::random(5), 'web');
+        $hr->givePermissionTo(array_map(fn ($name) => Permission::findOrCreate($name, 'web'), ['view_any_user', 'view_user', 'update_user', 'delete_user']));
+        $director = Role::findOrCreate('Tes Direktur ' . Str::random(5), 'web');
+        $director->givePermissionTo(Permission::findOrCreate('restore_advance', 'web'));
+        $staff = Role::findOrCreate('Tes Karyawan ' . Str::random(5), 'web');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $manager = $this->user($hr->name);
+
+        // Lewat email/password akun Director, HR bisa masuk sebagai Director.
+        $this->assertFalse(Gate::forUser($manager)->allows('update', $this->user($director->name)));
+        $this->assertFalse(Gate::forUser($manager)->allows('delete', $this->user($director->name)));
+        $this->assertTrue(Gate::forUser($manager)->allows('update', $this->user($staff->name)));
+    }
+
     public function test_status_dan_pengaju_expense_ditentukan_server(): void
     {
         $user    = $this->user('super_admin');
@@ -174,6 +191,26 @@ class AccessControlTest extends TestCase
 
         $uploaded = Contract::create(['type' => 'file', 'file_path' => 'contracts/2026-10/spk.pdf', 'contract_number' => 'TES/' . Str::random(4)]);
         $this->assertSame('%PDF-1.4 kontrak asli', $this->get(route('filament.admin.resources.contracts.download-pdf', $uploaded))->streamedContent());
+    }
+
+    public function test_unduh_pdf_mengikuti_izin_shield_bukan_nama_peran(): void
+    {
+        $contract = Contract::create(['contract_number' => 'TES/' . Str::random(4), 'client_name_full' => 'PT Unduh']);
+        $role     = Role::findOrCreate('Tes Unduh', 'web');
+        $user     = $this->user('Tes Unduh');
+
+        $this->actingAs($user)->get(route('filament.admin.resources.contracts.preview', $contract))->assertForbidden();
+
+        $role->givePermissionTo(Permission::findOrCreate('view_contract', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->actingAs($user->fresh())->get(route('filament.admin.resources.contracts.preview', $contract))->assertOk();
+    }
+
+    public function test_endpoint_lama_tanpa_pemakai_sudah_hilang(): void
+    {
+        $this->get('/test')->assertNotFound();
+        $this->actingAs($this->user('super_admin'))->post('/send-whatsapp', ['phone' => '6281234567890', 'message' => 'x'])->assertNotFound();
     }
 
     // =================================================================

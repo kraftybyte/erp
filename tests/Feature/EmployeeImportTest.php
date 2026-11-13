@@ -134,6 +134,25 @@ class EmployeeImportTest extends TestCase
         $this->get(route('import-template.employees'))->assertForbidden();
     }
 
+    public function test_tanpa_update_role_peran_tidak_bisa_diubah_lewat_import(): void
+    {
+        $this->employee('3276000000009201', 'Hera');
+
+        $role = Role::create(['name' => 'Tes Import HR ' . Str::random(5), 'guard_name' => 'web']);
+        $role->givePermissionTo(['view_any_user', 'view_user', 'update_user']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $path = $this->xlsx(['Karyawan' => [
+            ['NIK', 'Nama', 'Peran'],
+            ['3276000000009201', 'Hera Tes', 'Director'],
+        ]]);
+
+        $row = collect(app(EmployeeImport::class)->plan($path, $this->admin($role->name))['rows'])->first();
+
+        $this->assertSame('skip', $row['action']);
+        $this->assertStringContainsString('butuh izin Update Role', $row['reason']);
+    }
+
     public function test_file_export_bisa_diimpor_lagi_tanpa_perubahan(): void
     {
         $budi = $this->employee('3276000000009201', 'Budi', ['phone' => '081234500000', 'npwp' => '12.345.678.9-012.' . random_int(100, 999)]);

@@ -159,6 +159,7 @@ class DealResource extends Resource
             ->actions([
 
                 Tables\Actions\Action::make('status_change')
+                    ->authorize('update')
                     ->tooltip('Change Status')
                     ->icon('heroicon-m-arrows-right-left')
                     ->iconButton()
@@ -182,6 +183,7 @@ class DealResource extends Resource
                     ),
 
                 Tables\Actions\Action::make('add_notes')
+                    ->authorize('update')
                     ->tooltip('Add Notes')
                     ->icon('heroicon-m-information-circle')
                     ->iconButton()

@@ -30,13 +30,17 @@ class GeneratePayslips extends Command
         $today    = CarbonImmutable::today();
         $day      = min($settings['generate_day'], $today->daysInMonth);
 
-        if (! $this->option('paksa') && (! $settings['auto_generate'] || $today->day !== $day)) {
+        // Tanggalnya terlewat (cron mati, situs maintenance): susul selama bulan ini belum ada slip sama sekali.
+        $due = $today->day === $day
+            || ($today->day > $day && ! Payslip::whereDate('period', $today->startOfMonth()->toDateString())->exists());
+
+        if (! $this->option('paksa') && (! $settings['auto_generate'] || ! $due)) {
             $this->line($settings['auto_generate'] ? "Bukan tanggalnya (setiap tanggal {$day})." : 'Slip otomatis dimatikan di Settings → General → Gaji.');
 
             return self::SUCCESS;
         }
 
-        $period = $this->option('periode') ? CarbonImmutable::createFromFormat('Y-m', $this->option('periode'))->startOfMonth() : $today->startOfMonth();
+        $period = $this->option('periode') ? CarbonImmutable::createFromFormat('!Y-m', $this->option('periode'))->startOfMonth() : $today->startOfMonth();
         $label  = $period->locale('id')->translatedFormat('F Y');
 
         if ($this->option('dry-run')) {

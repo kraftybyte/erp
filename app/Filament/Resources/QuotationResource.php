@@ -386,7 +386,7 @@ class QuotationResource extends Resource
             $vat = $discountedSubtotal * ($vatPercentage / 100);
 
             $subtotal += $subtotalItem;
-            $totalDiscount += $discount;  // Total discount
+            $totalDiscount += $subtotalItem - $discountedSubtotal;  // diskon melebihi baris dipotong sampai 0, sama dengan PDF
             $totalVat += $vat;
         }
 
@@ -446,6 +446,7 @@ class QuotationResource extends Resource
                     ->color('primary')
                     ->requiresConfirmation()
                     ->hidden(fn($record) => $record->status === 'Converted')
+                    ->authorize(fn () => auth()->user()?->can('create_invoice'))
                     ->action(function (Quotation $record) {
 
                         /*

@@ -25,9 +25,15 @@ class WablasService
         // API Key Wablas
         $apiKey = config('services.wablas.api_key');
 
+        // Belum diatur: jangan memanggil API (gagal dan mencatat nomor serta isi pesan ke log).
+        if (blank($apiKey)) {
+            return false;
+        }
+
         // Kirim permintaan POST ke API Wablas
         try {
-            $response = Http::withHeaders([
+            // Dipanggil di tengah request (geser task): jangan menahan halaman bila Wablas lambat.
+            $response = Http::timeout(5)->withHeaders([
                 'Authorization' => $apiKey
             ])->post($url, [
                 'phone' => $phone,
@@ -37,7 +43,7 @@ class WablasService
             // Cek apakah pengiriman pesan berhasil atau gagal
             $responseData = $response->json();
             
-            if ($response->failed() || $responseData['status'] !== 'success') {
+            if ($response->failed() || ($responseData['status'] ?? null) !== 'success') {
                 Log::error('Wablas API Error', [
                     'response' => $responseData,
                     'request' => ['phone' => $phone, 'message' => $message]

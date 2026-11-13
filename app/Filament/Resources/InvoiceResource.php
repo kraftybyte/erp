@@ -269,12 +269,12 @@ class InvoiceResource extends BaseInvoiceResource
             )
                 ->schema([
 
+                    // Hanya pratinjau: nomor final dibuat saat simpan (CreateInvoice), supaya dua
+                    // orang yang membuka form bersamaan tidak mendapat nomor yang sama.
                     Forms\Components\TextInput::make(
                         'uuid'
                     )
-                        ->unique(
-                            ignoreRecord: true
-                        )
+                        ->dehydrated(false)
                         ->label('UUID')
                         ->default(
                             fn () =>
@@ -1042,8 +1042,10 @@ class InvoiceResource extends BaseInvoiceResource
             $subtotal +=
                 $subtotalItem;
 
+            // Diskon melebihi baris dipotong sampai 0, sama dengan PDF.
             $totalDiscount +=
-                $discount;
+                $subtotalItem -
+                $discountedSubtotal;
 
             $totalVat +=
                 $vat;
@@ -2386,6 +2388,7 @@ class InvoiceResource extends BaseInvoiceResource
                             $record->type !==
                             'estimate'
                     )
+                    ->authorize('update')
                     ->requiresConfirmation()
                     ->iconButton()
                     ->color('success')
@@ -2450,6 +2453,7 @@ class InvoiceResource extends BaseInvoiceResource
                 )
                     // Visibilitas diatur sekali saja di akhir rantai: hidden() yang dipanggil
                     // dua kali membuat yang pertama tertimpa dan tidak pernah berlaku.
+                    ->authorize('update')
                     ->requiresConfirmation()
                     ->iconButton()
                     ->color('info')
@@ -2672,6 +2676,7 @@ class InvoiceResource extends BaseInvoiceResource
                         ->label(
                             'Duplikat'
                         )
+                        ->authorize('create')
                         ->action(
                             function (Invoice $record) {
                                 $newInvoice = $record->duplicateAsDraft();
@@ -2692,6 +2697,7 @@ class InvoiceResource extends BaseInvoiceResource
                         ->label('Buat pelunasan')
                         ->icon('heroicon-m-banknotes')
                         ->color('gray')
+                        ->authorize('create')
                         ->visible(fn (Invoice $record) => $record->type === 'sale'
                             && $record->dpPercentage() !== null
                             && ! $record->childInvoices()->where('type_payment', 'final_payment')->exists())
@@ -2827,6 +2833,7 @@ class InvoiceResource extends BaseInvoiceResource
                             'heroicon-s-cursor-arrow-rays'
                         )
                         ->deselectRecordsAfterCompletion()
+                        ->authorize(fn () => auth()->user()?->can('update_invoice'))
                         ->form([
 
                             Forms\Components\Select::make(

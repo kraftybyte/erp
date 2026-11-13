@@ -4,16 +4,12 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Filament\Facades\Filament;
 use App\Http\Controllers\QuotationPdfController;
-use App\Http\Controllers\WablasController;
 use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PayslipPdfController;
-use App\Http\Controllers\PushNotificationController;
 use App\Http\Controllers\ContractPdfController;
-use App\Http\Controllers\ThermalPrintController;
 use App\Http\Controllers\FakturController;
 use App\Http\Controllers\AssetDepreciationController;
 use App\Services\ItemImportTemplate;
-use Filament\Notifications\Notification;
 
 
 /*
@@ -49,14 +45,6 @@ Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
         ->name('filament.admin.resources.contracts.download-pdf');
 });
 
-// Thermal Print Routes (protected with auth)
-Route::middleware(['auth'])->group(function () {
-    Route::get('/thermal/{projectId}/print', [ThermalPrintController::class, 'print'])
-        ->name('thermal.print');
-    Route::get('/thermal/{projectId}/pdf', [ThermalPrintController::class, 'downloadPdf'])
-        ->name('thermal.pdf');
-});
-
 // Template Excel untuk Import karyawan (HR → Employee); izin Shield create/update user.
 Route::get('/import-template/karyawan', function (\App\Services\EmployeeImport $import) {
     abort_unless(auth()->user()->can('create', \App\Models\User::class) || auth()->user()->can('update_user'), 403);
@@ -84,9 +72,6 @@ Route::middleware(['auth', 'throttle:pdf-downloads'])->group(function () {
 Route::get('/aset/penyusutan/{tahun}', AssetDepreciationController::class)
     ->whereNumber('tahun')->middleware(['auth', 'throttle:pdf-downloads'])->name('asset.depreciation');
 
-// WhatsApp Message Route
-Route::post('/send-whatsapp', [WablasController::class, 'sendMessage'])->middleware('auth');
-
 // PWA Routes
 Route::get('/manifest.json', function () {
     return response()->json([
@@ -107,27 +92,6 @@ Route::get('/manifest.json', function () {
         ]
     ]);
 });
-
-Route::get('test', function () {
-    // Get the user with ID 1
-    $recipient = \App\Models\User::find(1);  // Find user with ID = 1
-
-    // Check if the user exists
-    if ($recipient) {
-        // Create and send the notification
-        Notification::make()
-            ->title('Sending test notification')
-            ->sendToDatabase($recipient)  // Send the notification to the database
-            ->broadcast($recipient);      // Optionally broadcast the notification to the recipient
-
-        // Output to confirm the notification was sent
-        dd('Notification sent to user with ID 1');
-    } else {
-        // Handle case where user is not found
-        dd('User with ID 1 not found');
-    }
-});
-
 
 Route::get('/', function () {
     return redirect(Filament::getUrl());

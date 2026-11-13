@@ -7,6 +7,8 @@ use App\Models\Invoice;
 use App\Services\FinanceOverview;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\DB;
+use TomatoPHP\FilamentInvoices\Models\InvoiceMeta;
 
 /**
  * Ringkasan invoice dalam Rupiah. "Sudah dibayar" = uang yang benar-benar
@@ -28,10 +30,16 @@ class InvoiceStatsWidget extends StatsOverviewWidget
             ->get()
             ->sum(fn (Invoice $invoice) => FinanceOverview::invoiceUnpaid($invoice));
 
+        // Potongan pajak klien (PPh 23, PPN WAPU) menambah kolom paid tanpa uang masuk.
+        $withheld = (float) DB::table((new InvoiceMeta)->getTable())
+            ->where('key', 'withholding')
+            ->whereIn('invoice_id', (clone $sales)->select('id'))
+            ->sum('value');
+
         return [
             Stat::make('Jumlah invoice', number_format(Invoice::query()->whereNull('deleted_at')->count(), 0, ',', '.'))
                 ->icon('heroicon-o-document-text'),
-            Stat::make('Sudah dibayar', Money::rupiah((clone $sales)->sum('paid')))
+            Stat::make('Sudah dibayar', Money::rupiah((float) (clone $sales)->sum('paid') - $withheld))
                 ->description('Uang yang sudah diterima dari invoice penjualan')
                 ->icon('heroicon-o-check-circle'),
             Stat::make('Belum dibayar', Money::rupiah($due))

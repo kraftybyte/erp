@@ -16,6 +16,7 @@ use App\Services\GeminiService;
 use App\Services\Payroll;
 use App\Services\RealisasiService;
 use App\Services\ReceiptScanner;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Illuminate\Support\Carbon;
@@ -100,13 +101,24 @@ class TelegramBot
         // Kirim yang beruntun tidak membuat dua pengajuan.
         // Batasnya longgar karena membaca album struk dengan Gemini bisa makan
         // beberapa detik per struk; foto album berikutnya menunggu giliran.
-        Cache::lock("telegram:chat:{$chat['id']}", 120)->block(60, function () use ($update) {
-            if (isset($update['callback_query'])) {
-                $this->handleCallback($update['callback_query']);
-            } elseif (isset($update['message'])) {
-                $this->handleMessage($update['message']);
-            }
-        });
+        try {
+            Cache::lock("telegram:chat:{$chat['id']}", 120)->block(60, function () use ($update) {
+                if (isset($update['callback_query'])) {
+                    $this->handleCallback($update['callback_query']);
+                } elseif (isset($update['message'])) {
+                    $this->handleMessage($update['message']);
+                }
+            });
+        } catch (LockTimeoutException) {
+            // Update ini sudah ditandai terproses dan webhook tetap dibalas 200,
+            // jadi Telegram tidak mengulangnya: minta dikirim ulang, jangan hilang diam-diam.
+            $this->telegram->sendMessage(
+                $chat['id'],
+                '⚠️ Pesan ini belum diproses karena bot masih sibuk dengan pesan sebelumnya. Kirim ulang (atau tekan tombolnya lagi) sebentar lagi.',
+                [],
+                data_get($update, 'message.message_id') ?? data_get($update, 'callback_query.message.message_id')
+            );
+        }
     }
 
     // =================================================================

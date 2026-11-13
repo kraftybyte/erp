@@ -81,8 +81,8 @@ class AnalyticsDashboard extends Page
                 $this->dateTo = $now->copy()->endOfMonth()->toDateString();
                 break;
             case 'last_month':
-                $this->dateFrom = $now->copy()->subMonth()->startOfMonth()->toDateString();
-                $this->dateTo = $now->copy()->subMonth()->endOfMonth()->toDateString();
+                $this->dateFrom = $now->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+                $this->dateTo = $now->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
                 break;
             case 'this_quarter':
                 $this->dateFrom = $now->copy()->startOfQuarter()->toDateString();
@@ -239,7 +239,7 @@ class AnalyticsDashboard extends Page
         // Monthly trend (last 12 months)
         $monthlyTrend = [];
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i);
+            $month = Carbon::now()->subMonthsNoOverflow($i);
             $monthlyTrend[] = [
                 'month' => $month->format('M Y'),
                 'paid' => $this->billed($this->between($paid, 'created_at', $month->copy()->startOfMonth(), $month->copy()->endOfMonth())),
@@ -365,7 +365,7 @@ class AnalyticsDashboard extends Page
         // ========== TREND BY MONTH (last 6 months) ==========
         $monthlyTrend = [];
         for ($i = 5; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i);
+            $month = Carbon::now()->subMonthsNoOverflow($i);
             $monthStart = $month->copy()->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
 

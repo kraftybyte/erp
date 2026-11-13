@@ -91,7 +91,7 @@ $dpAmount = 0;
 $remainingAmount = 0;
 
 if ($isDP && $dpPercentage > 0 && $calcGrandTotal > 0) {
-    $dpAmount = $originalFullTotal * ($dpPercentage / 100);
+    $dpAmount = round($originalFullTotal * ($dpPercentage / 100)); // sama dengan Invoice::amountDue()
     $remainingAmount = $originalFullTotal - $dpAmount;
 }
 ?>

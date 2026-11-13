@@ -149,6 +149,17 @@ class PayrollTest extends TestCase
         $december = Payslip::where('user_id', $budi->id)->whereDate('period', '2026-12-01')->sole();
         $this->assertSame(Payslip::FINAL, $december->status);
         $this->assertNotNull($december->sent_at);
+
+        // Tanggal 25 terlewat (cron mati): disusul keesokan harinya, sekali saja.
+        $this->travelTo('2027-01-26 07:00:00');
+        $this->artisan('gaji:buat')->assertSuccessful();
+        $this->artisan('gaji:buat')->assertSuccessful();
+        $this->assertSame(1, Payslip::where('user_id', $budi->id)->whereDate('period', '2027-01-01')->count());
+
+        // --periode tidak ikut tanggal hari ini (30 Jan + "2027-02" dulu jadi Maret).
+        $this->travelTo('2027-01-30 07:00:00');
+        $this->artisan('gaji:buat', ['--periode' => '2027-02', '--paksa' => true])->assertSuccessful();
+        $this->assertSame(1, Payslip::where('user_id', $budi->id)->whereDate('period', '2027-02-01')->count());
     }
 
     public function test_karyawan_hanya_melihat_dan_mengunduh_slipnya_sendiri_yang_final(): void

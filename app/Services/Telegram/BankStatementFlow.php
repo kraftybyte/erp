@@ -25,7 +25,7 @@ use Throwable;
  * dengan satu tombol. Yang ragu dipilih satu per satu. Tidak ada yang
  * berubah di ERP sebelum tombol Catat ditekan.
  *
- * Hak akses (Director, Finance, super_admin) diperiksa FinanceBot di setiap
+ * Hak akses (izin Shield create_bank::mutation) diperiksa FinanceBot di setiap
  * pesan dan tombol.
  */
 class BankStatementFlow
@@ -88,10 +88,11 @@ class BankStatementFlow
         $this->forget($chatId);
         $this->telegram->sendMessage($chatId, '⏳ Membaca mutasi rekening… File panjang bisa butuh 1–2 menit.');
 
-        $name = (string) ($message['document']['file_name'] ?? 'mutasi.jpg');
-        $done = false;
+        $name  = (string) ($message['document']['file_name'] ?? 'mutasi.jpg');
+        $since = (int) ($message['message_id'] ?? 0);
+        $done  = false;
 
-        app()->terminating(function () use (&$done, $chatId, $data, $name, $user) {
+        app()->terminating(function () use (&$done, $chatId, $data, $name, $user, $since) {
             // Callback terminating tetap terdaftar di proses yang melayani beberapa request (tes).
             if ($done) {
                 return;
@@ -102,7 +103,7 @@ class BankStatementFlow
             ignore_user_abort(true);
 
             try {
-                $this->process($chatId, $data, $name, $user);
+                $this->process($chatId, $data, $name, $user, $since);
             } catch (Throwable $e) {
                 report($e);
                 AdminAlerts::exception($e, 'mutasi rekening');
@@ -111,7 +112,10 @@ class BankStatementFlow
         });
     }
 
-    public function process(int|string $chatId, string $data, string $name, User $user): void
+    /**
+     * @param  int  $since  message_id file mutasinya; tombol di pesan yang lebih lama milik unggahan sebelumnya
+     */
+    public function process(int|string $chatId, string $data, string $name, User $user, int $since = 0): void
     {
         $result = $this->reader->read($data, $name);
 
@@ -124,6 +128,7 @@ class BankStatementFlow
         $statement = $result['statement'];
         $state     = [
             'upload'    => (string) Str::uuid(),
+            'since'     => $since,
             'user_id'   => $user->id,
             'statement' => array_diff_key($statement, ['rows' => true]),
             'rows'      => $statement['rows'],
@@ -153,7 +158,9 @@ class BankStatementFlow
 
         $this->telegram->answerCallback($callback['id'], $action === 'ok' ? 'Mencatat…' : null);
 
-        if (! $state) {
+        // message_id di chat pribadi selalu naik: pesan sebelum file yang aktif milik unggahan lama,
+        // jadi tombol Catat di ringkasan Oktober tidak mencatat mutasi November.
+        if (! $state || $messageId < ($state['since'] ?? 0)) {
             $this->telegram->removeButtons($chatId, $messageId);
             $this->telegram->sendMessage($chatId, 'Data mutasi ini sudah tidak berlaku. Kirim ulang file mutasinya.');
 

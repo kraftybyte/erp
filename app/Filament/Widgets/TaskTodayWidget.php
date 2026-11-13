@@ -34,7 +34,7 @@ class TaskTodayWidget extends Widget
     */
     public function openDoneModal(int $taskId): void
     {
-        $task = Task::find($taskId);
+        $task = $this->findTask($taskId);
         if (!$task) return;
 
         if ($task->status === 'done') {
@@ -60,7 +60,7 @@ class TaskTodayWidget extends Widget
     {
         if (!$this->modalTaskId) return;
 
-        $task = Task::find($this->modalTaskId);
+        $task = $this->findTask($this->modalTaskId);
         if (!$task) return;
 
         $task->status = 'done';
@@ -71,6 +71,16 @@ class TaskTodayWidget extends Widget
 
         $task->save();
         $this->closeModal();
+    }
+
+    // ID datang dari browser: hanya task yang ditugaskan ke dirinya, kecuali punya izin update_task.
+    private function findTask(int $taskId): ?Task
+    {
+        $user = Auth::user();
+
+        return Task::query()
+            ->when(! $user->can('update_task'), fn ($q) => $q->whereHas('users', fn ($q) => $q->where('users.id', $user->id)))
+            ->find($taskId);
     }
 
     /*

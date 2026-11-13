@@ -40,6 +40,8 @@ class FinanceBotTest extends TestCase
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Izin Shield Director/Finance untuk bot, seperti instalasi yang sudah dimigrasi.
+        (require database_path('migrations/2026_11_13_130000_grant_finance_bot_permissions.php'))->up();
 
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]])]);
     }
@@ -66,6 +68,24 @@ class FinanceBotTest extends TestCase
 
         $this->assertStringContainsString('khusus untuk Finance dan Director', $this->lastText());
         $this->assertStringNotContainsString('Rp', $this->lastText());
+    }
+
+    public function test_akses_lewat_izin_shield_bukan_nama_peran(): void
+    {
+        $user = $this->user('Staff');
+
+        // Izin melihat invoice saja tidak membuka laporan keuangan.
+        $user->givePermissionTo('view_any_invoice');
+        $this->send($this->text('/ringkasan'));
+        $this->assertStringContainsString('khusus untuk Finance dan Director', $this->lastText());
+
+        // Izin laporan membuka ringkasan, tapi mencatat pembayaran butuh izin sendiri.
+        $user->givePermissionTo('page_AnalyticsDashboard');
+        $this->send($this->text('/ringkasan'));
+        $this->assertStringContainsString('Ringkasan keuangan', $this->lastText());
+
+        $this->send($this->text('/bayar'));
+        $this->assertStringContainsString('Bank Mutation → Create', $this->lastText());
     }
 
     public function test_akun_yang_belum_terhubung_diarahkan_ke_bot_pengajuan(): void

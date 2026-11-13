@@ -18,8 +18,29 @@ class UserPolicy
     */
     private function protectsSuperAdmin(User $user, ?User $model): bool
     {
-        return $model !== null && $model->hasRole('super_admin') && ! $user->hasRole('super_admin');
+        if ($model === null) {
+            return false;
+        }
+
+        if ($model->hasRole('super_admin') && ! $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Akun yang memegang izin penting yang tidak dimiliki pengubahnya (HR → Director)
+        // tidak bisa diubah: lewat email/password akun itu bisa diambil alih.
+        return $model->getAllPermissions()->pluck('name')->intersect(self::SENSITIVE)
+            ->diff($user->getAllPermissions()->pluck('name'))
+            ->isNotEmpty();
     }
+
+    /** Izin yang memberi kuasa atas peran, akun, uang, dan gaji. */
+    private const SENSITIVE = [
+        'create_role', 'update_role', 'delete_role',
+        'create_user', 'update_user', 'delete_user',
+        'restore_advance', 'restore_expense',
+        'create_payslip', 'update_payslip', 'delete_payslip',
+        'create_payment::account', 'update_payment::account', 'delete_payment::account',
+    ];
 
     /**
      * Determine whether the user can view any models.

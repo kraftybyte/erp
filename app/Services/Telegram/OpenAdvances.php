@@ -12,15 +12,12 @@ use InvalidArgumentException;
 
 /**
  * Advance yang masih bisa direalisasi lewat bot: sudah dibayarkan atau sedang
- * direalisasi. Karyawan hanya melihat advance miliknya sendiri; Finance,
- * Director, dan super_admin melihat semua, sama seperti di halaman Realisasi ERP.
+ * direalisasi. Karyawan hanya melihat advance miliknya sendiri; pemegang izin
+ * restore_advance (pengelola advance, izin tombol setujui/bayar di ERP) melihat semua.
  */
 class OpenAdvances
 {
     private const OPEN_STATUSES = [Advance::STATUS_DIBAYARKAN, Advance::STATUS_REALIZED_USER];
-
-    /** Boleh merealisasi advance milik siapa pun. */
-    public const ALL_ROLES = ['Finance', 'Director', 'super_admin'];
 
     public function __construct(private RealisasiService $realisasi) {}
 
@@ -40,12 +37,12 @@ class OpenAdvances
 
     public static function seesAll(User $user): bool
     {
-        return $user->hasRole(self::ALL_ROLES);
+        return $user->can('restore_advance');
     }
 
     /**
      * Advance yang boleh direalisasi user ini: miliknya sendiri, atau semua
-     * untuk Finance/Director/super_admin (milik sendiri tetap di depan).
+     * untuk pengelola advance (milik sendiri tetap di depan).
      *
      * @return Collection<int, Advance>
      */

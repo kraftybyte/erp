@@ -91,6 +91,21 @@ class AdvanceParallelTest extends TestCase
         $this->assertSame(Advance::STATUS_SELESAI, $advance->fresh()->status);
     }
 
+    public function test_persetujuan_kelebihan_lama_tidak_menutup_advance_yang_masih_berutang(): void
+    {
+        $this->parallel(false);
+        $advance = $this->advance(5_000_000);
+        $this->pay($advance, 5_000_000);
+        $this->batch($advance, 4_600_000);
+
+        // Kelebihan pernah disetujui, lalu batch dihapus: realisasi 4,6 jt dari 5 jt dibayar.
+        $advance->fresh()->update(['overrun_approved_by' => $this->finance->id, 'overrun_approved_at' => now()]);
+        $this->assertFalse(app(RealisasiService::class)->isReadyToClose($advance->fresh()), 'Karyawan masih harus mengembalikan 400 rb.');
+
+        $this->batch($advance, 900_000); // realisasi 5,5 jt: kelebihan yang disetujui
+        $this->assertTrue(app(RealisasiService::class)->isReadyToClose($advance->fresh()));
+    }
+
     public function test_tanpa_setting_tetap_bayar_di_depan(): void
     {
         $this->parallel(false);

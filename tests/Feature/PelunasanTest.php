@@ -6,6 +6,7 @@ use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Models\Invoice;
 use App\Models\PaymentAccount;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\FinanceOverview;
 use App\Services\InvoicePayment;
@@ -52,6 +53,29 @@ class PelunasanTest extends TestCase
         // Dulu tetap "partial" dengan piutang Rp 3 jt (sebesar DP).
         $this->assertSame('paid', $paid->status);
         $this->assertEquals(0, FinanceOverview::invoiceUnpaid($paid));
+    }
+
+    public function test_dp_bersen_ditagih_bulat_dan_pembayaran_tercatat_sekali(): void
+    {
+        // 1.370.850 × 25% = 342.712,50; PDF menulis Rp342.713, klien mentransfer itu.
+        $dp = $this->invoice(['type_payment' => 'dp_25', 'subtotal' => 1_235_000, 'total' => 1_370_850, 'grand_total' => 1_370_850]);
+        $this->assertEquals(342_713, $dp->amountDue());
+
+        $account = PaymentAccount::create([
+            'name' => 'Rekening Tes ' . Str::upper(Str::random(4)), 'bank_name' => 'BCA',
+            'account_number' => '123', 'account_holder' => 'Tes', 'initial_balance' => 0, 'is_active' => true,
+        ]);
+        // Kolom lama yang masih terisi di data lama: dulu observer mencatat transaksi kedua.
+        $dp->forceFill(['payment_account_id' => $account->id])->save();
+
+        $paid = app(InvoicePayment::class)->pay($dp, 342_713, $account, $this->user);
+
+        $this->assertSame('paid', $paid->status);
+        $this->assertSame(1, Transaction::where('reference_type', 'invoice')->where('reference_id', $dp->id)->count());
+        $this->assertEquals(342_713, (float) $account->fresh()->current_balance);
+
+        $final = $this->invoice(['type_payment' => 'final_payment', 'parent_invoice_id' => $dp->id, 'grand_total' => 1_370_850]);
+        $this->assertEquals(1_028_137, $final->amountDue(), 'Pelunasan = harga penuh − DP yang ditagih, tanpa sen.');
     }
 
     public function test_pelunasan_lama_tanpa_tautan_memakai_catatan_dp(): void
