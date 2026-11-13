@@ -178,8 +178,12 @@ class ReceiptScannerTest extends TestCase
 
     public function test_kertas_yang_memenuhi_foto_tidak_dipotong(): void
     {
+        // Foto close-up: cahaya lampu tidak rata, makin gelap ke bawah.
         $image = imagecreatetruecolor(900, 1200);
-        imagefill($image, 0, 0, imagecolorallocate($image, 235, 233, 228));
+        for ($y = 0; $y < 1200; $y++) {
+            $v = (int) (238 - 40 * $y / 1199);
+            imageline($image, 0, $y, 899, $y, imagecolorallocate($image, $v, $v - 2, $v - 7));
+        }
         $this->text($image, [[0, 0], [899, 0], [899, 1199], [0, 1199]]);
 
         $out = $this->scan($this->jpeg($image));
@@ -187,6 +191,28 @@ class ReceiptScannerTest extends TestCase
         // Tidak dipotong (perbandingan sisi sama), hanya diperbesar halus sampai 1600 px.
         $this->assertSame([1200, 1600], [imagesx($out), imagesy($out)]);
         $this->assertGreaterThan(0.01, $this->darkShare($out));
+    }
+
+    public function test_invoice_digital_tidak_diolah_seperti_foto(): void
+    {
+        // Invoice dari aplikasi, dikirim sebagai JPG terkompresi (tidak ada warna yang persis sama):
+        // terang kertasnya rata, tanpa bayangan kamera.
+        $image = imagecreatetruecolor(1240, 1754);
+        imagefill($image, 0, 0, imagecolorallocate($image, 246, 246, 244));
+        imagefilledrectangle($image, 80, 80, 1160, 200, imagecolorallocate($image, 31, 78, 140));
+        $this->text($image, [[80, 300], [1160, 300], [1160, 1600], [80, 1600]]);
+
+        mt_srand(5);
+        for ($y = 0; $y < 1754; $y += 2) {
+            for ($x = 0; $x < 1240; $x += 2) {
+                $n   = mt_rand(-6, 6);
+                $rgb = imagecolorat($image, $x, $y);
+                $f   = fn (int $v) => max(0, min(255, $v + $n));
+                imagefilledrectangle($image, $x, $y, $x + 1, $y + 1, imagecolorallocate($image, $f(($rgb >> 16) & 255), $f(($rgb >> 8) & 255), $f($rgb & 255)));
+            }
+        }
+
+        $this->assertNull(app(ReceiptScanner::class)->scan($this->jpeg($image, camera: false)), 'Disimpan apa adanya.');
     }
 
     public function test_sudut_dari_gemini_bila_kertasnya_tidak_terdeteksi(): void
