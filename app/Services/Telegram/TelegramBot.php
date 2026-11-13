@@ -508,7 +508,6 @@ class TelegramBot
         $draft->attachment['items']  = $read['items'];
         $draft->attachment['shop']   = $read['name'];
         $draft->attachment['date']   = $read['date'];
-        $draft->attachment['document'] = $read['document'] ?? null;
         $draft->attachment['ai']     = true;
         $this->markSimilar($draft->attachment, $data);
 
@@ -535,15 +534,6 @@ class TelegramBot
         if ($open->count() === 1 && ! $this->advances->blockedReason($open->first())) {
             $draft->type      = 'realisasi';
             $draft->advanceId = $open->first()->id;
-            $this->proceed($chatId, $user, $draft, $draft->panelMessageId);
-
-            return;
-        }
-
-        // Tanpa advance terbuka: struk lunas langsung jadi draft expense, tagihan vendor jadi
-        // draft advance. Jenisnya tetap bisa diganti di draft (🔁 Jadikan …).
-        if ($open->isEmpty()) {
-            $draft->type = ! $draft->isMulti() && ($draft->attachment['document'] ?? null) === 'invoice' ? 'advance' : 'expense';
             $this->proceed($chatId, $user, $draft, $draft->panelMessageId);
 
             return;
@@ -1412,7 +1402,6 @@ class TelegramBot
             $messageId,
             $draft,
             "📝 <b>Draft {$type['label']}</b>\n\n{$this->details($draft)}\n\n"
-                . $this->typeGuessNote($draft)
                 . $advanceWarning
                 . ($draft->attachment ? '' : "💡 Kirim foto struk sekarang supaya admin tidak perlu upload.\n")
                 . $this->similarNote($draft)
@@ -1785,18 +1774,6 @@ class TelegramBot
     /**
      * Draft realisasi yang jenisnya tebakan: struk diunggah tanpa kata "realisasi".
      */
-    /** Jenis dari isi struk, bukan dari user: cara menggantinya disebut. */
-    private function typeGuessNote(Draft $draft): string
-    {
-        if ($draft->typeConfirmed || $draft->receiptCount() === 0) {
-            return '';
-        }
-
-        return $draft->type === 'advance'
-            ? "ℹ️ Terbaca sebagai tagihan yang belum dibayar, jadi dianggap advance. Bila sudah dibayar sendiri, pilih <b>🔁 Jadikan Expense</b>.\n"
-            : "ℹ️ Struk dianggap expense (sudah dibayar sendiri). Bila minta dana dulu, pilih <b>🔁 Jadikan Advance</b>.\n";
-    }
-
     private function realisasiGuessNote(Draft $draft): string
     {
         return $draft->typeConfirmed ? '' : "ℹ️ Struk/invoice dianggap realisasi advance. Bila dibayar sendiri, pilih <b>💰 Jadikan Expense</b>.\n";
@@ -1941,17 +1918,7 @@ class TelegramBot
 
     private function showProjects(int|string $chatId, ?int $messageId, Draft $draft, int $page): void
     {
-        $choices = $this->projectChoices();
-
-        // Project yang baru dipakai pengirim di atas: biasanya cukup satu ketukan.
-        $recent = [];
-        foreach ($this->recentProjectIds($chatId) as $id) {
-            if (isset($choices[$id])) {
-                $recent[$id] = '⭐ ' . $choices[$id];
-            }
-        }
-
-        $pages = array_chunk($recent + array_diff_key($choices, $recent), self::PROJECTS_PER_PAGE, true);
+        $pages = array_chunk($this->projectChoices(), self::PROJECTS_PER_PAGE, true);
         $page  = max(0, min($page, count($pages) - 1));
 
         $rows = [];
@@ -2636,29 +2603,6 @@ class TelegramBot
      *
      * @return array<int, string>
      */
-    /**
-     * Project expense/advance terakhir milik pengirim, terbaru dulu (paling banyak 3).
-     *
-     * @return array<int, int>
-     */
-    private function recentProjectIds(int|string $chatId): array
-    {
-        if (! $user = $this->userFor($chatId)) {
-            return [];
-        }
-
-        $since = now()->subDays(60);
-
-        return Expense::where('user_id', $user->id)->whereNotNull('project_id')->where('created_at', '>=', $since)->latest('id')->limit(10)->get(['project_id', 'created_at'])
-            ->concat(Advance::where('user_id', $user->id)->whereNotNull('project_id')->where('created_at', '>=', $since)->latest('id')->limit(10)->get(['project_id', 'created_at']))
-            ->sortByDesc('created_at')
-            ->pluck('project_id')
-            ->unique()
-            ->take(3)
-            ->values()
-            ->all();
-    }
-
     private function projectChoices(): array
     {
         return Project::with('deal')
