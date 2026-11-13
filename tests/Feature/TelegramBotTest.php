@@ -864,6 +864,27 @@ class TelegramBotTest extends TestCase
         $this->assertNotSame($booth->id, $draft->advanceId);
     }
 
+    public function test_rekap_struk_milik_sendiri(): void
+    {
+        $user    = $this->user();
+        $other   = $this->employee('Sari', 'Lain');
+        $project = $this->project('PT Nestory Indonesia', 'Video Profile');
+        $base    = ['project_id' => $project->id, 'submission_date' => today(), 'category' => 'Transport', 'paid' => 0];
+        Expense::create($base + ['user_id' => $user->id, 'keterangan_expense' => 'Grab ke klien', 'amount' => 45_000, 'status' => 'Dibayarkan']);
+        Expense::create($base + ['user_id' => $user->id, 'keterangan_expense' => 'Parkir studio', 'amount' => 10_000, 'status' => 'Pending']);
+        Expense::create($base + ['user_id' => $other->id, 'keterangan_expense' => 'Milik orang lain', 'amount' => 999_000, 'status' => 'Pending']);
+        $this->fakeApis();
+
+        $this->send($this->textUpdate('/rekap'));
+
+        $text = $this->lastText();
+        $this->assertStringContainsString('Rekap struk kamu', $text);
+        $this->assertStringContainsString('2 struk · total <b>Rp 55.000</b>', $text);
+        $this->assertStringContainsString('sudah dibayar Rp 45.000', $text);
+        $this->assertStringContainsString('Parkir studio', $text);
+        $this->assertStringNotContainsString('Milik orang lain', $text);
+    }
+
     public function test_struk_advance_tersimpan_tanpa_item(): void
     {
         Storage::fake('public');

@@ -174,6 +174,7 @@ class TelegramBot
             'expense', 'advance', 'realisasi' => $this->startDraft($chatId, $user, $argument, $command, $this->draftAwaitingDetails($chatId)),
             'status'             => $this->sendStatus($chatId, $user),
             'slip', 'gaji'       => $this->sendPayslip($chatId, $user, (string) $argument),
+            'rekap'              => $this->sendRecap($chatId, $user, (string) $argument),
             'listadvance', 'daftaradvance' => $this->sendAdvanceList($chatId, $user, query: $argument),
             'batal'              => $this->cancel($chatId),
             null                 => $this->handleText($chatId, $user, $text),
@@ -2402,9 +2403,52 @@ class TelegramBot
         /realisasi – laporkan pemakaian advance
         /listadvance – daftar advance terbuka & ID-nya
         /status – pengajuan terakhir & progres advance
+        /rekap – rekap struk kamu bulan ini, atau bulan tertentu: <i>/rekap oktober</i>
         /slip – slip gaji terakhir (PDF), atau bulan tertentu: <i>/slip oktober 2026</i>
         /batal – batalkan draft
         HTML;
+    }
+
+    /**
+     * Rekap struk milik pengirim (nota expense dan struk realisasi) pada
+     * periode yang disebut, bawaan bulan ini: total, per project, daftarnya.
+     */
+    private function sendRecap(int|string $chatId, User $user, string $argument): void
+    {
+        $period = (trim($argument) !== '' ? \App\Services\ReportPeriod::parse($argument) : null) ?? \App\Services\ReportPeriod::preset('bulan-ini');
+        $rows   = app(\App\Services\FakturCollector::class)->masukan($period)
+            ->filter(fn (array $row) => $row['record']->user_id === $user->id)
+            ->values();
+
+        $lines = ['🧾 <b>Rekap struk kamu</b> · ' . e($period->label()), ''];
+
+        if ($rows->isEmpty()) {
+            $this->telegram->sendMessage($chatId, implode("\n", [...$lines, 'Belum ada struk di periode ini. Bulan lain: <i>/rekap oktober</i>']));
+
+            return;
+        }
+
+        $expenses = $rows->where('source', 'Expense');
+        $paid     = $expenses->filter(fn (array $row) => in_array($row['record']->status, [\App\Enums\ExpenseStatus::Dibayarkan->value, \App\Enums\ExpenseStatus::Selesai->value], true));
+        $projects = $rows->groupBy('project')->map(fn ($group, $label) => '• ' . e(Text::short((string) $label, 60)) . ' — ' . $this->rupiah($group->sum('amount')) . " ({$group->count()})");
+
+        $this->telegram->sendMessage($chatId, implode("\n", [
+            ...$lines,
+            "{$rows->count()} struk · total <b>" . $this->rupiah($rows->sum('amount')) . '</b>',
+            '• Expense: ' . $expenses->count() . ' · ' . $this->rupiah($expenses->sum('amount'))
+                . ($expenses->isNotEmpty() ? ' (sudah dibayar ' . $this->rupiah($paid->sum('amount')) . ')' : ''),
+            '• Realisasi advance: ' . $rows->where('source', 'Realisasi')->count() . ' · ' . $this->rupiah($rows->where('source', 'Realisasi')->sum('amount')),
+            '',
+            '📁 <b>Per project</b>',
+            ...$projects->values(),
+            '',
+            '🗒 <b>Daftar</b> (terbaru dulu)',
+            ...$rows->reverse()->take(15)->map(fn (array $row) => '• ' . $row['date']->format('d/m') . ' · ' . e(Text::short($row['description'], 40)) . ' · ' . $this->rupiah($row['amount'])
+                . ' · ' . ($row['source'] === 'Expense' ? 'Expense ' . e((string) $row['record']->status) : 'Realisasi #' . $row['record']->id)),
+            ...($rows->count() > 15 ? ['• … ' . ($rows->count() - 15) . ' lainnya'] : []),
+            '',
+            '<i>Bulan lain: /rekap oktober · rentang: /rekap 1 okt - 15 okt</i>',
+        ]));
     }
 
     /**

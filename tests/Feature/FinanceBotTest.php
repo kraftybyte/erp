@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\Expense;
 use App\Models\Invoice;
+use App\Models\Project;
 use App\Models\User;
 use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -233,6 +236,41 @@ class FinanceBotTest extends TestCase
         $this->assertStringContainsString('Analisa keuangan', $this->lastText());
 
         Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'generativelanguage'));
+    }
+
+    public function test_rekap_struk_dan_unduh_semua_struk(): void
+    {
+        Storage::fake('public');
+        // Hanya boleh membuka laporan bot, belum boleh membuka halaman Faktur.
+        $role = \Spatie\Permission\Models\Role::findOrCreate('Tes Rekap ' . Str::random(4), 'web');
+        $role->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('page_AnalyticsDashboard', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $finance = $this->user($role->name);
+        $budi    = User::forceCreate(['username' => 'rk_' . Str::lower(Str::random(6)), 'firstname' => 'Budi', 'lastname' => 'Rekap', 'email' => Str::lower(Str::random(10)) . '@example.test', 'password' => bcrypt('x'), 'is_active' => true, 'push_enabled' => false]);
+        $project = Project::create(['nama_project' => 'Video Profile', 'nama_perusahaan' => 'PT Rekap Nusantara', 'status' => 'in_progress']);
+        Storage::disk('public')->put('expenses/nota-grab.jpg', 'jpeg');
+        $base = ['user_id' => $budi->id, 'project_id' => $project->id, 'submission_date' => '2020-01-15', 'category' => 'Transport', 'paid' => 0, 'status' => 'Disetujui'];
+        Expense::create($base + ['keterangan_expense' => 'Grab ke klien', 'amount' => 150_000, 'attachment' => 'expenses/nota-grab.jpg']);
+        Expense::create($base + ['keterangan_expense' => 'Makan tim', 'amount' => 300_000]);
+
+        $this->send($this->text('/rekap januari 2020')); // bulan tanpa data lain di database tes
+
+        $text = $this->lastText();
+        $this->assertStringContainsString('Rekap struk & invoice pembelian', $text);
+        $this->assertStringContainsString('2 dokumen · total <b>Rp 450.000</b>', $text);
+        $this->assertStringContainsString('PT Rekap Nusantara', $text);
+        $this->assertStringContainsString('Budi Rekap — Rp 450.000 (2)', $text);
+        $this->assertStringContainsString('1 tanpa file struk', $text);
+        $this->assertStringContainsString('Makan tim', $text);
+
+        // Unduh file struk: izin halaman Faktur, sama dengan ERP.
+        $this->send($this->tap('fin:zip'));
+        $this->assertStringContainsString('izin halaman <b>Faktur</b>', $this->lastText());
+
+        $finance->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('page_Faktur', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->send($this->tap('fin:zip'));
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/sendDocument'));
     }
 
     private function user(string $role): User

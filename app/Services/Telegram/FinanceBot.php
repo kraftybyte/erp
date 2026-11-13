@@ -14,6 +14,8 @@ use App\Services\InvoicePayment;
 use App\Services\ReportPeriod;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use App\Services\FakturCollector;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -32,7 +34,10 @@ class FinanceBot
 
     private const RECORD_PERMISSION = 'create_bank::mutation';
 
-    private const SECTIONS = ['ringkasan', 'invoice', 'expense', 'advance', 'piutang', 'pending'];
+    private const SECTIONS = ['ringkasan', 'invoice', 'expense', 'advance', 'piutang', 'pending', 'rekap'];
+
+    /** Batas kirim file bot Telegram 50 MB; ZIP yang lebih besar diunduh dari ERP → Faktur. */
+    private const MAX_UPLOAD_BYTES = 49 * 1024 * 1024;
 
     private const LIST_LIMIT = 10;
 
@@ -220,6 +225,13 @@ class FinanceBot
             return;
         }
 
+        // "/rekap oktober": periode langsung dari perintahnya.
+        if ($command === 'rekap' && $args !== '') {
+            $this->setPeriodFromText($chatId, $args, 'rekap');
+
+            return;
+        }
+
         // /start dan teks bebas: tampilkan ringkasan.
         $section = in_array($command, self::SECTIONS, true) ? $command : 'ringkasan';
 
@@ -280,6 +292,13 @@ class FinanceBot
             $this->telegram->answerCallback($callback['id'], 'Menyusun analisa…');
             $this->forgetInputs($chatId);
             $this->sendAnalysis($chatId, '');
+
+            return;
+        }
+
+        if ($data === 'fin:zip') {
+            $this->telegram->answerCallback($callback['id'], 'Menyiapkan file struk…');
+            $this->sendReceiptZip($chatId, $user);
 
             return;
         }
@@ -453,6 +472,7 @@ class FinanceBot
             'advance' => $this->advanceSection(),
             'piutang' => $this->receivablesSection(),
             'pending' => $this->pendingSection(),
+            'rekap'   => $this->receiptRecapSection(),
             default   => $this->summarySection(),
         };
 
@@ -468,6 +488,7 @@ class FinanceBot
             'advance'   => '💸 Advance',
             'piutang'   => '⏰ Belum dibayar',
             'pending'   => '⏳ Pending',
+            'rekap'     => '🧾 Rekap struk & invoice pembelian',
         ];
 
         $button = fn (string $section) => [
@@ -482,6 +503,8 @@ class FinanceBot
             [$button('ringkasan'), $button('invoice')],
             [$button('expense'), $button('advance')],
             [$button('piutang'), $button('pending')],
+            [$button('rekap')],
+            ...($current === 'rekap' ? [[['text' => "🗂 Unduh semua struk ({$period}, ZIP)", 'callback_data' => 'fin:zip']]] : []),
             [['text' => '🧭 Analisa & prioritas', 'callback_data' => 'fin:analisa']],
             [['text' => '💳 Catat pembayaran invoice', 'callback_data' => 'pay:list']],
             [['text' => "⬇️ Unduh Excel ({$period})", 'callback_data' => 'fin:excel']],
@@ -730,6 +753,86 @@ class FinanceBot
         return $lines;
     }
 
+    /**
+     * Rekap struk dan invoice pembelian (nota Expense + struk Realisasi), data
+     * yang sama dengan halaman Faktur → Masukan.
+     */
+    private function receiptRecapSection(): string
+    {
+        $rows  = app(FakturCollector::class)->masukan($this->view->period());
+        $lines = $this->heading('🧾 <b>Rekap struk & invoice pembelian</b>');
+
+        if ($rows->isEmpty()) {
+            return implode("\n", [...$lines, 'Belum ada struk atau invoice pembelian di periode ini.']);
+        }
+
+        $group = fn (string $key) => $rows->groupBy($key)
+            ->map(fn (Collection $group, string $label) => ['label' => $label, 'count' => $group->count(), 'amount' => $group->sum('amount')])
+            ->sortByDesc('amount')
+            ->values();
+        $list = function (Collection $groups, int $limit) {
+            $shown = $groups->take($limit)->map(fn (array $row) => '• ' . e(Text::short($row['label'], 60)) . ' — ' . $this->rupiah($row['amount']) . " ({$row['count']})");
+
+            return [...$shown, ...($groups->count() > $limit ? ['• … ' . ($groups->count() - $limit) . ' lainnya'] : [])];
+        };
+        $source  = fn (string $name) => $rows->where('source', $name);
+        $noFile  = $rows->filter(fn (array $row) => ! collect($row['files'])->contains('exists', true))->values();
+
+        return implode("\n", [
+            ...$lines,
+            "{$rows->count()} dokumen · total <b>" . $this->rupiah($rows->sum('amount')) . '</b>',
+            '• Expense: ' . $source('Expense')->count() . ' · ' . $this->rupiah($source('Expense')->sum('amount')),
+            '• Realisasi advance: ' . $source('Realisasi')->count() . ' · ' . $this->rupiah($source('Realisasi')->sum('amount')),
+            '',
+            '📁 <b>Per project</b>',
+            ...$list($group('project'), 8),
+            '',
+            '👤 <b>Per pengaju</b>',
+            ...$list($group('user'), 8),
+            ...($noFile->isNotEmpty() ? [
+                '',
+                "⚠️ <b>{$noFile->count()} tanpa file struk</b> (" . $this->rupiah($noFile->sum('amount')) . '):',
+                ...$noFile->take(5)->map(fn (array $row) => '• ' . $row['date']->format('d/m') . ' · ' . e($row['user']) . ' · ' . e(Text::short($row['description'], 40)) . ' · ' . $this->rupiah($row['amount'])),
+                ...($noFile->count() > 5 ? ['• … ' . ($noFile->count() - 5) . ' lainnya'] : []),
+            ] : []),
+            '',
+            '<i>Expense dihitung dari tanggal pengajuan (tanggal struk bila dikirim lewat bot), realisasi dari tanggal laporannya. ZIP berisi semua file struk + daftar Excel-nya.</i>',
+        ]);
+    }
+
+    /** Semua file struk periode ini + daftar Excel-nya, sama dengan ZIP di ERP → Faktur. */
+    private function sendReceiptZip(int|string $chatId, ?User $user): void
+    {
+        if (! FakturCollector::visibleTo($user)) {
+            $this->telegram->sendMessage($chatId, 'Unduh file struk butuh izin halaman <b>Faktur</b> (Settings → Roles).');
+
+            return;
+        }
+
+        $period = $this->periodFor($chatId);
+
+        if ($period->isAll()) {
+            $this->telegram->sendMessage($chatId, 'Pilih periodenya dulu (📅 Periode), file struk semua waktu terlalu besar untuk Telegram.');
+
+            return;
+        }
+
+        $this->telegram->typing($chatId);
+        $label = implode('_', $period->toArray());
+        $path  = app(FakturCollector::class)->zip($period, "rekap-struk-{$label}.xlsx");
+
+        try {
+            $sent = filesize($path) <= self::MAX_UPLOAD_BYTES
+                && $this->telegram->sendDocument($chatId, $path, "struk-{$label}.zip", '🗂 Struk & invoice pembelian · ' . $period->label() . '. Nama file: tanggal, pengaju, keterangan, nominal.');
+        } finally {
+            @unlink($path);
+        }
+
+        if (! $sent) {
+            $this->telegram->sendMessage($chatId, 'File struk terlalu besar atau gagal dikirim lewat Telegram. Unduh dari ERP → Finance → Faktur, atau pilih periode yang lebih pendek.');
+        }
+    }
+
     private function sendExport(int|string $chatId): void
     {
         $this->telegram->typing($chatId);
@@ -795,6 +898,7 @@ class FinanceBot
         /advance – advance per project: cair, realisasi, sisa
         /piutang – invoice yang belum dibayar
         /pending – pengajuan yang menunggu diproses
+        /rekap – rekap struk & invoice pembelian: per project, per pengaju, yang belum ada file struknya, dan unduh semua struk (ZIP). Bisa langsung periodenya: <code>/rekap oktober</code>
         /analisa – status keuangan, prioritas minggu ini, dan langkahnya. Bisa bertanya langsung, mis. <code>/analisa kenapa kas bulan ini minus?</code> atau ketik pertanyaannya saja
 
         <b>Periode &amp; file</b>
