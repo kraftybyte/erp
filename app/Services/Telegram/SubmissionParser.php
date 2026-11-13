@@ -93,7 +93,7 @@ class SubmissionParser
      * daripada tidak ada.
      *
      * @param  array{mime: string, data: string}  $receipt
-     * @return array{amount: int, name: ?string, description: ?string, date: ?string, category: ?string, items: array<int, array{name: string, qty: int, price: int}>}|null
+     * @return array{amount: ?int, name: ?string, description: ?string, date: ?string, category: ?string, items: array<int, array{name: string, qty: int, price: int}>, foreign: ?string}|null amount null = struk mata uang asing ('foreign', mis. "USD 20,00")
      */
     /**
      * Transkrip pesan suara (OGG/Opus dari Telegram). Angka ditulis dengan
@@ -137,7 +137,8 @@ class SubmissionParser
 
         $result = $this->gemini->extractJson(<<<PROMPT
             Terlampir satu struk, nota, invoice, atau bukti bayar. Hari ini {$today}. Ambil:
-            - amount: total akhir yang dibayar atau ditagih dalam rupiah, bilangan bulat. null bila tidak terbaca jelas.
+            - amount: total akhir yang dibayar atau ditagih, dalam mata uang yang tertulis di struk (JANGAN dikonversi). null bila tidak terbaca jelas.
+            - currency: kode mata uang total itu (IDR, USD, SGD, EUR, …). IDR bila tertulis Rp atau tidak ada mata uangnya.
             - name: nama toko, penjual, atau vendor, singkat (maks 60 karakter). null bila tidak terbaca.
             - description: ringkasan apa yang dibeli, maks 80 karakter, tanpa nominal. Contoh: "Kabel HDMI dan lakban".
             - date_text: tanggal transaksi persis seperti tercetak, tanpa diubah (mis. "11/03/26" atau "03 Nov 2026"). null bila tidak ada.
@@ -149,7 +150,8 @@ class SubmissionParser
             PROMPT, [
             'type'       => 'object',
             'properties' => [
-                'amount'      => ['type' => ['integer', 'null']],
+                'amount'      => ['type' => ['number', 'null']],
+                'currency'    => ['type' => ['string', 'null']],
                 'name'        => ['type' => ['string', 'null']],
                 'description' => ['type' => ['string', 'null']],
                 'date_text'   => ['type' => ['string', 'null']],
@@ -169,12 +171,18 @@ class SubmissionParser
                     ],
                 ],
             ],
-            'required' => ['amount', 'name', 'description', 'date_text', 'date', 'date_order', 'category', 'items'],
+            'required' => ['amount', 'currency', 'name', 'description', 'date_text', 'date', 'date_order', 'category', 'items'],
         ], [$receipt]);
 
-        $amount = is_numeric($result['amount'] ?? null) ? (int) $result['amount'] : 0;
+        $raw      = is_numeric($result['amount'] ?? null) ? (float) $result['amount'] : 0;
+        $currency = strtoupper(trim((string) ($result['currency'] ?? ''))) ?: 'IDR';
 
-        if ($amount <= 0 || $amount > AmountParser::MAX) {
+        // Struk mata uang asing (langganan software, iklan): nominal rupiahnya yang
+        // terpotong di rekening/kartu ditanyakan ke user, bukan ditebak dengan kurs.
+        $foreign = $currency !== 'IDR' && $raw > 0 ? $currency . ' ' . number_format($raw, 2, ',', '.') : null;
+        $amount  = $foreign ? null : (int) round($raw);
+
+        if (! $foreign && ($amount <= 0 || $amount > AmountParser::MAX)) {
             return null;
         }
 
@@ -188,7 +196,8 @@ class SubmissionParser
             'description' => $description !== '' ? Str::limit($description, 100, '') : null,
             'date'        => $parsed['date'],
             'category'    => $parsed['category'],
-            'items'       => $this->receiptItems($result['items'] ?? [], $amount),
+            'items'       => $foreign ? [] : $this->receiptItems($result['items'] ?? [], $amount),
+            'foreign'     => $foreign,
         ];
     }
 

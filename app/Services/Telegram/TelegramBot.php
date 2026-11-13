@@ -509,6 +509,7 @@ class TelegramBot
         $draft->attachment['items']  = $read['items'];
         $draft->attachment['shop']   = $read['name'];
         $draft->attachment['date']   = $read['date'];
+        $draft->attachment['foreign'] = $read['foreign'] ?? null;
         $draft->attachment['ai']     = true;
         $this->markSimilar($draft->attachment, $data);
 
@@ -550,7 +551,7 @@ class TelegramBot
                 . ($draft->date ? ' · ' . Carbon::parse($draft->date)->locale('id')->translatedFormat('j M Y') : '') . "\n"
                 . e((string) $draft->description) . "\n"
                 . $this->itemLines($draft->attachment['items'] ?? [], 12)
-                . 'Total: <b>' . $this->rupiah($draft->amount) . '</b>';
+                . 'Total: <b>' . (! empty($draft->attachment['foreign']) ? e($draft->attachment['foreign']) . '</b> (nominal rupiahnya ditanyakan nanti)' : $this->rupiah($draft->amount) . '</b>');
         }
 
         // Tombol hanya muat nama pendek; nama lengkap dan penandanya di pesan, dengan ID yang sama.
@@ -707,6 +708,7 @@ class TelegramBot
                     $draft->receipts[$index]['items']  = $read['items'];
                     $draft->receipts[$index]['shop']   = $read['name'];
                     $draft->receipts[$index]['date']   = $read['date'];
+                    $draft->receipts[$index]['foreign'] = $read['foreign'] ?? null;
                     $this->markSimilar($draft->receipts[$index], $data);
 
                     continue;
@@ -735,7 +737,9 @@ class TelegramBot
 
         $this->telegram->sendMessage(
             $chatId,
-            'Struk ' . ($index + 1) . ' ☝️ — berapa nominalnya? Boleh ditambah nama barangnya, misalnya <i>120rb sewa lighting</i>.',
+            'Struk ' . ($index + 1) . ' ☝️ — ' . (! empty($draft->receipts[$index]['foreign'])
+                ? 'dalam <b>' . e($draft->receipts[$index]['foreign']) . '</b>. Berapa rupiah yang terpotong di rekening/kartu? Misalnya <i>325rb</i>.'
+                : 'berapa nominalnya? Boleh ditambah nama barangnya, misalnya <i>120rb sewa lighting</i>.'),
             [[$this->button('🗑 Hapus struk ini', $draft, 'rdel', $index), $this->button('❌ Batal', $draft, 'cancel')]],
             replyTo: $draft->receipts[$index]['message_id'] ?? null
         );
@@ -1283,7 +1287,9 @@ class TelegramBot
                 return;
             }
         } elseif (! $draft->amount) {
-            $this->ask($chatId, $messageId, $draft, 'amount', 'Berapa nominalnya? Contoh: <i>150rb</i> atau <i>1,5jt</i>');
+            $this->ask($chatId, $messageId, $draft, 'amount', ! empty($draft->attachment['foreign'])
+                ? 'Struk dalam <b>' . e($draft->attachment['foreign']) . '</b>. Berapa rupiah yang terpotong di rekening/kartu? Contoh: <i>325rb</i>'
+                : 'Berapa nominalnya? Contoh: <i>150rb</i> atau <i>1,5jt</i>');
 
             return;
         }
