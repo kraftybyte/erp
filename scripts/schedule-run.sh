@@ -18,7 +18,8 @@ for php in ${PHP:-} php /opt/alt/php84/usr/bin/php /opt/alt/php83/usr/bin/php /u
 
     output=$("$php" artisan schedule:run 2>&1)
     status=$?
-    if ! grep -q 'No scheduled commands are ready' <<<"$output"; then
+    # Tanda jadwal (heartbeat) jalan setiap menit: dicatat hanya bila ada perintah lain atau error.
+    if grep -v -e 'No scheduled commands are ready' -e 'Running \[heartbeat\]' -e '^[[:space:]]*$' <<<"$output" | grep -q .; then
         printf '%s\n%s\n' "$(date '+%F %T')" "$output" >> "$LOG"
     fi
     exit $status
