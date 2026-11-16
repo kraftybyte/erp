@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Ingatkan deadline task (ke assignee dan pembuatnya) dan project (ke Director,
  * super_admin, dan assignee task-nya) yang jatuh dalam X hari, lewat lonceng
- * ERP dan Telegram penerima yang sudah terhubung. Dijalankan setiap pagi.
+ * ERP (bukan bot Telegram expense & advance). Dijalankan setiap pagi.
  */
 class DeadlineReminder extends Command
 {
@@ -51,7 +51,8 @@ class DeadlineReminder extends Command
                 $recipients = $recipients->push($creator);
             }
 
-            NotifHelper::send($recipients, 'Deadline task', $body, 'heroicon-o-calendar', 'warning', '/admin/tasks', telegram: true);
+            // Hanya lonceng ERP: bot Telegram khusus expense & advance.
+            NotifHelper::send($recipients, 'Deadline task', $body, 'heroicon-o-calendar', 'warning', '/admin/tasks');
         }
 
         $this->info("Sent {$tasks->count()} task deadline reminders.");
@@ -72,7 +73,7 @@ class DeadlineReminder extends Command
             $body       = "Project \"{$project->nama_project}\" ({$clientName}) deadline " . $this->when($project->timeline_selesai, $today)
                 . " ({$project->timeline_selesai->locale('id')->translatedFormat('j M Y')}).";
 
-            NotifHelper::send($recipients, 'Deadline project', $body, 'heroicon-o-building-office', 'warning', '/admin/projects/' . $project->id, telegram: true);
+            NotifHelper::send($recipients, 'Deadline project', $body, 'heroicon-o-building-office', 'warning', '/admin/projects/' . $project->id);
         }
 
         $this->info("Sent {$projects->count()} project deadline reminders.");

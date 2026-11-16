@@ -16,7 +16,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('financial:analyze')
             ->weeklyOn(1, '09:00'); // Senin jam 09:00 pagi
 
-        // Pengingat, lewat lonceng ERP dan Telegram.
+        // Pengingat lewat lonceng ERP; ringkasan pagi juga ke bot keuangan.
         $schedule->command('ringkasan:pagi')->weekdays()->at('08:00');
         $schedule->command('deadline:reminder')->dailyAt('08:00');
         $schedule->command('leads:follow-up-reminder')->weekdays()->at('09:00');

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Satu pengingat per penerima (Sales, Director, super_admin) berisi lead aktif
- * yang tidak diperbarui X hari, lewat lonceng ERP dan Telegram. Dulu satu
+ * yang tidak diperbarui X hari, lewat lonceng ERP (bukan bot Telegram expense & advance). Dulu satu
  * notifikasi per lead per hari, sehingga pengingat penting tenggelam.
  */
 class LeadFollowUpReminder extends Command
@@ -62,7 +62,6 @@ class LeadFollowUpReminder extends Command
             'heroicon-o-phone',
             'warning',
             '/admin/leads',
-            telegram: true,
         );
 
         Log::info('Lead follow-up notification sent', [
