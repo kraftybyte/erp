@@ -119,7 +119,7 @@ class RemindersTest extends TestCase
         Http::assertSent(fn (Request $request) => str_contains($request->url(), 'bot111:PENGAJUAN/sendMessage') && $request['chat_id'] === '700000003');
     }
 
-    public function test_deadline_task_dan_project_diingatkan_lewat_lonceng_dan_telegram(): void
+    public function test_deadline_task_dan_project_diingatkan_lewat_lonceng_saja(): void
     {
         $designer = $this->user('Staff', '700000004');
         $creator  = $this->user('Staff');
@@ -140,9 +140,8 @@ class RemindersTest extends TestCase
         $this->assertSame(1, $this->notifications($director, 'Deadline project', "Booth {$this->client}\" ({$this->client}) deadline dalam 2 hari"));
         $this->assertSame(0, $this->notifications($director, 'Deadline project', "Arsip {$this->client}"));
 
-        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'bot111:PENGAJUAN/sendMessage')
-            && $request['chat_id'] === '700000004'
-            && str_contains($request['text'], "Desain {$this->client}"));
+        // Bot Telegram khusus expense & advance: deadline tidak dikirim ke sana.
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/sendMessage') && str_contains((string) $request['text'], 'Deadline'));
         $this->assertNotNull($project->fresh());
     }
 
@@ -162,6 +161,7 @@ class RemindersTest extends TestCase
         $body = json_decode($rows->first()->data, true)['body'];
         $this->assertStringContainsString("Budi {$this->client} ({$this->client}) — Dalam Komunikasi, 5 hari tanpa update", $body);
         $this->assertStringContainsString("Sari {$this->client}", $body);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/sendMessage'));
     }
 
     public function test_pengingat_terjadwal(): void
