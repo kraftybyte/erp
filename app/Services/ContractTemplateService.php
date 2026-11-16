@@ -263,8 +263,9 @@ class ContractTemplateService
         $paymentType = $contract->payment_type ?? 'full';
 
         // === KOP & KAKI SURAT: milik kontrak, lalu default di Pengaturan, lalu file bawaan ===
-        $headerSrc = $this->letterhead($contract->header_image, $settings->contract_header ?? null, 'sites/header.png');
-        $footerSrc = $this->letterhead($contract->footer_image, $settings->contract_footer ?? null, 'sites/footer.png');
+        // Tanpa kop/kaki bawaan aplikasi: hanya milik kontrak atau dari Pengaturan.
+        $headerSrc = $this->letterhead($contract->header_image, $settings->contract_header ?? null);
+        $footerSrc = $this->letterhead($contract->footer_image, $settings->contract_footer ?? null);
 
         // === BUILD HTML ===
         return $this->buildHtml(compact(
@@ -724,7 +725,7 @@ class ContractTemplateService
   <style>
     @page {
     size: A4;
-        margin: 120px 70px 90px 70px;
+        margin: ' . ($data['headerSrc'] ? '120px' : '60px') . ' 70px ' . ($data['footerSrc'] ? '90px' : '60px') . ' 70px;
 
 }
 
@@ -837,7 +838,8 @@ p {
     margin-bottom: 0.35cm;
     text-align: justify;
     line-height: 1.6;
-    page-break-inside: avoid;
+    /* Pasal panjang boleh lanjut ke halaman berikutnya (dulu didorong utuh, separuh halaman kosong). */
+    page-break-inside: auto;
 }
 
 .article-title {
@@ -847,6 +849,15 @@ p {
     font-size: 11pt;
     line-height: 1.5;
     margin: 0 0 0.3cm 0;
+    /* Judul pasal tidak tertinggal sendirian di bawah halaman. */
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* Satu ayat atau paragraf tidak terbelah dua. */
+.article li, .rich > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 /* =========================
