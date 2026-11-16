@@ -218,6 +218,22 @@ class ContractPksFormatTest extends TestCase
             ->assertFormFieldIsHidden('layout.terms.hari_laporan');
     }
 
+    public function test_pasal_panjang_lanjut_ke_halaman_berikutnya_tanpa_halaman_kosong(): void
+    {
+        $contract = Contract::create(ContractFormats::make('pks') + [
+            'contract_number' => 'TES/' . Str::random(6), 'client_name_full' => 'PT Halaman', 'effective_date' => '2026-11-01',
+            'expiration_date' => '2027-11-01', 'duration_months' => 12, 'payment_type' => 'monthly', 'total_value' => 66_000_000, 'installment_months' => 12,
+        ]);
+
+        $html = app(ContractTemplateService::class)->generate($contract->fresh());
+        $pdf  = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('A4');
+        $pdf->render();
+
+        // Dulu setiap pasal dilarang terpotong: pasal panjang didorong utuh, PDF 13 halaman.
+        $this->assertLessThanOrEqual(10, $pdf->getDomPDF()->getCanvas()->get_page_count());
+        $this->assertStringContainsString('page-break-after: avoid', $html, 'Judul pasal tidak tertinggal sendirian.');
+    }
+
     public function test_peringatan_bila_baris_biaya_tidak_sama_dengan_total(): void
     {
         $contract = Contract::create(ContractFormats::make('pks') + [

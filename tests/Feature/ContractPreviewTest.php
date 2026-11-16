@@ -96,10 +96,16 @@ class ContractPreviewTest extends TestCase
 
     public function test_html_pratinjau_memuat_kop_lewat_url_bukan_path_file(): void
     {
+        Storage::fake('public');
+        Storage::disk('public')->put('contract/letterhead/kop.png', 'png');
+        $settings = app(\App\Settings\GeneralSettings::class);
+        $settings->contract_header = 'contract/letterhead/kop.png';
+        $settings->save();
+
         $html = app(ContractTemplateService::class)->preview(new Contract(['client_name_full' => 'PT Kop']));
 
-        $this->assertStringNotContainsString(Storage::path('sites/'), $html);
-        $this->assertStringContainsString('src="/storage/sites/header.png"', $html);
+        $this->assertStringNotContainsString(Storage::disk('public')->path(''), $html);
+        $this->assertStringContainsString('src="/storage/contract/letterhead/kop.png"', $html);
         $this->assertStringContainsString('@media screen', $html);
     }
 

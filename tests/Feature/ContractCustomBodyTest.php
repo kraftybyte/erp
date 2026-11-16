@@ -102,7 +102,7 @@ class ContractCustomBodyTest extends TestCase
         $this->assertStringNotContainsString('onerror', $html);
     }
 
-    public function test_kop_surat_dari_kontrak_lalu_pengaturan_lalu_bawaan(): void
+    public function test_kop_surat_dari_kontrak_lalu_pengaturan_tanpa_bawaan(): void
     {
         Storage::fake('public');
         $disk = Storage::disk('public');
@@ -120,13 +120,13 @@ class ContractCustomBodyTest extends TestCase
         $plain = $this->contract();
         $this->assertStringContainsString($disk->path('contract/letterhead/default.png'), $this->render($plain));
 
+        // Tanpa kop di kontrak maupun Pengaturan: tanpa kop sama sekali, kop bawaan aplikasi tidak dipakai.
         $settings->contract_header = null;
         $settings->save();
-        $this->assertStringContainsString($disk->path('sites/header.png'), $this->render($plain));
-
-        // Tidak ada gambar sama sekali: tanpa kop, bukan gambar rusak.
-        $disk->delete('sites/header.png');
-        $this->assertStringNotContainsString('class="header"', $this->render($plain));
+        $html = $this->render($plain);
+        $this->assertStringNotContainsString('class="header"', $html);
+        $this->assertStringNotContainsString('sites/header.png', $html);
+        $this->assertStringContainsString('margin: 60px 70px', $html, 'Tanpa kop, margin atas tidak menyisakan ruang kosong.');
     }
 
     public function test_kop_default_diatur_di_pengaturan(): void
