@@ -510,6 +510,7 @@ class TelegramBot
         $draft->attachment['shop']   = $read['name'];
         $draft->attachment['date']   = $read['date'];
         $draft->attachment['foreign'] = $read['foreign'] ?? null;
+        $draft->attachment['rotation'] = $read['rotation'] ?? 0;
         $draft->attachment['ai']     = true;
         $this->markSimilar($draft->attachment, $data);
 
@@ -709,6 +710,7 @@ class TelegramBot
                     $draft->receipts[$index]['shop']   = $read['name'];
                     $draft->receipts[$index]['date']   = $read['date'];
                     $draft->receipts[$index]['foreign'] = $read['foreign'] ?? null;
+                    $draft->receipts[$index]['rotation'] = $read['rotation'] ?? 0;
                     $this->markSimilar($draft->receipts[$index], $data);
 
                     continue;
@@ -967,8 +969,8 @@ class TelegramBot
             return null;
         }
 
-        // Foto struk dirapikan seperti hasil scan; aslinya ikut disimpan.
-        $stored = $this->scanner->store($data, $mime, $folder);
+        // Foto struk dirapikan seperti hasil scan (diputar tegak bila difoto menyamping); aslinya ikut disimpan.
+        $stored = $this->scanner->store($data, $mime, $folder, (int) ($receipt['rotation'] ?? 0));
 
         return ['path' => $stored['path'], 'size' => $stored['size'], 'mime' => $stored['mime'], 'ext' => pathinfo($stored['path'], PATHINFO_EXTENSION)];
     }
