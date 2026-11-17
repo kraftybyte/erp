@@ -434,26 +434,7 @@ class TelegramBotTest extends TestCase
         $user = $this->user();
         $this->project('PT Nestory Indonesia', 'Video Profile');
 
-        // Foto HP: kertas terang miring di atas meja gelap.
-        $photo = imagecreatetruecolor(900, 1200);
-        imagefill($photo, 0, 0, imagecolorallocate($photo, 60, 50, 45));
-        imagefilledpolygon($photo, [200, 150, 720, 210, 680, 1080, 170, 1030], imagecolorallocate($photo, 238, 236, 230));
-        // Noise sensor kamera: tanpa itu warnanya rata sempurna seperti screenshot (tidak diolah).
-        mt_srand(7);
-        $noise = imagecreatetruecolor(61, 59);
-        for ($y = 0; $y < 59; $y++) {
-            for ($x = 0; $x < 61; $x++) {
-                imagesetpixel($noise, $x, $y, mt_rand(0, 0xFFFFFF));
-            }
-        }
-        for ($y = 0; $y < 1200; $y += 59) {
-            for ($x = 0; $x < 900; $x += 61) {
-                imagecopymerge($photo, $noise, $x, $y, 0, 0, 61, 59, 5);
-            }
-        }
-        ob_start();
-        imagejpeg($photo, null, 90);
-        $this->fakeApis(gemini: null, file: (string) ob_get_clean());
+        $this->fakeApis(gemini: null, file: $this->deskPhoto());
 
         $this->send($this->photoUpdate('foto-hp', 'expense 150rb grab ke kantor klien nestory'));
         $draft = Draft::load($this->chatId);
@@ -467,6 +448,23 @@ class TelegramBotTest extends TestCase
         $this->assertEqualsWithDelta(880 / 520, imagesy($scan) / imagesx($scan), 0.15);
         $this->assertGreaterThan(200, imagecolorat($scan, 3, 3) & 0xFF);
         $this->assertNotNull(\App\Services\ReceiptScanner::original($expense->attachment), 'Foto asli ikut disimpan.');
+    }
+
+    public function test_struk_yang_difoto_menyamping_diputar_tegak(): void
+    {
+        Storage::fake('public');
+        $user = $this->user();
+        $this->project('PT Nestory Indonesia', 'Video Profile');
+        $this->fakeApis(gemini: ['rotation' => 90] + $this->receiptRead(), file: $this->deskPhoto());
+
+        $this->send($this->photoUpdate('foto-miring', 'expense 150rb grab ke kantor klien nestory'));
+        $draft = Draft::load($this->chatId);
+        $this->send($this->tap("{$draft->id}:submit:"));
+
+        $scan = imagecreatefromstring(Storage::disk('public')->get(Expense::where('user_id', $user->id)->sole()->attachment));
+
+        // Kertas tegak 520 × 880 di foto; Gemini: tulisannya menyamping → hasil scan diputar 90°.
+        $this->assertEqualsWithDelta(520 / 880, imagesy($scan) / imagesx($scan), 0.15);
     }
 
     public function test_foto_dengan_caption_langsung_diproses(): void
@@ -2230,6 +2228,32 @@ class TelegramBotTest extends TestCase
      * Jawaban Gemini untuk satu struk (readReceipt). Juga dibaca parse() bila
      * user mengetik: kunci yang tidak dikenalnya diabaikan.
      */
+    /**
+     * Foto HP: kertas terang miring di atas meja gelap, dengan noise sensor kamera
+     * (tanpa itu warnanya rata sempurna seperti screenshot dan tidak diolah).
+     */
+    private function deskPhoto(): string
+    {
+        $photo = imagecreatetruecolor(900, 1200);
+        imagefill($photo, 0, 0, imagecolorallocate($photo, 60, 50, 45));
+        imagefilledpolygon($photo, [200, 150, 720, 210, 680, 1080, 170, 1030], imagecolorallocate($photo, 238, 236, 230));
+        mt_srand(7);
+        $noise = imagecreatetruecolor(61, 59);
+        for ($y = 0; $y < 59; $y++) {
+            for ($x = 0; $x < 61; $x++) {
+                imagesetpixel($noise, $x, $y, mt_rand(0, 0xFFFFFF));
+            }
+        }
+        for ($y = 0; $y < 1200; $y += 59) {
+            for ($x = 0; $x < 900; $x += 61) {
+                imagecopymerge($photo, $noise, $x, $y, 0, 0, 61, 59, 5);
+            }
+        }
+        ob_start();
+        imagejpeg($photo, null, 90);
+        return (string) ob_get_clean();
+    }
+
     private function receiptRead(?array $items = null, int $amount = 265_000): array
     {
         return [

@@ -73,6 +73,12 @@
                             <a href="{{ asset('storage/' . $record->attachment) }}" target="_blank" rel="noopener" class="rl-file">
                                 <x-filament::icon icon="heroicon-m-document-text" class="h-3.5 w-3.5" /> Invoice / nota
                             </a>
+                            {{-- Foto sebelum dirapikan seperti scan: untuk hasil olahan yang kurang jelas. --}}
+                            @if($original = \App\Services\ReceiptScanner::original($record->attachment))
+                                <a href="{{ asset('storage/' . $original) }}" target="_blank" rel="noopener" class="rl-file">
+                                    <x-filament::icon icon="heroicon-m-photo" class="h-3.5 w-3.5" /> Foto asli
+                                </a>
+                            @endif
                         @endif
                         @if($record->attachment_pay)
                             <a href="{{ asset('storage/' . $record->attachment_pay) }}" target="_blank" rel="noopener" class="rl-file">
